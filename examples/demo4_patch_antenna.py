@@ -81,7 +81,7 @@ dielectric.material = em.Material(3.38, color="#207020", opacity=0.9)
 model.mw.resolution = 0.15
 
 # Frequency sweep across the resonance
-model.mw.set_frequency_range(f1, f2, 11)
+model.mw.set_frequency_range(f1, f2, 3)
 
 # --- Combine geometry into simulation -----------------------------------
 model.commit_geometry()
@@ -142,4 +142,5 @@ ff3d = data.field.find(freq=1.575e9).farfield_3d(boundary_selection)
 surf = ff3d.surfplot('normE', rmax=60 * mm,
                       offset=(0, 0, 20 * mm))
 model.display.add_surf(*surf, cmap='viridis', symmetrize=False)
+model.display.animate().add_surf(*data.field.find(freq=1.575e9).cutplane(2*mm, x=0).scalar('Ey','real'), scale='symlog', cmap='coolwarm')
 model.display.show()

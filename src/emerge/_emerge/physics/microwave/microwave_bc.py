@@ -96,6 +96,15 @@ class MWBoundaryConditionSet(BoundaryConditionSet):
         self._cell._ports.append(port)
         return port
 
+    # Checks
+    def _is_excited(self) -> bool:
+        for bc in self.boundary_conditions:
+            if not isinstance(bc, RobinBC):
+                continue
+            if bc._include_force:
+                return True
+            
+        return False
 
 ############################################################
 #                    BOUNDARY CONDITIONS                   #

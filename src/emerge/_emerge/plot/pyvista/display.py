@@ -213,11 +213,13 @@ class _AnimObject:
                  field: np.ndarray,
                  T: Callable,
                  grid: pv.Grid,
+                 filtered_grid: pv.Grid,
                  actor: pv.Actor,
                  on_update: Callable):
         self.field: np.ndarray = field
         self.T: Callable = T
         self.grid: pv.Grid = grid
+        self.fgrid: pv.Grid = filtered_grid
         self.actor: pv.Actor = actor
         self.on_update: Callable = on_update
 
@@ -611,7 +613,8 @@ class PVDisplay(BaseDisplay):
         
         grid = pv.StructuredGrid(x,y,z)
         field_flat = field.flatten(order='F')
-
+        
+        
 
         if scale=='log':
             T = lambda x: np.log10(np.abs(x+1e-12))
@@ -626,10 +629,12 @@ class PVDisplay(BaseDisplay):
         else:
             name = _fieldname
         self._ctr += 1
+        
         grid[name] = static_field
 
         grid_no_nan = grid.threshold(scalars=name)
-
+        
+        
         # Determine color limits
         if clim is None:
             fmin = np.nanmin(static_field)
@@ -647,7 +652,9 @@ class PVDisplay(BaseDisplay):
             def on_update(obj: _AnimObject, phi: complex):
                 field_anim = obj.T(np.real(obj.field * phi))
                 obj.grid[name] = field_anim
-            self._objs.append(_AnimObject(field_flat, T, grid_no_nan, actor, on_update))
+                obj.fgrid[name] = obj.grid.threshold(scalars=name)[name]
+                #obj.fgrid replace with thresholded scalar data.
+            self._objs.append(_AnimObject(field_flat, T, grid, grid_no_nan, actor, on_update))
 
 
     def add_title(self, title: str) -> None:
