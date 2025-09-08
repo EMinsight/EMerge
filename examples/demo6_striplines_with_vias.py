@@ -14,7 +14,7 @@ mm = 0.001    # Define a millimeter
 th = 1.0      # mm
 
 model = em.Simulation('Stripline_test')
-model.check_version("1.0.2") # Checks version compatibility.
+model.check_version("1.0.3") # Checks version compatibility.
 
 # As usual we start by creating our layouter
 ly = em.geo.PCB(th, mm, em.GCS, em.lib.DIEL_RO4350B, trace_material=em.lib.MET_COPPER)
