@@ -15,12 +15,12 @@
 # along with this program; if not, see
 # <https://www.gnu.org/licenses/>.
 
-from numba.core import event, types
+from numba.core import event
 from numba import njit
 
 _COMPILE_MESSAGE = """
  [ EMERGE ]
-⚠  Numba is compiling optimized code; this may take a few minutes.
+⚠  Numba will be compiling optimized code in this first run; this may take a few minutes.
    • Additional functions may be compiled on-the-fly.
    • Compilation happens only once-subsequent runs load from cache.
    Please wait…"""

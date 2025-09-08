@@ -19,14 +19,12 @@ import numpy as np
 from ..microwave_bc import PEC, BoundaryCondition, RectangularWaveguide, RobinBC, PortBC, Periodic, MWBoundaryConditionSet
 from ....elements.nedelec2 import Nedelec2
 from ....elements.nedleg2 import NedelecLegrange2
-from ....mth.optimized import gaus_quad_tri
-from ....mth.pairing import pair_coordinates
 from ....material import Material
 from ....settings import Settings
 from scipy.sparse import csr_matrix
 from loguru import logger
 from ..simjob import SimJob
-from .periodicbc import gen_periodic_matrix
+
 from ....const import MU0, EPS0, C0
 
 
@@ -209,7 +207,11 @@ class Assembler:
 
         from .curlcurl import tet_mass_stiffness_matrices
         from .robinbc import assemble_robin_bc, assemble_robin_bc_excited
-
+        from ....mth.optimized import gaus_quad_tri
+        from ....mth.pairing import pair_coordinates
+        from .periodicbc import gen_periodic_matrix
+        from .robin_abc_order2 import abc_order_2_matrix
+        
         # PREDEFINE CONSTANTS
         W0 = 2*np.pi*frequency
         K0 = W0/C0
@@ -326,6 +328,15 @@ class Assembler:
                         logger.trace(f'..included force vector term with norm {np.linalg.norm(b_p):.3f}')
                     else:
                         Bempty = assemble_robin_bc(field, Bempty, tri_ids, gamma) # type: ignore
+                    
+                    ## Second order absorbing boundary correction
+                    if bc._isabc:
+                        if bc.order==2:
+                            c2 = bc.o2coeffs[bc.abctype][1]
+                            logger.debug('Implementing second order ABC correction.')
+                            mat = abc_order_2_matrix(field, tri_ids, 1j*c2/(K0))
+                            Bempty += mat
+                        
             B_p = field.generate_csr(Bempty)
             K = K + B_p
         
@@ -430,7 +441,10 @@ class Assembler:
         """
         from .curlcurl import tet_mass_stiffness_matrices
         from .robinbc import assemble_robin_bc
-
+        from ....mth.pairing import pair_coordinates
+        from .periodicbc import gen_periodic_matrix
+        from .robin_abc_order2 import abc_order_2_matrix
+        
         mesh = field.mesh
         w0 = 2*np.pi*frequency
         k0 = w0/C0
@@ -507,6 +521,14 @@ class Assembler:
                         ibasis = np.linalg.pinv(basis)
                     
                     Bempty = assemble_robin_bc(field, Bempty, tri_ids, gamma) # type: ignore
+                
+                ## Second order absorbing boundary correction
+                if bc._isabc:
+                    if bc.order==2:
+                        c2 = bc.o2coeffs[bc.abctype][1]
+                        logger.debug('Implementing second order ABC correction.')
+                        mat = abc_order_2_matrix(field, tri_ids, 1j*c2/k0)
+                        Bempty += mat
             B_p = field.generate_csr(Bempty)
             B = B + B_p
         

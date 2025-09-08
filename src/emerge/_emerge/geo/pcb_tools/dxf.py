@@ -325,8 +325,9 @@ def import_dxf(filename: str,
                unit: float | None = None,
                cs: CoordinateSystem | None = GCS,
                trace_material: Material = PEC) -> PCB:
+    
     polies = extract_polygons_with_meta(filename)
-    prop = inspect_pcb_from_dxf('LP5G_Chb3.dxf')
+    prop = inspect_pcb_from_dxf(filename)
     
     if prop['units']['name'] == 'unitless':
         if unit is None:
@@ -335,7 +336,7 @@ def import_dxf(filename: str,
     else:
         pcb_unit = 0.001 * prop['units']['to_mm']
     
-    if prop['thickness']==0.0:
+    if prop['thickness'] == 0.0:
         if thickness is None:
             raise RouteException(f'Cannot generate PCB because no thickness is found int he DXF file and none is provided in the import_dxf function.')
         pcb_thickness = thickness
@@ -346,7 +347,7 @@ def import_dxf(filename: str,
         cs = GCS
     
     zs = sorted(list(set([pol['z'] for pol in polies])))
-    pcb = PCB(pcb_thickness, pcb_unit, cs, material=material, trace_material=trace_material, _zs=zs)
+    pcb = PCB(pcb_thickness, pcb_unit, cs, material=material, trace_material=trace_material)
     
     for poly in polies:
         xs, ys = zip(*poly['ring'])

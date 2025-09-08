@@ -17,11 +17,10 @@
 
 import numpy as np
 from ...elements.nedleg2 import NedelecLegrange2
-from ...mth.integrals import surface_integral
-
 
 def compute_avg_power_flux(field: NedelecLegrange2, mode: np.ndarray, k0: float, ur: np.ndarray, beta: float):
-
+    from ...mth.integrals import surface_integral
+    
     Efunc = field.interpolate_Ef(mode)
     Hfunc = field.interpolate_Hf(mode, k0, ur, beta)
     nx, ny, nz = field.mesh.normals[:,0]
@@ -37,7 +36,8 @@ def compute_avg_power_flux(field: NedelecLegrange2, mode: np.ndarray, k0: float,
     return Ptot
 
 def compute_peak_power_flux(field: NedelecLegrange2, mode: np.ndarray, k0: float, ur: np.ndarray, beta: float):
-
+    from ...mth.integrals import surface_integral
+    
     Efunc = field.interpolate_Ef(mode)
     Hfunc = field.interpolate_Hf(mode, k0, ur, beta)
     nx, ny, nz = field.mesh.normals[:,0]

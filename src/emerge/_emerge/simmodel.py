@@ -547,7 +547,7 @@ class Simulation:
             print(_GMSH_ERROR_TEXT)
             raise
         
-        self.mesh.update(self.mesher._get_periodic_bcs())
+        self.mesh._pre_update(self.mesher._get_periodic_bcs())
         self.mesh.exterior_face_tags = self.mesher.domain_boundary_face_tags
         gmsh.model.occ.synchronize()
         

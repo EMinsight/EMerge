@@ -18,24 +18,13 @@
 from __future__ import annotations
 import gmsh # type: ignore
 import numpy as np
-from numba import njit, f8 # type: ignore
 from .mesher import Mesher
 from typing import Union, List, Tuple, Callable, Any
 from collections import defaultdict
 from .geometry import GeoVolume
-from .mth.optimized import outward_normal
 from loguru import logger
-from functools import cache
 from .bc import Periodic
-from .mth.pairing import pair_coordinates
 from .material import Material
-
-@njit(f8(f8[:], f8[:], f8[:]), cache=True, nogil=True)
-def area(x1: np.ndarray, x2: np.ndarray, x3: np.ndarray):
-    e1 = x2 - x1
-    e2 = x3 - x1
-    av = np.array([e1[1]*e2[2] - e1[2]*e2[1], e1[2]*e2[0] - e1[0]*e2[2], e1[0]*e2[1] - e1[1]*e2[0]])
-    return np.sqrt(av[0]**2 + av[1]**2 + av[2]**2)/2
 
 def shortest_distance(point_cloud):
     """
@@ -172,7 +161,7 @@ class Mesh3D(Mesh):
     def n_nodes(self) -> int:
         '''Return the number of nodes'''
         return self.nodes.shape[1]
-
+    
     def get_edge(self, i1: int, i2: int, skip: bool = False) -> int:
         '''Return the edge index given the two node indices'''
         if i1==i2:
@@ -204,21 +193,6 @@ class Mesh3D(Mesh):
         if output is None:
             raise ValueError(f'There is no tetrahedron with indices {i1}, {i2}, {i3}, {i4}')
         return output
-    
-    def boundary_triangles(self, dimtags: list[tuple[int, int]] | None = None) -> np.ndarray:
-        if dimtags is None:
-            outputtags = []
-            for tags in self.ftag_to_tri.values():
-                outputtags.extend(tags)
-            return np.array(outputtags)
-        else:
-            dts = []
-            for dimtag in dimtags:
-                if dimtag[0]==2:
-                    dts.append(dimtag)
-                elif dimtag[0]==3:
-                    dts.extend(gmsh.model.get_boundary(dimtags))
-            return self.get_triangles([tag[1] for tag in dts])
         
 
     def get_tetrahedra(self, vol_tags: Union[int, list[int]]) -> np.ndarray:
@@ -317,7 +291,16 @@ class Mesh3D(Mesh):
         return np.array(sorted(list(set(edges))))
     
     
-    def update(self, periodic_bcs: list[Periodic] | None = None):
+    def _pre_update(self, periodic_bcs: list[Periodic] | None = None):
+        """Builds the mesh data properties
+
+        Args:
+            periodic_bcs (list[Periodic] | None, optional): A list of periodic boundary conditions. Defaults to None.
+
+        Returns:
+            None: None
+        """
+        from .mth.optimized import area
         
         logger.trace('Generating mesh data.')
         if periodic_bcs is None:
@@ -357,7 +340,7 @@ class Mesh3D(Mesh):
     
         for bc in periodic_bcs:
             logger.trace(f'reassigning ordered node numbers for periodic boundary {bc}')
-            nodemap, ids1, ids2 = self._derive_node_map(bc)
+            nodemap, ids1, ids2 = self._pre_derive_node_map(bc)
             nodemap = {int(a): int(b) for a,b in nodemap.items()}
             self.nodes[:,ids2] = self.nodes[:,ids1]
             for itet in range(self.tets.shape[1]):
@@ -508,6 +491,11 @@ class Mesh3D(Mesh):
 
         self.defined = True
         
+
+        ############################################################
+        #                            GMSH CACHE                   #
+        ############################################################
+
         for dim in (0,1,2,3):
             dts= gmsh.model.get_entities(dim)
             for dt in dts:
@@ -519,7 +507,7 @@ class Mesh3D(Mesh):
 
     ## Higher order functions
 
-    def _derive_node_map(self, bc: Periodic) -> tuple[dict[int, int], np.ndarray, np.ndarray]:
+    def _pre_derive_node_map(self, bc: Periodic) -> tuple[dict[int, int], np.ndarray, np.ndarray]:
         """Computes an old to new node index mapping that preserves global sorting
 
         Since basis function field direction is based on the order of indices in tetrahedron
@@ -534,6 +522,8 @@ class Mesh3D(Mesh):
             tuple[dict[int, int], np.ndarray, np.ndarray]: The node index mapping and the node index arrays
         """
 
+        from .mth.pairing import pair_coordinates
+        
         node_ids_1 = []
         node_ids_2 = []
 
@@ -566,7 +556,7 @@ class Mesh3D(Mesh):
         return conv_map, np.array(node_ids_2_unsorted), np.array(node_ids_2_sorted)
 
 
-    def retreive(self, volumes: list[GeoVolume]) -> list[Material]:
+    def _get_material_assignment(self, volumes: list[GeoVolume]) -> list[Material]:
         '''Retrieve the material properties of the geometry'''
         #arry = np.zeros((3,3,self.n_tets,), dtype=np.complex128)
         for vol in volumes:
@@ -818,6 +808,8 @@ class SurfaceMesh(Mesh):
     def update(self) -> None:
         ## First Edges
 
+        from .mth.optimized import outward_normal, area
+        
         edges = set()
         for i in range(self.n_tris):
             i1, i2, i3 = self.tris[:,i]

@@ -958,6 +958,7 @@ class PCB:
                  stack: list[PCBLayer] = None,
                  name: str | None = None,
                  trace_thickness: float | None = None,
+                 zs: np.ndarray | None = None
                  ):
         """Creates a new PCB layout class instance
 
@@ -975,8 +976,11 @@ class PCB:
 
         self.thickness: float = thickness
         self._stack: list[PCBLayer] = []
-        
-        if stack is not None:
+        if zs is not None:
+            self._zs = zs
+            self.thickness = np.max(zs)-np.min(zs)
+            self._stack = [PCBLayer(th, material) for th in np.diff(self._zs)]
+        elif stack is not None:
             self._stack = stack
             ths = [ly.th for ly in stack]
             zbot = -sum(ths)

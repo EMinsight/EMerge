@@ -226,7 +226,6 @@ def tri_coefficients(vxs, vys):
     c2 = x1-x3
     c3 = x2-x1
 
-    #A = 0.5*(b1*c2 - b2*c1)
     sA = 0.5*(((x1-x3)*(y2-y1) - (x1-x2)*(y3-y1)))
     sign = np.sign(sA)
     A = np.abs(sA)
@@ -444,11 +443,11 @@ def _matrix_builder(nodes, tris, edges, tri_to_field, ur, er, k0):
         ert = er[:,:,itri]
 
         # Construct a local mapping to global triangle orientations
-        local_tri_map = local_tri_to_edgeid(itri, tris, edges, tri_to_edge)
+        local_edge_map = local_tri_to_edgeid(itri, tris, edges, tri_to_edge)
 
         # Construct the local edge map
         tri_nodes = nodes[:, tris[:,itri]]
-        Esub, Bsub = generalized_matrix_GQ(tri_nodes,local_tri_map, matinv(urt), ert, k0)
+        Esub, Bsub = generalized_matrix_GQ(tri_nodes,local_edge_map, matinv(urt), ert, k0)
         
         indices = tri_to_field[:, itri]
         for ii in range(14):

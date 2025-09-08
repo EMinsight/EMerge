@@ -471,7 +471,10 @@ class PVDisplay(BaseDisplay):
                             line_width=line_width, 
                             show_edges=show_edges, 
                             pickable=True, 
+                            smooth_shading=False,
+                            split_sharp_edges=True,
                             style=style)
+        
         mesh_obj = self.mesh(obj)
         
         if mesh is True and volume_mesh is True:
@@ -485,7 +488,7 @@ class PVDisplay(BaseDisplay):
             mapper.SetRelativeCoincidentTopologyPolygonOffsetParameters(1,0.5)
         
         self._plot.add_mesh(self._volume_edges(_select(obj)), color='#000000', line_width=2, show_edges=True)
-
+        
         if isinstance(obj, GeoObject) and label:
             points = []
             labels = []

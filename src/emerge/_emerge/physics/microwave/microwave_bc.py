@@ -19,18 +19,16 @@ from __future__ import annotations
 import numpy as np
 from loguru import logger
 from typing import Callable, Literal
+from dataclasses import dataclass
+from collections import defaultdict
 from ...selection import Selection, FaceSelection
 from ...cs import CoordinateSystem, Axis, GCS, _parse_axis
 from ...coord import Line
 from ...geometry import GeoSurface, GeoObject
-from dataclasses import dataclass
-from collections import defaultdict
 from ...bc import BoundaryCondition, BoundaryConditionSet, Periodic
 from ...periodic import PeriodicCell, HexCell, RectCell
 from ...material import Material
 from ...const import Z0, C0, EPS0, MU0
-
-
 
 ############################################################
 #                     UTILITY FUNCTIONS                    #
@@ -125,6 +123,7 @@ class RobinBC(BoundaryCondition):
     _include_stiff: bool = False
     _include_mass: bool = False
     _include_force: bool = False
+    _isabc: bool = False
 
     def __init__(self, selection: GeoSurface | Selection):
         """A Generalization of any boundary condition of the third kind (Robin).
@@ -264,11 +263,13 @@ class AbsorbingBoundary(RobinBC):
     _include_stiff: bool = True
     _include_mass: bool = True
     _include_force: bool = False
-
+    _isabc: bool = True
+    
     def __init__(self,
                  face: FaceSelection | GeoSurface,
-                 order: int = 1,
-                 origin: tuple | None = None):
+                 order: int = 2,
+                 origin: tuple | None = None,
+                 abctype: Literal['A','B','C','D','E'] = 'B'):
         """Creates an AbsorbingBoundary condition.
 
         Currently only a first order boundary condition is possible. Second order will be supported later.
@@ -286,7 +287,15 @@ class AbsorbingBoundary(RobinBC):
         self.order: int = order
         self.origin: tuple = origin
         self.cs: CoordinateSystem = GCS
-
+        
+        self.abctype: Literal['A','B','C','D','E']  = abctype
+        self.o2coeffs: tuple[float, float] = {'A': (1.0, -0.5),
+                                              'B': (1.00023, -0.51555),
+                                              'C': (1.03084, -0.73631),
+                                              'D': (1.06103, -0.84883),
+                                              'E': (1.12500, -1.00000)
+                                              }
+        
     def get_basis(self) -> np.ndarray:
         return np.eye(3)
 
@@ -306,15 +315,10 @@ class AbsorbingBoundary(RobinBC):
         Returns:
             complex: The γ-constant
         """
-        if self.order == 2:
-            
-            p0 = 1.06103
-            p2 = -0.84883
-            ky = k0*0.5
-            return 1j*k0*p0 - 1j*p2*ky**2/k0
-        else:
-            Factor = 1
-            return 1j*self.get_beta(k0)*Factor
+        if self.order==1:
+            return 1j*k0
+        
+        return 1j*k0*self.o2coeffs[self.abctype][0]
     
    
 @dataclass

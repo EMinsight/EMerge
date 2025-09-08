@@ -19,9 +19,7 @@ from __future__ import annotations
 from ..mesh3d import Mesh3D
 import numpy as np
 from typing import Callable
-from scipy.sparse import csr_matrix # type: ignore
 
-from ..mth.optimized import matmul
 
 class FEMBasis:
 
@@ -48,6 +46,8 @@ class FEMBasis:
     
     def interpolate_Ef(self, field: np.ndarray, basis: np.ndarray | None = None, origin: np.ndarray | None = None, tetids: np.ndarray | None = None) -> Callable:
         '''Generates the Interpolation function as a function object for a given coordiante basis and origin.'''
+        from ..mth.optimized import matmul
+        
         if basis is None:
             basis = np.eye(3)
 
@@ -124,7 +124,8 @@ class FEMBasis:
         N = self.n_tri_dofs**2
         return slice(itri*N,(itri+1)*N)
     
-    def generate_csr(self, data: np.ndarray) -> csr_matrix:
+    def generate_csr(self, data: np.ndarray):
+        from scipy.sparse import csr_matrix # type: ignore
         ids = np.argwhere(data!=0)[:,0]
         return csr_matrix((data[ids], (self._rows[ids], self._cols[ids])), shape=(self.n_field, self.n_field))
     ### QUANTITIES

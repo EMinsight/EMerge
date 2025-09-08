@@ -29,6 +29,10 @@ import platform
 import time
 from typing import Literal, Callable
 from enum import Enum
+import importlib.util
+
+def module_exists(name: str) -> bool:
+    return importlib.util.find_spec(name) is not None
 
 _PARDISO_AVAILABLE = False
 _UMFPACK_AVAILABLE = False
@@ -52,25 +56,26 @@ if 'arm' not in platform.processor():
 #                          UMFPACK                         #
 ############################################################
 
-
-try:
-    import scikits.umfpack as um # type: ignore
-    _UMFPACK_AVAILABLE = True
-except ModuleNotFoundError:
-    logger.debug('UMFPACK not found, defaulting to SuperLU')
+if module_exists('scikits.umfpack'):
+    try:
+        import scikits.umfpack as um # type: ignore
+        _UMFPACK_AVAILABLE = True
+    except ModuleNotFoundError:
+        logger.debug('UMFPACK not found, defaulting to SuperLU')
 
 ############################################################
 #                           CUDSS                          #
 ############################################################
 
-try:
-    from .solve_interfaces.cudss_interface import CuDSSInterface
-    _CUDSS_AVAILABLE = True
-except ModuleNotFoundError:
-    pass
-except ImportError as e:
-    logger.error('Error while importing CuDSS dependencies:')
-    logger.exception(e)
+if module_exists('cupy'):
+    try:
+        from .solve_interfaces.cudss_interface import CuDSSInterface
+        _CUDSS_AVAILABLE = True
+    except ModuleNotFoundError:
+        pass
+    except ImportError as e:
+        logger.error('Error while importing CuDSS dependencies:')
+        logger.exception(e)
     
 ############################################################
 #                       SOLVE REPORT                       #

@@ -25,7 +25,6 @@ from ...elements.nedelec2 import Nedelec2
 from ...solver import DEFAULT_ROUTINE, SolveRoutine
 from ...system import called_from_main_function
 from ...selection import FaceSelection
-from ...mth.optimized import compute_distances
 from ...settings import Settings
 from .microwave_bc import MWBoundaryConditionSet, PEC, ModalPort, LumpedPort, PortBC
 from .microwave_data import MWData
@@ -101,21 +100,6 @@ def shortest_path(xyz1: np.ndarray, xyz2: np.ndarray, Npts: int) -> np.ndarray:
     path = (1 - t) * p1[:, np.newaxis] + t * p2[:, np.newaxis]
 
     return path
-
-def _pick_central(vertices: np.ndarray) -> np.ndarray:
-    """Computes the coordinate in the vertex set that has the shortest square distance to all other points.
-    
-
-    Args:
-        vertices (np.ndarray): The set of coordinates [3,:]
-
-    Returns:
-        np.ndarray: The most central point
-    """
-    Ds = compute_distances(vertices[0,:], vertices[1,:], vertices[2,:])
-    sumDs = np.sum(Ds**2, axis=1)
-    id_central = np.argwhere(sumDs==np.min(sumDs)).flatten()[0]
-    return vertices[:, id_central].squeeze()
     
 class Microwave3D:
     """The Electrodynamics time harmonic physics class.
@@ -248,6 +232,14 @@ class Microwave3D:
         self.set_frequency(np.linspace(fmin, fmax, Npoints))
     
     def fdense(self, Npoints: int) -> np.ndarray:
+        """Return a resampled version of the current frequency range
+
+        Args:
+            Npoints (int): The new number of points
+
+        Returns:
+            np.ndarray: The new frequency axis
+        """
         if len(self.frequencies) == 1:
             raise ValueError('Only 1 frequency point known. At least two need to be defined.')
         fmin = min(self.frequencies)
@@ -497,7 +489,7 @@ class Microwave3D:
         if freq is None:
             freq = self.frequencies[0]
         
-        materials = self.mesh.retreive(self.mesher.volumes)
+        materials = self.mesh._get_material_assignment(self.mesher.volumes)
 
         ertet = np.zeros((3,3,self.mesh.n_tets), dtype=np.complex128)
         tandtet = np.zeros((3,3,self.mesh.n_tets), dtype=np.complex128)
@@ -655,7 +647,7 @@ class Microwave3D:
         if self.basis is None:
             raise SimulationError('Cannot proceed, the simulation basis class is undefined.')
 
-        materials = self.mesh.retreive(self.mesher.volumes)
+        materials = self.mesh._get_material_assignment(self.mesher.volumes)
 
         ### Does this move
         logger.debug('Initializing frequency domain sweep.')
@@ -853,7 +845,7 @@ class Microwave3D:
         if self.basis is None:
             raise SimulationError('Cannot proceed. The simulation basis class is undefined.')
 
-        materials = self.mesh.retreive(self.mesher.volumes)
+        materials = self.mesh._get_material_assignment(self.mesher.volumes)
         
         # er = self.mesh.retreive(lambda mat,x,y,z: mat.fer3d_mat(x,y,z), self.mesher.volumes)
         # ur = self.mesh.retreive(lambda mat,x,y,z: mat.fur3d_mat(x,y,z), self.mesher.volumes)

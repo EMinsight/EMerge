@@ -312,34 +312,31 @@ def compute_bc_entries_excited(vertices_global, tris, Bmat, Bvec, surf_triangle_
 
 
 @njit(c16[:,:](f8[:,:], f8[:], c16), cache=True, nogil=True, parallel=False)
-def ned2_tri_stiff(vertices, edge_lengths, gamma):
+def ned2_tri_stiff(glob_vertices, edge_lengths, gamma):
     ''' Nedelec-2 Triangle Stiffness matrix and forcing vector (For Boundary Condition of the Third Kind)
 
     '''
     local_edge_map = np.array([[0,1,0],[1,2,2]])
     Bmat = np.zeros((8,8), dtype=np.complex128)
 
-    xs = vertices[0,:]
-    ys = vertices[1,:]
-    zs = vertices[2,:]
-
-    ax1 = np.array([xs[1]-xs[0], ys[1]-ys[0], zs[1]-zs[0]])
-    ax2 = np.array([xs[2]-xs[0], ys[2]-ys[0], zs[2]-zs[0]])
-    ax1 = ax1/np.linalg.norm(ax1)
-    ax2 = ax2/np.linalg.norm(ax2)
-
-    axn = cross(ax1, ax2)
-    ax2 = -cross(axn, ax1)
+    orig = glob_vertices[:,0]
+    v2 = glob_vertices[:,1]
+    v3 = glob_vertices[:,2]
+    
+    e1 = v2-orig
+    e2 = v3-orig
+    zhat = normalize(cross(e1, e2))
+    xhat = normalize(e1)
+    yhat = normalize(cross(zhat, xhat))
     basis = np.zeros((3,3), dtype=np.float64)
-    basis[:,0] = ax1
-    basis[:,1] = ax2
-    basis[:,2] = axn
-    basis = np.linalg.pinv(basis)
-    lcs_vertices = basis @ np.ascontiguousarray(vertices)
-
+    basis[0,:] = xhat
+    basis[1,:] = yhat
+    basis[2,:] = zhat
+    lcs_vertices = optim_matmul(basis, glob_vertices - orig[:,np.newaxis])
+    
     xs = lcs_vertices[0,:]
     ys = lcs_vertices[1,:]
-
+    
     x1, x2, x3 = xs
     y1, y2, y3 = ys
 
@@ -359,7 +356,7 @@ def ned2_tri_stiff(vertices, edge_lengths, gamma):
     GLs = (GL1, GL2, GL3)
 
     Area = 0.5 * np.abs((x1 - x3) * (y2 - y1) - (x1 - x2) * (y3 - y1))
-
+    
     letters = [1,2,3,4,5,6]
 
     tA, tB, tC = letters[0], letters[1], letters[2]
@@ -367,11 +364,12 @@ def ned2_tri_stiff(vertices, edge_lengths, gamma):
     
     Lt1, Lt2 = Ds[2, 0], Ds[1, 0]
     
+
     COEFF = gamma/(2*Area)**2
     AREA_COEFF = AREA_COEFF_CACHE_BASE * Area
     for ei in range(3):
         ei1, ei2 = local_edge_map[:, ei]
-        Li = edge_lengths[ei]
+        Li = Ds[ei1, ei2]
         
         A = letters[ei1]
         B = letters[ei2]
@@ -381,24 +379,25 @@ def ned2_tri_stiff(vertices, edge_lengths, gamma):
 
         for ej in range(3):
             ej1, ej2 = local_edge_map[:, ej]
-            Lj = edge_lengths[ej]
+            Lj = Ds[ej1, ej2]
 
             C = letters[ej1]
             D = letters[ej2]
 
             GC = GLs[ej1]
             GD = GLs[ej2]
+
             DAC = dot(GA,GC)
             DAD = dot(GA,GD)
             DBC = dot(GB,GC)
             DBD = dot(GB,GD)
             LL = Li*Lj
-
-            Bmat[ei,ej] += LL*COEFF*(AREA_COEFF[A,B,C,D]*DAC-AREA_COEFF[A,B,C,C]*DAD-AREA_COEFF[A,A,C,D]*DBC+AREA_COEFF[A,A,C,C]*DBD)
-            Bmat[ei,ej+4] += LL*COEFF*(AREA_COEFF[A,B,D,D]*DAC-AREA_COEFF[A,B,C,D]*DAD-AREA_COEFF[A,A,D,D]*DBC+AREA_COEFF[A,A,C,D]*DBD)
-            Bmat[ei+4,ej] += LL*COEFF*(AREA_COEFF[B,B,C,D]*DAC-AREA_COEFF[B,B,C,C]*DAD-AREA_COEFF[A,B,C,D]*DBC+AREA_COEFF[A,B,C,C]*DBD)
-            Bmat[ei+4,ej+4] += LL*COEFF*(AREA_COEFF[B,B,D,D]*DAC-AREA_COEFF[B,B,C,D]*DAD-AREA_COEFF[A,B,D,D]*DBC+AREA_COEFF[A,B,C,D]*DBD)
-        
+            
+            Bmat[ei,ej] += LL*(AREA_COEFF[A,B,C,D]*DAC-AREA_COEFF[A,B,C,C]*DAD-AREA_COEFF[A,A,C,D]*DBC+AREA_COEFF[A,A,C,C]*DBD)
+            Bmat[ei,ej+4] += LL*(AREA_COEFF[A,B,D,D]*DAC-AREA_COEFF[A,B,C,D]*DAD-AREA_COEFF[A,A,D,D]*DBC+AREA_COEFF[A,A,C,D]*DBD)
+            Bmat[ei+4,ej] += LL*(AREA_COEFF[B,B,C,D]*DAC-AREA_COEFF[B,B,C,C]*DAD-AREA_COEFF[A,B,C,D]*DBC+AREA_COEFF[A,B,C,C]*DBD)
+            Bmat[ei+4,ej+4] += LL*(AREA_COEFF[B,B,D,D]*DAC-AREA_COEFF[B,B,C,D]*DAD-AREA_COEFF[A,B,D,D]*DBC+AREA_COEFF[A,B,C,D]*DBD)
+            
         FA = dot(GA,GtC)
         FB = dot(GA,GtA)
         FC = dot(GB,GtC)
@@ -406,15 +405,15 @@ def ned2_tri_stiff(vertices, edge_lengths, gamma):
         FE = dot(GA,GtB)
         FF = dot(GB,GtB)
 
-        Bmat[ei,3] += Li*Lt1*COEFF*(AREA_COEFF[A,B,tA,tB]*FA-AREA_COEFF[A,B,tB,tC]*FB-AREA_COEFF[A,A,tA,tB]*FC+AREA_COEFF[A,A,tB,tC]*FD)
-        Bmat[ei,7] += Li*Lt2*COEFF*(AREA_COEFF[A,B,tB,tC]*FB-AREA_COEFF[A,B,tC,tA]*FE-AREA_COEFF[A,A,tB,tC]*FD+AREA_COEFF[A,A,tC,tA]*FF)
-        Bmat[3,ei] += Lt1*Li*COEFF*(AREA_COEFF[tA,tB,A,B]*FA-AREA_COEFF[tA,tB,A,A]*FC-AREA_COEFF[tB,tC,A,B]*FB+AREA_COEFF[tB,tC,A,A]*FD)
-        Bmat[7,ei] += Lt2*Li*COEFF*(AREA_COEFF[tB,tC,A,B]*FB-AREA_COEFF[tB,tC,A,A]*FD-AREA_COEFF[tC,tA,A,B]*FE+AREA_COEFF[tC,tA,A,A]*FF)
-        Bmat[ei+4,3] += Li*Lt1*COEFF*(AREA_COEFF[B,B,tA,tB]*FA-AREA_COEFF[B,B,tB,tC]*FB-AREA_COEFF[A,B,tA,tB]*FC+AREA_COEFF[A,B,tB,tC]*FD)
-        Bmat[ei+4,7] += Li*Lt2*COEFF*(AREA_COEFF[B,B,tB,tC]*FB-AREA_COEFF[B,B,tC,tA]*FE-AREA_COEFF[A,B,tB,tC]*FD+AREA_COEFF[A,B,tC,tA]*FF)
-        Bmat[3,ei+4] += Lt1*Li*COEFF*(AREA_COEFF[tA,tB,B,B]*FA-AREA_COEFF[tA,tB,A,B]*FC-AREA_COEFF[tB,tC,B,B]*FB+AREA_COEFF[tB,tC,A,B]*FD)
-        Bmat[7,ei+4] += Lt2*Li*COEFF*(AREA_COEFF[tB,tC,B,B]*FB-AREA_COEFF[tB,tC,A,B]*FD-AREA_COEFF[tC,tA,B,B]*FE+AREA_COEFF[tC,tA,A,B]*FF)
-      
+        Bmat[ei,3] += Li*Lt1*(AREA_COEFF[A,B,tA,tB]*FA-AREA_COEFF[A,B,tB,tC]*FB-AREA_COEFF[A,A,tA,tB]*FC+AREA_COEFF[A,A,tB,tC]*FD)
+        Bmat[ei,7] += Li*Lt2*(AREA_COEFF[A,B,tB,tC]*FB-AREA_COEFF[A,B,tC,tA]*FE-AREA_COEFF[A,A,tB,tC]*FD+AREA_COEFF[A,A,tC,tA]*FF)
+        Bmat[3,ei] += Lt1*Li*(AREA_COEFF[tA,tB,A,B]*FA-AREA_COEFF[tA,tB,A,A]*FC-AREA_COEFF[tB,tC,A,B]*FB+AREA_COEFF[tB,tC,A,A]*FD)
+        Bmat[7,ei] += Lt2*Li*(AREA_COEFF[tB,tC,A,B]*FB-AREA_COEFF[tB,tC,A,A]*FD-AREA_COEFF[tC,tA,A,B]*FE+AREA_COEFF[tC,tA,A,A]*FF)
+        Bmat[ei+4,3] += Li*Lt1*(AREA_COEFF[B,B,tA,tB]*FA-AREA_COEFF[B,B,tB,tC]*FB-AREA_COEFF[A,B,tA,tB]*FC+AREA_COEFF[A,B,tB,tC]*FD)
+        Bmat[ei+4,7] += Li*Lt2*(AREA_COEFF[B,B,tB,tC]*FB-AREA_COEFF[B,B,tC,tA]*FE-AREA_COEFF[A,B,tB,tC]*FD+AREA_COEFF[A,B,tC,tA]*FF)
+        Bmat[3,ei+4] += Lt1*Li*(AREA_COEFF[tA,tB,B,B]*FA-AREA_COEFF[tA,tB,A,B]*FC-AREA_COEFF[tB,tC,B,B]*FB+AREA_COEFF[tB,tC,A,B]*FD)
+        Bmat[7,ei+4] += Lt2*Li*(AREA_COEFF[tB,tC,B,B]*FB-AREA_COEFF[tB,tC,A,B]*FD-AREA_COEFF[tC,tA,B,B]*FE+AREA_COEFF[tC,tA,A,B]*FF)
+    
     H1 = dot(GtA,GtC)
     H2 = dot(GtA,GtA)
     H3 = dot(GtA,GtB)
@@ -423,8 +422,8 @@ def ned2_tri_stiff(vertices, edge_lengths, gamma):
     Bmat[3,7] += Lt1*Lt2*(AREA_COEFF[tA,tB,tB,tC]*H1-AREA_COEFF[tA,tB,tC,tA]*dot(GtB,GtC)-AREA_COEFF[tB,tC,tB,tC]*H2+AREA_COEFF[tB,tC,tC,tA]*H3)
     Bmat[7,3] += Lt2*Lt1*(AREA_COEFF[tB,tC,tA,tB]*H1-AREA_COEFF[tB,tC,tB,tC]*H2-AREA_COEFF[tC,tA,tA,tB]*dot(GtB,GtC)+AREA_COEFF[tC,tA,tB,tC]*H3)
     Bmat[7,7] += Lt2*Lt2*(AREA_COEFF[tB,tC,tB,tC]*H2-AREA_COEFF[tB,tC,tC,tA]*H3-AREA_COEFF[tC,tA,tB,tC]*H3+AREA_COEFF[tC,tA,tC,tA]*dot(GtB,GtB))
-    
 
+    Bmat = Bmat * COEFF
     return Bmat
 
 @njit(c16[:](f8[:,:], i8[:,:], c16[:], f8[:,:], i8[:], c16), cache=True, nogil=True, parallel=False)

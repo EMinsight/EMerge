@@ -19,8 +19,6 @@ from __future__ import annotations
 import numpy as np
 from ..mesh3d import SurfaceMesh
 from .femdata import FEMBasis
-from .ned2_interp import ned2_tri_interp_full, ned2_tri_interp_curl
-from ..mth.optimized import matinv
 from ..cs import CoordinateSystem
 from ..const import MU0, C0
 
@@ -74,6 +72,8 @@ class FieldFunctionClass:
         return np.array([Fx, Fy, Fz])*self.constant
     
     def calcE(self, xs: np.ndarray, ys: np.ndarray, usenan: bool = False) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        from .ned2_interp import ned2_tri_interp_full
+        
         coordinates = np.array([xs, ys])
         vals = ned2_tri_interp_full(coordinates, 
                                self.field, 
@@ -85,6 +85,7 @@ class FieldFunctionClass:
         return vals
     
     def calcH(self, xs: np.ndarray, ys: np.ndarray, usenan: bool = False) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        from .ned2_interp import ned2_tri_interp_curl
         coordinates = np.array([xs, ys])
         
         vals = ned2_tri_interp_curl(coordinates, 
@@ -176,6 +177,7 @@ class NedelecLegrange2(FEMBasis):
 
     def interpolate_Hf(self, field: np.ndarray, k0: float, ur: np.ndarray, beta: float) -> FieldFunctionClass:
         '''Generates the Interpolation function as a function object for a given coordiante basis and origin.'''
+        from ..mth.optimized import matinv
         constant = 1j / ((k0*C0)*MU0)
         urinv = np.zeros_like(ur)
         
@@ -185,6 +187,7 @@ class NedelecLegrange2(FEMBasis):
         return FieldFunctionClass(field, self.cs, self.local_nodes, self.mesh.tris, self.tri_to_field, 'H', urinv, beta, constant)
     
     def tri_interpolate(self, field, xs: np.ndarray, ys: np.ndarray, usenan: bool = False) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        from .ned2_interp import ned2_tri_interp_full
         coordinates = np.array([xs, ys])
         vals = ned2_tri_interp_full(coordinates, 
                                field, 
@@ -196,6 +199,7 @@ class NedelecLegrange2(FEMBasis):
         return vals
     
     def tri_interpolate_curl(self, field, xs: np.ndarray, ys: np.ndarray, diadic: np.ndarray | None = None, beta: float = 0.0, usenan: bool = False) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        from .ned2_interp import ned2_tri_interp_curl
         coordinates = np.array([xs, ys])
         if diadic is None:
             diadic = np.eye(3)[:,:,np.newaxis()] * np.ones((self.mesh.n_tris)) # type: ignore

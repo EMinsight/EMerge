@@ -24,66 +24,7 @@ from typing import Generator, Callable
 from ..selection import FaceSelection
 from typing import Literal
 from functools import reduce
-from numba import njit
 
-@njit(cache=True)
-def _subsample_coordinates(xs: np.ndarray, ys: np.ndarray, tolerance: float, xmin: float) -> tuple[np.ndarray, np.ndarray]:
-    """This function takes a set of x and y coordinates in a finely sampled set and returns a reduced
-    set of numbers that traces the input curve within a provided tolerance.
-
-    Args:
-        xs (np.ndarray): The set of X-coordinates
-        ys (np.ndarray): The set of Y-coordinates
-        tolerance (float): The maximum deviation of the curve in meters
-        xmin (float): The minimal distance to the next point.
-
-    Returns:
-        np.ndarray: The output X-coordinates
-        np.ndarray: The output Y-coordinates
-    """
-    N = xs.shape[0]
-    ids = np.zeros((N,), dtype=np.int32)
-    store_index = 1
-    start_index = 0
-    final_index = 0
-    for iteration in range(N):
-        i1 = start_index
-        done = 0
-        for i2 in range(i1+1,N):
-            x_true = xs[i1:i2+1]
-            y_true = ys[i1:i2+1]
-
-            x_f = np.linspace(xs[i1],xs[i2], i2-i1+1)
-            y_f = np.linspace(ys[i1],ys[i2], i2-i1+1)
-            error = np.max(np.sqrt((x_f-x_true)**2 + (y_f-y_true)**2))
-            ds = np.sqrt((xs[i2]-xs[i1])**2 + (ys[i2]-ys[i1])**2)
-            # If at the end
-            if i2==N-1: 
-                ids[store_index] = i2-1
-                final_index = store_index + 1
-                done = 1
-                break
-            # If not yet past the minimum distance, accumulate more
-            if ds < xmin:
-                continue
-            # If the end is less than a minimum distance
-            if np.sqrt((ys[-1]-ys[i2])**2 + (xs[-1]-xs[i2])**2) < xmin:
-                imid = i1 + (N-1-i1)//2
-                ids[store_index] = imid
-                ids[store_index+1] = N-1
-                final_index = store_index + 2
-                done = 1
-                break
-            if error < tolerance:
-                continue
-            else:
-                ids[store_index] = i2-1
-                start_index = i2
-                store_index = store_index + 1
-                break
-        if done==1:
-            break
-    return xs[ids[0:final_index]], ys[ids[0:final_index]]
 
 def _discretize_curve(xfunc: Callable, yfunc: Callable, 
                       t0: float, t1: float, xmin: float, tol: float=1e-4) -> tuple[np.ndarray, np.ndarray]:
@@ -100,6 +41,8 @@ def _discretize_curve(xfunc: Callable, yfunc: Callable,
     Returns:
         tuple[np.ndarray, np.ndarray]: _description_
     """
+    from ..mth.optimized import _subsample_coordinates
+    
     td = np.linspace(t0, t1, 10001)
     xs = xfunc(td)
     ys = yfunc(td)

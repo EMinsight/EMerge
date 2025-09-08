@@ -19,9 +19,6 @@ from __future__ import annotations
 import numpy as np
 from ..mesh3d import Mesh3D
 from .femdata import FEMBasis
-from .ned2_interp import ned2_tet_interp, ned2_tet_interp_curl
-from ..mth.optimized import local_mapping
-from .index_interp import index_interp
 
 ############### Nedelec2 Class
 
@@ -72,6 +69,7 @@ class Nedelec2(FEMBasis):
         ''' 
         Interpolate the provided field data array at the given xs, ys and zs coordinates
         '''
+        from .ned2_interp import ned2_tet_interp
         if tetids is None:
             tetids = self._all_tet_ids
         vals = ned2_tet_interp(np.array([xs, ys, zs]), field, self.mesh.tets, self.mesh.tris, self.mesh.edges, self.mesh.nodes, self.tet_to_field, tetids)
@@ -83,8 +81,11 @@ class Nedelec2(FEMBasis):
         """
         Interpolates the curl of the field at the given points.
         """
+        from .ned2_interp import ned2_tet_interp_curl
+        
         if tetids is None:
             tetids = self._all_tet_ids
+        
         vals = ned2_tet_interp_curl(np.array([xs, ys, zs]), field, self.mesh.tets, self.mesh.tris, self.mesh.edges, self.mesh.nodes, self.tet_to_field, c, tetids)
         if not usenan:
             vals = np.nan_to_num(vals)
@@ -97,7 +98,7 @@ class Nedelec2(FEMBasis):
                         usenan: bool = True) -> np.ndarray:
         if tetids is None:
             tetids = self._all_tet_ids
-
+        from .index_interp import index_interp
         vals = index_interp(np.array([xs, ys, zs]), self.mesh.tets, self.mesh.nodes, tetids)
         if not usenan:
             vals[vals==-1]==0
@@ -106,15 +107,18 @@ class Nedelec2(FEMBasis):
     ###### INDEX MAPPINGS
 
     def local_tet_to_triid(self, itet: int) -> np.ndarray:
+        from ..mth.optimized import local_mapping
         tri_ids = self.tet_to_field[6:10, itet] - self.n_edges
         global_tri_map = self.mesh.tris[:, tri_ids]
         return local_mapping(self.mesh.tets[:, itet], global_tri_map)
 
     def local_tet_to_edgeid(self, itet: int) -> np.ndarray:
+        from ..mth.optimized import local_mapping
         global_edge_map = self.mesh.edges[:, self.tet_to_field[:6,itet]]
         return local_mapping(self.mesh.tets[:, itet], global_edge_map)
 
     def local_tri_to_edgeid(self, itri: int) -> np.ndarray:
+        from ..mth.optimized import local_mapping
         global_edge_map = self.mesh.edges[:, self.tri_to_field[:3,itri]]
         return local_mapping(self.mesh.tris[:, itri], global_edge_map)
     

@@ -266,6 +266,9 @@ cudss = [
     { name = "nvidia-cudss-cu12" },
     { name = "nvmath-python", extra = ["cu12"] },
 ]
+dxf = [
+    { name = "ezdxf" },
+]
 umfpack = [
     { name = "scikit-umfpack", marker = "sys_platform != 'win32'" },
 ]
@@ -282,6 +285,7 @@ dev = [
 requires-dist = [
     { name = "cloudpickle", specifier = ">=3.1.1" },
     { name = "cupy-cuda12x", marker = "extra == 'cudss'" },
+    { name = "ezdxf", marker = "extra == 'dxf'" },
     { name = "gmsh", specifier = ">=4.13.0,<4.14.0" },
     { name = "joblib", specifier = ">=1.5.1" },
     { name = "loguru", specifier = ">=0.7.3" },
@@ -295,7 +299,7 @@ requires-dist = [
     { name = "scikit-umfpack", marker = "sys_platform != 'win32' and extra == 'umfpack'" },
     { name = "scipy", specifier = ">=1.14.0" },
 ]
-provides-extras = ["umfpack", "cudss"]
+provides-extras = ["umfpack", "cudss", "dxf"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -315,6 +319,53 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/0b/9f/a65090624ecf468cdca03533906e7c69ed7588582240cfe7cc9e770b50eb/exceptiongroup-1.3.0.tar.gz", hash = "sha256:b241f5885f560bc56a59ee63ca4c6a8bfa46ae4ad651af316d4e81817bb9fd88", size = 29749, upload-time = "2025-05-10T17:42:51.123Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/36/f4/c6e662dade71f56cd2f3735141b265c3c79293c109549c1e6933b0651ffc/exceptiongroup-1.3.0-py3-none-any.whl", hash = "sha256:4d111e6e0c13d0644cad6ddaa7ed0261a0b36971f6d23e7ec9b4b9097da78a10", size = 16674, upload-time = "2025-05-10T17:42:49.33Z" },
+]
+
+[[package]]
+name = "ezdxf"
+version = "1.4.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "fonttools" },
+    { name = "numpy" },
+    { name = "pyparsing" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/64/11/eb27e779a550033972ece48de313be6cff8f537963dfce04778b25543788/ezdxf-1.4.2.tar.gz", hash = "sha256:1fb8edf5bc10dbd83f61f56f2058af4296cd8d817307dae2cbd7be9d665bf726", size = 1815082, upload-time = "2025-05-18T11:00:53.684Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ff/ce/c8a83bd29ec051f9a76111bb7e9d7c573546f1da140d88166a7bcf03fab2/ezdxf-1.4.2-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:94e62d4da459d86e6d1630c09109b7b6fd9672f7ff8fab4eb9d3c91f75e0a18e", size = 3446100, upload-time = "2025-05-18T11:05:52.343Z" },
+    { url = "https://files.pythonhosted.org/packages/59/1c/8545390324719558a6867873525f8b2078864ad396748520f057c0ca6348/ezdxf-1.4.2-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:63aae1eb68aa30e1bbee38886e5b8bf602c9a4a0b672f0b2b31c5cdb29d6c533", size = 2939118, upload-time = "2025-05-18T11:05:54.022Z" },
+    { url = "https://files.pythonhosted.org/packages/15/61/7c5a09a4e39a675ae43b806ec9a6875ecba65ae8b6197f1595bbe53cdcee/ezdxf-1.4.2-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:e9be4845d36c949fb6a2a134802c5e506ed28dc31af254b41316c3040793c820", size = 2903207, upload-time = "2025-05-18T11:05:55.602Z" },
+    { url = "https://files.pythonhosted.org/packages/9d/07/969a017aea0201df78446c9e82bab6ae432ecd1d760cec35412942aec22a/ezdxf-1.4.2-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:eeebf15e4e279c665f957e3ab54f6ac58016f5af802e1175b7cd526d132b8afc", size = 5613041, upload-time = "2025-05-18T11:10:07.91Z" },
+    { url = "https://files.pythonhosted.org/packages/d8/3a/82e0230a0caade322f1a0aaf3034bc6bc00b3eb3eb938dbdce6cff50c8b5/ezdxf-1.4.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:9c24962de1f15b3cf2ea1af1d23a59e78eaa31031781459372e4cede0ff34d8e", size = 4519115, upload-time = "2025-05-18T11:08:13.876Z" },
+    { url = "https://files.pythonhosted.org/packages/da/d6/f5cbfc5b644afcf8b575de5f5162bcd08e3973055da617efc38ba3b4b555/ezdxf-1.4.2-cp310-cp310-musllinux_1_2_aarch64.whl", hash = "sha256:0842c65ab1832adfbc21c93eb450c2598e1c2257c3a65d3f2a0fbb1cf98ac6d8", size = 5585656, upload-time = "2025-05-18T11:10:09.743Z" },
+    { url = "https://files.pythonhosted.org/packages/25/e4/0a5ae733d6a10c04bc66482618e27ce4b80b369f13fc59914d43b481051b/ezdxf-1.4.2-cp310-cp310-musllinux_1_2_x86_64.whl", hash = "sha256:e59bfd11c1011e694a32ed1480cb7ce58143e7d5bd5b3514c5458c825498efaf", size = 4570796, upload-time = "2025-05-18T11:08:15.397Z" },
+    { url = "https://files.pythonhosted.org/packages/f4/2d/10f779546871668cf5d95f359bd192d4e6e5938f68aa28c3e5815f254727/ezdxf-1.4.2-cp310-cp310-win_amd64.whl", hash = "sha256:1245cb055aa2a09001578a6379b57e89259c0e59326bae71ab1a95c625b49aaa", size = 2900750, upload-time = "2025-05-18T11:04:47.511Z" },
+    { url = "https://files.pythonhosted.org/packages/4a/2f/8390b86b399bbf71b01f4eb4149147def873b21358121fb776f003d473fc/ezdxf-1.4.2-cp311-cp311-macosx_10_9_universal2.whl", hash = "sha256:e7cc99c43afb5d9e5f29356a1bb04bc736624c75f46e2abbc80129c1287c8482", size = 3461060, upload-time = "2025-05-18T11:05:57.284Z" },
+    { url = "https://files.pythonhosted.org/packages/2e/5a/96b5cb9663fa6bef8535a247a6a709dca4b52a08025ae2385eb64639191a/ezdxf-1.4.2-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:022de8cfaa5bf906e080968036c441b401938ae42402146a553bb756379aefa8", size = 2946074, upload-time = "2025-05-18T11:05:58.981Z" },
+    { url = "https://files.pythonhosted.org/packages/be/ae/f152bca23cad4dc2f8fc1030d73e4bc25ef964724a2ffcdb2154edee66bc/ezdxf-1.4.2-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:99f7826b7a26e5d1e8bea84e9699b6d8770195db3bd3103ef20fffc95aa6848e", size = 2910796, upload-time = "2025-05-18T11:06:00.641Z" },
+    { url = "https://files.pythonhosted.org/packages/c9/93/c7b8dd52aa295dede2727972a4875eeca3a0479127f4bd0a2faa41cfc1ad/ezdxf-1.4.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:311c03113f7e5f70d28eaff076b2c76d7cebec3576d5b032d91c327871069f21", size = 5805112, upload-time = "2025-05-18T11:10:11.63Z" },
+    { url = "https://files.pythonhosted.org/packages/1f/6c/2f0fd0e51f26aafeeb01e3aad18d2a76120e956b5db36d3f3375c8f1a7c0/ezdxf-1.4.2-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:87f7532332abb004eff1d62e674a6d5c1ae2a91c0a92288ef817b1ed55fcaa97", size = 5778252, upload-time = "2025-05-18T11:08:17.447Z" },
+    { url = "https://files.pythonhosted.org/packages/60/bd/2a5de55d49d84cf44cf53f7270e0f8e5ee5c8d74c1588711b638722fcc90/ezdxf-1.4.2-cp311-cp311-musllinux_1_2_aarch64.whl", hash = "sha256:1b0e461cb4ed897766e961b4ffe12fe699a23920d938a24419f69d7c9e9f58b4", size = 5766075, upload-time = "2025-05-18T11:10:14.109Z" },
+    { url = "https://files.pythonhosted.org/packages/5f/11/451c556372c145af6e4546eeb758686a41396bbc1ebca8b11889f319a9ee/ezdxf-1.4.2-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:6c94f388c52e9e22604fab2f81a320c8a2fd0af7a997cdeda7f378c64e8e4f7e", size = 5817207, upload-time = "2025-05-18T11:08:19.551Z" },
+    { url = "https://files.pythonhosted.org/packages/6d/f5/548141810510363760038914468b0fe2f445c8600e13d78ae4d28c9b470d/ezdxf-1.4.2-cp311-cp311-win_amd64.whl", hash = "sha256:39444da78154973c373194c2c2a27f8d035b4a4b3a55a280419f3ae252041e95", size = 2902206, upload-time = "2025-05-18T11:04:49.07Z" },
+    { url = "https://files.pythonhosted.org/packages/05/a8/c806662222c74cd9c062f54daacfee86b0f307601a1cce98505181e72688/ezdxf-1.4.2-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:b76192a8e71eb6504a7be141a3d66b07643412e8545697b1c061f8ae6dcf9426", size = 3456936, upload-time = "2025-05-18T11:06:02.44Z" },
+    { url = "https://files.pythonhosted.org/packages/0f/7d/1b9bf06384b178a0716d6ce8c2f0c6b462aef3be62a132e3d144d3eb067d/ezdxf-1.4.2-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:115960f84eb31e8ce4e99826b260587b15f916b072a96f133d5da967ce1f3139", size = 2948641, upload-time = "2025-05-18T11:06:04.126Z" },
+    { url = "https://files.pythonhosted.org/packages/bd/62/791e10882fd3d848e45cf27dfcd3ec7f167fe2c13084314be933960436e6/ezdxf-1.4.2-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:960033f83f7ab395886eba203c6f3fcb82360b68eab30cb405894c39b8e3fff4", size = 2903918, upload-time = "2025-05-18T11:06:05.393Z" },
+    { url = "https://files.pythonhosted.org/packages/05/fd/8d6a1e48de9d199fd739307514617799820aecb53c1b49b92b5092a0ec90/ezdxf-1.4.2-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:8a19ccd52b71e584f72b409767b4447d77a08c726323066c7d60a28fb6db2062", size = 5784469, upload-time = "2025-05-18T11:10:16.068Z" },
+    { url = "https://files.pythonhosted.org/packages/15/6f/c7f7281e9a74536b27c093a3b15b404315be616e5dceff0b9271840242b0/ezdxf-1.4.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8186acc6c44a78d2d21dd6ac9e21fddea037d6b3040f17201f2a7d9349bde244", size = 5785379, upload-time = "2025-05-18T11:08:21.75Z" },
+    { url = "https://files.pythonhosted.org/packages/01/b4/b7c4da14b6e4f8fb2cb37a6e3939ef7ca7e470ab0ad948dc272919ed69de/ezdxf-1.4.2-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:18e49cd3affa5ac4f3bfb0592de6570c45440d26325a2c659ddf4933c198f29a", size = 5753300, upload-time = "2025-05-18T11:10:17.71Z" },
+    { url = "https://files.pythonhosted.org/packages/2a/d4/f76540c3426ae2dfaf9acc4ad7662f80926edaf04ce66654b31c52af8c1a/ezdxf-1.4.2-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:f47dca5d0db84e49eeaa6dad1f9c260a59c16a8d737a648aa8fd50258b44a91a", size = 5844044, upload-time = "2025-05-18T11:08:23.866Z" },
+    { url = "https://files.pythonhosted.org/packages/bd/8c/b5893eb19c13ebf21919cafb4e5db31cf2a4de146fbe49dc8759aced3eef/ezdxf-1.4.2-cp312-cp312-win_amd64.whl", hash = "sha256:ba1aac159807aafd95d865f449d44f00ed041e51dadc50c2aabe9d5569303391", size = 2904814, upload-time = "2025-05-18T11:04:50.624Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/a7/63254789eb03af716c35a600004caae5fb60fabcffa9527085182da1a20e/ezdxf-1.4.2-cp313-cp313-macosx_10_13_universal2.whl", hash = "sha256:f2f09b19b8b9d5b820d4bac7e1857f5bb945193d6bc3d28fe7236d4ccfe5abf3", size = 3442120, upload-time = "2025-05-18T11:06:06.674Z" },
+    { url = "https://files.pythonhosted.org/packages/cb/d7/3b4cedd325c16d3824fa746f38d5620afc19690e23cefd116ff6f07ddced/ezdxf-1.4.2-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:7c8938151c4bce83daa7079260907991482d86a525adbd90f2ed47e3dc649dce", size = 2941162, upload-time = "2025-05-18T11:06:08.42Z" },
+    { url = "https://files.pythonhosted.org/packages/41/60/c1e3bd6d1eabdf444c87cd7595bb2df41d375cd54229e007b4bf2c63659d/ezdxf-1.4.2-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:086d906c50b93ae5919cc006f6ff8fdf304833fc6abf8cb6e006fa4a7b81eaf7", size = 2896779, upload-time = "2025-05-18T11:06:09.685Z" },
+    { url = "https://files.pythonhosted.org/packages/b8/ee/de2566febc73a0b21d87e7ddab17ea8f3e485fbe6640434ea496ffa806a0/ezdxf-1.4.2-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:9d6e79acbe0de94e88b9354c7f83453497ca99a148451ffea3dd78b939b70491", size = 5748043, upload-time = "2025-05-18T11:10:19.822Z" },
+    { url = "https://files.pythonhosted.org/packages/30/a4/54f0cccc21a524fad8d566524d8ddc948bd53ceb20fade829556b410b699/ezdxf-1.4.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:ddd7a5d6969dac89eab04df9eac26e77c5928e09e1c5a0d3334c1cbb74e2672e", size = 5747179, upload-time = "2025-05-18T11:08:25.903Z" },
+    { url = "https://files.pythonhosted.org/packages/e0/21/f92ec71a4360c600c29ff4b1df2ecf5b829c89022e1a6b988598f699c946/ezdxf-1.4.2-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:65804566f482bf9fd4f488fdc485345c9c30e0fa487af61e6c6f40c7dc8c7664", size = 5714340, upload-time = "2025-05-18T11:10:21.503Z" },
+    { url = "https://files.pythonhosted.org/packages/14/6c/7a123abd48525ffd012a845d2ae54a392b9b40fa32a3ac4802d398bb9f81/ezdxf-1.4.2-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:49eda3b953966d1823ae2eef6fbfa99af9b1e4d4f7ddc6ed715df260b46b748d", size = 5818591, upload-time = "2025-05-18T11:08:27.556Z" },
+    { url = "https://files.pythonhosted.org/packages/ed/c6/25d2426d992bceb01e9dab107f8301dfdc451288d8c49a3e96972557b7c6/ezdxf-1.4.2-cp313-cp313-win_amd64.whl", hash = "sha256:9ff11c19a7701e3b05b6ae0f4af4aa7f216fbdb43f10a197b71738b78f9ce1dd", size = 2902029, upload-time = "2025-05-18T11:04:52.246Z" },
+    { url = "https://files.pythonhosted.org/packages/00/78/2f63f966087a9ae6eda6fe9a4f5c804799596b1c6a3d32458e883cb403a8/ezdxf-1.4.2-py3-none-any.whl", hash = "sha256:86c9dd9102f7c2ce9e3fb5a31ca7785f563290b8a00372742687f658aff575a0", size = 1329296, upload-time = "2025-05-18T11:01:35.171Z" },
 ]
 
 [[package]]

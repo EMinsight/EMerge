@@ -20,7 +20,6 @@ import numpy as np
 from numba import njit, types, i8, c16
 from scipy.sparse import csr_matrix
 
-
 ############################################################
 #                      NUMBA COMPILED                     #
 ############################################################

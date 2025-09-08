@@ -1036,32 +1036,6 @@ class MWField:
             return E[0,:], E[1,:], E[2,:], H[0,:], H[1,:], H[2,:]
     
         return dict(freq=freq, ff_function=function)
-
-    # def surface_integral(self, faces: FaceSelection | GeoSurface, fieldfunction: Callable) -> float | complex:
-    #     """Computes a surface integral on the selected faces. 
-    
-    #     The fieldfunction argument must be a callable of a single argument x, which will
-    #     be of type EHField which is restuned by the field.interpolate(x,y,z) function. It has
-    #     fields like Ez, Ey, Sx etc that can be called. 
-
-    #     Args:
-    #         faces (FaceSelection | GeoSurface): _description_
-    #         fieldfunction (Callable): _description_
-
-    #     Returns:
-    #         float | complex: _description_
-    #     """
-    #     from ...mth.integrals import surface_integral
-        
-    #     def ff(x, y, z):
-    #         fieldobj = self.interpolate(x,y,z)
-    #         return fieldfunction(fieldobj)
-        
-    #     nodes = self.mesh.get_nodes(faces.tags)
-    #     triangles = self.mesh.get_triangles(faces.tags)
-        
-    #     return surface_integral(nodes, triangles, ff)
-        
         
 class MWScalar:
     """The MWDataSet class stores solution data of FEM Time Harmonic simulations.
