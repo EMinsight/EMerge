@@ -192,6 +192,7 @@ def ned2_tet_interp(coords: np.ndarray,
         Exl = np.zeros(x.shape, dtype=np.complex128)
         Eyl = np.zeros(x.shape, dtype=np.complex128)
         Ezl = np.zeros(x.shape, dtype=np.complex128)
+        V1 = (216*V**3)
         for ie in range(6):
             Em1, Em2 = Em1s[ie], Em2s[ie]
             edgeids = l_edge_ids[:, ie]
@@ -202,11 +203,12 @@ def ned2_tet_interp(coords: np.ndarray,
             x1, x2 = xvs[edgeids]
             y1, y2 = yvs[edgeids]
             z1, z2 = zvs[edgeids]
-
+            F1 = (a1 + b1*x + c1*y + d1*z)
+            F2 = (a2 + b2*x + c2*y + d2*z)
             L = np.sqrt((x1 - x2)**2 + (y1 - y2)**2 + (z1 - z2)**2)
-            ex =  L*(Em1*(a1 + b1*x + c1*y + d1*z) + Em2*(a2 + b2*x + c2*y + d2*z))*(b1*(a2 + b2*x + c2*y + d2*z) - b2*(a1 + b1*x + c1*y + d1*z))/(216*V**3)
-            ey =  L*(Em1*(a1 + b1*x + c1*y + d1*z) + Em2*(a2 + b2*x + c2*y + d2*z))*(c1*(a2 + b2*x + c2*y + d2*z) - c2*(a1 + b1*x + c1*y + d1*z))/(216*V**3)
-            ez =  L*(Em1*(a1 + b1*x + c1*y + d1*z) + Em2*(a2 + b2*x + c2*y + d2*z))*(d1*(a2 + b2*x + c2*y + d2*z) - d2*(a1 + b1*x + c1*y + d1*z))/(216*V**3)
+            ex =  L*(Em1*F1 + Em2*F2)*(b1*F2 - b2*F1)/V1
+            ey =  L*(Em1*F1 + Em2*F2)*(c1*F2 - c2*F1)/V1
+            ez =  L*(Em1*F1 + Em2*F2)*(d1*F2 - d2*F1)/V1
 
             Exl += ex
             Eyl += ey
@@ -226,10 +228,16 @@ def ned2_tet_interp(coords: np.ndarray,
 
             L1 = np.sqrt((x1-x3)**2 + (y1-y3)**2 + (z1-z3)**2)
             L2 = np.sqrt((x1-x2)**2 + (y1-y2)**2 + (z1-z2)**2)
-
-            ex =  (-Em1*L1*(b1*(a3 + b3*x + c3*y + d3*z) - b3*(a1 + b1*x + c1*y + d1*z))*(a2 + b2*x + c2*y + d2*z) + Em2*L2*(b1*(a2 + b2*x + c2*y + d2*z) - b2*(a1 + b1*x + c1*y + d1*z))*(a3 + b3*x + c3*y + d3*z))/(216*V**3)
-            ey =  (-Em1*L1*(c1*(a3 + b3*x + c3*y + d3*z) - c3*(a1 + b1*x + c1*y + d1*z))*(a2 + b2*x + c2*y + d2*z) + Em2*L2*(c1*(a2 + b2*x + c2*y + d2*z) - c2*(a1 + b1*x + c1*y + d1*z))*(a3 + b3*x + c3*y + d3*z))/(216*V**3)
-            ez =  (-Em1*L1*(d1*(a3 + b3*x + c3*y + d3*z) - d3*(a1 + b1*x + c1*y + d1*z))*(a2 + b2*x + c2*y + d2*z) + Em2*L2*(d1*(a2 + b2*x + c2*y + d2*z) - d2*(a1 + b1*x + c1*y + d1*z))*(a3 + b3*x + c3*y + d3*z))/(216*V**3)
+            
+            F1 = (a1 + b1*x + c1*y + d1*z)
+            F2 = (a2 + b2*x + c2*y + d2*z)
+            F3 = (a3 + b3*x + c3*y + d3*z)
+            
+            Q1 = Em1*L1*F2
+            Q2 = Em2*L2*F3
+            ex =  (-Q1*(b1*F3 - b3*F1) + Q2*(b1*F2 - b2*F1))/V1
+            ey =  (-Q1*(c1*F3 - c3*F1) + Q2*(c1*F2 - c2*F1))/V1
+            ez =  (-Q1*(d1*F3 - d3*F1) + Q2*(d1*F2 - d2*F1))/V1
             
             Exl += ex
             Eyl += ey
@@ -322,6 +330,8 @@ def ned2_tet_interp_curl(coords: np.ndarray,
         Exl = np.zeros(x.shape, dtype=np.complex128)
         Eyl = np.zeros(x.shape, dtype=np.complex128)
         Ezl = np.zeros(x.shape, dtype=np.complex128)
+        V1 = (216*V**3)
+        V2 = (72*V**3)
         for ie in range(6):
             Em1, Em2 = Em1s[ie], Em2s[ie]
             edgeids = l_edge_ids[:, ie]
@@ -334,9 +344,35 @@ def ned2_tet_interp_curl(coords: np.ndarray,
             z1, z2 = zvs[edgeids]
 
             L = np.sqrt((x1 - x2)**2 + (y1 - y2)**2 + (z1 - z2)**2)
-            ex =  L*(-Em1*a1*c1*d2 + Em1*a1*c2*d1 - Em1*b1*c1*d2*x + Em1*b1*c2*d1*x - Em1*c1**2*d2*y + Em1*c1*c2*d1*y - Em1*c1*d1*d2*z + Em1*c2*d1**2*z - Em2*a2*c1*d2 + Em2*a2*c2*d1 - Em2*b2*c1*d2*x + Em2*b2*c2*d1*x - Em2*c1*c2*d2*y - Em2*c1*d2**2*z + Em2*c2**2*d1*y + Em2*c2*d1*d2*z)/(72*V**3)
-            ey =  L*(Em1*a1*b1*d2 - Em1*a1*b2*d1 + Em1*b1**2*d2*x - Em1*b1*b2*d1*x + Em1*b1*c1*d2*y + Em1*b1*d1*d2*z - Em1*b2*c1*d1*y - Em1*b2*d1**2*z + Em2*a2*b1*d2 - Em2*a2*b2*d1 + Em2*b1*b2*d2*x + Em2*b1*c2*d2*y + Em2*b1*d2**2*z - Em2*b2**2*d1*x - Em2*b2*c2*d1*y - Em2*b2*d1*d2*z)/(72*V**3)
-            ez =  L*(-Em1*a1*b1*c2 + Em1*a1*b2*c1 - Em1*b1**2*c2*x + Em1*b1*b2*c1*x - Em1*b1*c1*c2*y - Em1*b1*c2*d1*z + Em1*b2*c1**2*y + Em1*b2*c1*d1*z - Em2*a2*b1*c2 + Em2*a2*b2*c1 - Em2*b1*b2*c2*x - Em2*b1*c2**2*y - Em2*b1*c2*d2*z + Em2*b2**2*c1*x + Em2*b2*c1*c2*y + Em2*b2*c1*d2*z)/(72*V**3)
+            C1 = Em1*a1
+            C2 = Em1*b1
+            C3 = Em1*c1
+            C4 = Em1*c2
+            C5 = Em2*a2
+            C6 = Em2*b2
+            C7 = Em2*c1
+            C8 = Em2*c2
+            C9 = Em1*b2
+            C10 = Em2*b1
+            D1 = c1*d2
+            D2 = c2*d1
+            D3 = d1*d2
+            D4 = d1*d1
+            D5 = c2*d2
+            D6 = d2*d2
+            D7 = b1*d2
+            D8 = b2*d1
+            D9 = c1*d1
+            D10 = b2*d2
+            D11 = b1*c2
+            D12 = b2*c1
+            D13 = c1*c2
+            D14 = c1*c1
+            D15 = b2*c2
+            
+            ex =  L*(-C1*D1 + C1*D2 - C2*D1*x + C2*D2*x - C3*D1*y + C3*D2*y - C3*D3*z + C4*D4*z - C5*D1 + C5*D2 - C6*D1*x + C6*D2*x - C7*D5*y - C7*D6*z + C8*D2*y + C8*D3*z)/V2
+            ey =  L*(C1*D7 - C1*D8 + C2*D7*x - C2*D8*x + C2*D1*y + C2*D3*z - C9*D9*y - C9*D4*z + C5*D7 - C5*D8 + C10*D10*x + C10*D5*y + C10*D6*z - C6*D8*x - C6*D2*y - C6*D3*z)/V2
+            ez =  L*(-C1*D11 + C1*D12 - C2*D11*x + C2*D12*x - C2*D13*y - C2*D2*z + C9*D14*y + C9*D9*z - C5*D11 + C5*D12 - C10*D15*x - C10*c2*c2*y - C10*D5*z + C6*D12*x + C6*D13*y + C6*D1*z)/V2
             Exl += ex
             Eyl += ey
             Ezl += ez
@@ -355,10 +391,28 @@ def ned2_tet_interp_curl(coords: np.ndarray,
 
             L1 = np.sqrt((x1-x3)**2 + (y1-y3)**2 + (z1-z3)**2)
             L2 = np.sqrt((x1-x2)**2 + (y1-y2)**2 + (z1-z2)**2)
-
-            ex =  (Em1*L1*(-c2*(d1*(a3 + b3*x + c3*y + d3*z) - d3*(a1 + b1*x + c1*y + d1*z)) + d2*(c1*(a3 + b3*x + c3*y + d3*z) - c3*(a1 + b1*x + c1*y + d1*z)) + 2*(c1*d3 - c3*d1)*(a2 + b2*x + c2*y + d2*z)) - Em2*L2*(-c3*(d1*(a2 + b2*x + c2*y + d2*z) - d2*(a1 + b1*x + c1*y + d1*z)) + d3*(c1*(a2 + b2*x + c2*y + d2*z) - c2*(a1 + b1*x + c1*y + d1*z)) + 2*(c1*d2 - c2*d1)*(a3 + b3*x + c3*y + d3*z)))/(216*V**3)
-            ey =  (-Em1*L1*(-b2*(d1*(a3 + b3*x + c3*y + d3*z) - d3*(a1 + b1*x + c1*y + d1*z)) + d2*(b1*(a3 + b3*x + c3*y + d3*z) - b3*(a1 + b1*x + c1*y + d1*z)) + 2*(b1*d3 - b3*d1)*(a2 + b2*x + c2*y + d2*z)) + Em2*L2*(-b3*(d1*(a2 + b2*x + c2*y + d2*z) - d2*(a1 + b1*x + c1*y + d1*z)) + d3*(b1*(a2 + b2*x + c2*y + d2*z) - b2*(a1 + b1*x + c1*y + d1*z)) + 2*(b1*d2 - b2*d1)*(a3 + b3*x + c3*y + d3*z)))/(216*V**3)
-            ez =  (Em1*L1*(-b2*(c1*(a3 + b3*x + c3*y + d3*z) - c3*(a1 + b1*x + c1*y + d1*z)) + c2*(b1*(a3 + b3*x + c3*y + d3*z) - b3*(a1 + b1*x + c1*y + d1*z)) + 2*(b1*c3 - b3*c1)*(a2 + b2*x + c2*y + d2*z)) - Em2*L2*(-b3*(c1*(a2 + b2*x + c2*y + d2*z) - c2*(a1 + b1*x + c1*y + d1*z)) + c3*(b1*(a2 + b2*x + c2*y + d2*z) - b2*(a1 + b1*x + c1*y + d1*z)) + 2*(b1*c2 - b2*c1)*(a3 + b3*x + c3*y + d3*z)))/(216*V**3)
+            F1 = (a3 + b3*x + c3*y + d3*z)
+            F2 = (a1 + b1*x + c1*y + d1*z)
+            F3 = (a2 + b2*x + c2*y + d2*z)
+            N1 = (d1*F1 - d3*F2)
+            N2 = (c1*F1 - c3*F2)
+            N3 = (c1*d3 - c3*d1)
+            N4 = (d1*F3 - d2*F2)
+            N5 = (c1*F3 - c2*F2)
+            D1 = c1*d2
+            D2 = c2*d1
+            N6 = (D1 - D2)
+            N7 = (b1*F1 - b3*F2)
+            N8 = (b1*d3 - b3*d1)
+            N9 = (b1*F3 - b2*F2)
+            D7 = b1*d2
+            D8 = b2*d1
+            N10 = (D7 - D8)
+            D11 = b1*c2
+            D12 = b2*c1
+            ex =  (Em1*L1*(-c2*N1 + d2*N2 + 2*N3*F3) - Em2*L2*(-c3*N4 + d3*N5 + 2*N6*F1))/V1
+            ey =  (-Em1*L1*(-b2*N1 + d2*N7 + 2*N8*F3) + Em2*L2*(-b3*N4 + d3*N9 + 2*N10*F1))/V1
+            ez =  (Em1*L1*(-b2*N2 + c2*N7 + 2*(b1*c3 - b3*c1)*F3) - Em2*L2*(-b3*N5 + c3*N9 + 2*(D11 - D12)*F1))/V1
             
             Exl += ex
             Eyl += ey

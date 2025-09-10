@@ -192,6 +192,11 @@ class DataContainer:
             yield entry.vars, entry.data
 
     @property
+    def first(self) -> DataEntry:
+        """Returns the first added entry"""
+        return self.entries[0]
+    
+    @property
     def last(self) -> DataEntry:
         """Returns the last added entry"""
         return self.entries[-1]
@@ -203,7 +208,11 @@ class DataContainer:
             return self.stock
         else:
             return self.last
-        
+    
+    def index(self, index: int) -> DataEntry:
+        """Returns the last added entry"""
+        return self.entries[index]
+    
     def select(self, **vars: float) -> DataEntry | None:
         """Returns the data entry corresponding to the provided parametric sweep set"""
         for entry in self.entries:
@@ -318,7 +327,11 @@ class BaseDataset(Generic[T,M]):
         for i, var_map in enumerate(self._variables):
             error = sum([abs(var_map.get(k, 1e30) - v) for k, v in variables.items()])
             output.append((i,error))
-        return self.get_entry(sorted(output, key=lambda x:x[1])[0][0])
+        selection_id = sorted(output, key=lambda x:x[1])[0][0]
+        entry = self.get_entry(selection_id)
+        variables = ', '.join([f'{key}={value}' for key,value in self._variables[selection_id].items()])
+        logger.info(f'Selected entry: {variables}')
+        return entry
 
     def axis(self, name: str) -> np.ndarray:
         """Returns a sorted list of all variables for the given name
@@ -343,7 +356,8 @@ class BaseDataset(Generic[T,M]):
         return new_entry
     
     def _grid_axes(self) -> bool:
-        """This method attepmts to create a gritted version of the scalar dataset
+        """This method attepmts to create a gritted version of the scalar dataset. It may fail
+        if the data in the dataset cannot be cast into a gridded structure.
 
         Returns:
             None
@@ -353,9 +367,11 @@ class BaseDataset(Generic[T,M]):
         for var in self._variables:
             for key, value in var.items():
                 variables[key].add(value)
+                
         N_entries = len(self._variables)
         N_prod = 1
         N_dim = len(variables)
+        
         for key, val_list in variables.items():
             N_prod *= len(val_list)
         
@@ -369,8 +385,10 @@ class BaseDataset(Generic[T,M]):
         
         self._axes = dict()
         self._ax_ids = dict()
+        
         revax = dict()
         i = 0
+        
         for key, val_set in variables.items():
             self._axes[key] = np.sort(np.array(list(val_set)))
             self._ax_ids[key] = i

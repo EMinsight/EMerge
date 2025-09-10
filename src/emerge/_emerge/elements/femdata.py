@@ -70,6 +70,10 @@ class FEMBasis:
         """
         raise NotImplementedError()
     
+    def interpolate_error(self, field: np.ndarray, xs: np.ndarray, ys: np.ndarray, zs: np.ndarray, tetids: np.ndarray | None = None, cs: tuple[float, float] = (1.0, 1.0)) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        raise NotImplementedError()
+    
+    
     def empty_tet_matrix(self) -> np.ndarray:
         nnz = self.n_tets*self.n_tet_dofs**2
         matrix = np.empty((nnz,), dtype=np.complex128)

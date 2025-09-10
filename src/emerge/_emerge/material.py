@@ -165,6 +165,7 @@ class CoordDependent(MatProperty):
         if scalar is not None:
             def _func(x, y, z) -> np.ndarray:
                 return np.eye(3)[:, :, None] * scalar(x,y,z)[None, None, :]
+        
         if vector is not None:
             def _func(x, y, z) -> np.ndarray:
                 N = x.shape[0]

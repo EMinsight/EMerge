@@ -588,7 +588,7 @@ class PVDisplay(BaseDisplay):
                  z: np.ndarray,
                  field: np.ndarray,
                  scale: Literal['lin','log','symlog'] = 'lin',
-                 cmap: cmap_names = 'viridis',
+                 cmap: cmap_names | None = None,
                  clim: tuple[float, float] | None = None,
                  opacity: float = 1.0,
                  symmetrize: bool = False,
@@ -614,8 +614,6 @@ class PVDisplay(BaseDisplay):
         grid = pv.StructuredGrid(x,y,z)
         field_flat = field.flatten(order='F')
         
-        
-
         if scale=='log':
             T = lambda x: np.log10(np.abs(x+1e-12))
         elif scale=='symlog':
@@ -624,6 +622,7 @@ class PVDisplay(BaseDisplay):
             T = lambda x: x
         
         static_field = T(np.real(field_flat))
+        
         if _fieldname is None:
             name = 'anim'+str(self._ctr)
         else:
@@ -634,7 +633,7 @@ class PVDisplay(BaseDisplay):
 
         grid_no_nan = grid.threshold(scalars=name)
         
-        
+        default_cmap = 'viridis'
         # Determine color limits
         if clim is None:
             fmin = np.nanmin(static_field)
@@ -643,7 +642,11 @@ class PVDisplay(BaseDisplay):
         if symmetrize:
             lim = max(abs(clim[0]), abs(clim[1]))
             clim = (-lim, lim)
-
+            default_cmap = 'coolwarm'
+        
+        if cmap is None:
+            cmap = default_cmap
+        
         kwargs = setdefault(kwargs, cmap=cmap, clim=clim, opacity=opacity, pickable=False, multi_colors=True)
         actor = self._plot.add_mesh(grid_no_nan, scalars=name, **kwargs)
 

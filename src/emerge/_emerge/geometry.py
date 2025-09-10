@@ -60,6 +60,11 @@ class _GeometryManager:
             model = self.active
         return [geo for geo in self.geometry_list[model].values() if geo._exists]
 
+    def set_geometries(self, geos: list[GeoObject], model: str | None = None):
+        if model is None:
+            model = self.active
+        self.geometry_list[model] = geos
+        
     def all_names(self, model: str | None = None) -> set[str]:
         if model is None:
             model = self.active

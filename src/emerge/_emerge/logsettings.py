@@ -21,11 +21,25 @@ from typing import Literal
 from pathlib import Path
 import os
 from collections import deque
+import platform
+import importlib
+import multiprocessing
 
+packages = ["numba", "numpy", "scipy", "gmsh", "joblib","matplotlib","pyvista","mkl","cloudpickle","scikit-umfpack","nvidia-cudss-cu12","nvmath-python[cu12]","cupy-cuda12x","ezdxf"]
+
+def get_version(pkg_name):
+    try:
+        module = importlib.import_module(pkg_name)
+        return getattr(module, "__version__", "unknown")
+    except ImportError:
+        return "not installed"
+    
 _LOG_BUFFER = deque()
 
 def _log_sink(message):
     _LOG_BUFFER.append(message)
+    
+
 ############################################################
 #                          FORMATS                         #
 ############################################################
@@ -92,6 +106,17 @@ class LogController:
         for msg in list(_LOG_BUFFER):
             logger.opt(depth=6).log(msg.record["level"].name, msg.record["message"])
         _LOG_BUFFER.clear()
+        
+    def _sys_info(self) -> None:
+        for pkg in packages:
+            logger.trace(f" (!) {pkg} version: {get_version(pkg)}")
+
+        logger.trace(f" (!) OS: {platform.system()} {platform.release()} ({platform.version()})")
+        logger.trace(f" (!) Architecture: {platform.machine()} ({platform.architecture()[0]})")
+        logger.trace(f" (!) Processor: {platform.processor()}")
+        logger.trace(f" (!) Python build: {platform.python_build()}")
+        logger.trace(f" (!) Python version: {platform.python_version()} [{sys.version}]")
+        logger.trace(f" (!) CPU cores: {multiprocessing.cpu_count()}")
         
     def set_std_loglevel(self, loglevel: str):
         handler = {"sink": sys.stdout, 

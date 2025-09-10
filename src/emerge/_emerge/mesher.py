@@ -212,7 +212,15 @@ class Mesher:
         self.mesh_fields.append(ctag)
 
     def set_mesh_size(self, discretizer: Callable, resolution: float):
-        
+        """Defines the mesh sizes based on a discretization callable.
+        The discretizer must take a material and return a maximum
+        size for that material.
+
+        Args:
+            discretizer (Callable): The discretization function
+            resolution (float): The resolution
+        """
+        logger.debug('Starting initial mesh size computation.')
         dimtags = gmsh.model.occ.get_entities(2)
 
         for dim, tag in dimtags:
@@ -227,21 +235,24 @@ class Mesher:
 
             size = discretizer(obj.material)*resolution*obj.mesh_multiplier
             size = min(size, obj.max_meshsize)
-            logger.info(f'Setting mesh size for {_DOM_TO_STR[obj.dim]} domain with tags {obj.tags} to {1000*size:.3f}mm')
+            
             for tag in obj.tags:
                 size_mapping[tag] = size
         
         for tag, size in size_mapping.items():
+            logger.debug(f'Setting mesh size:{1000*size:.3f}mm in domains: {tag}')
             self._set_size_in_domain([tag,], size)
 
         gmsh.model.mesh.field.setNumbers(mintag, "FieldsList", self.mesh_fields)
         gmsh.model.mesh.field.setAsBackgroundMesh(mintag)
 
         for tag, size in self.size_definitions:
+            logger.debug(f'Setting aux size definition: {1000*size:.3f}mm in domain {tag}.')
             gmsh.model.mesh.setSize([tag,], size)
 
     def unset_constraints(self, dimtags: list[tuple[int,int]]):
         '''Unset the mesh constraints for the given dimension tags.'''
+        logger.trace(f'Unsetting mesh size constraint for domains: {dimtags}')
         for dimtag in dimtags:
             gmsh.model.mesh.setSizeFromBoundary(dimtag[0], dimtag[1], 0)
             
@@ -263,12 +274,15 @@ class Mesher:
             return
         
         dimtags = boundary.dimtags
-
+        
+        
         if max_size is None:
             self._check_ready()
             max_size = self.max_size
         
         growth_distance = np.log10(max_size/size)/np.log10(growth_rate)
+        
+        logger.debug(f'Setting boundary size for region {dimtags} to {size*1000:.3f}mm, GR={growth_rate:.3f}, dist={growth_distance*1000:.2f}mm, Max={max_size*1000:.3f}mm')
         
         nodes = gmsh.model.getBoundary(dimtags, combined=False, oriented=False, recursive=False)
 
@@ -295,6 +309,12 @@ class Mesher:
             obj (GeoVolume | Selection): The volumetric domain
             size (float): The maximum mesh size
         """
+        if obj.dim != 3:
+            logger.warning('Provided object is not a volume.')
+            if obj.dim==2:
+                logger.warning('Forwarding to set_face_size')
+                self.set_face_size(obj, size)
+        logger.debug(f'Setting size {size*1000:.3f}ff for object {obj}')
         self._set_size_in_domain(obj.tags, size)
 
     def set_face_size(self, obj: GeoSurface | Selection, size: float):
@@ -304,6 +324,13 @@ class Mesher:
             obj (GeoSurface | Selection): The surface domain
             size (float): The maximum size
         """
+        if obj.dim != 2:
+            logger.warning('Provided object is not a surface.')
+            if obj.dim==3:
+                logger.warning('Forwarding to set_domain_size')
+                self.set_face_size(obj, size)
+        
+        logger.debug(f'Setting size {size*1000:.3f}ff for face {obj}')
         self._set_size_on_face(obj.tags, size)
         
     def refine_conductor_edge(self, dimtags: list[tuple[int,int]], size):

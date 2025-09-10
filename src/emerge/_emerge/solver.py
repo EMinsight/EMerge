@@ -95,7 +95,40 @@ class SolveReport:
         for key, value in kwargs.items():
             self.aux[key] = str(value)
     
+    def logprint(self, print_cal: Callable | None = None):
+        if print_cal is None:
+            print_cal = print
+
+        def fmt(key, val):
+            return f"{key}={val:.4f}" if isinstance(val, float) else f"{key}={val}"
+
+        parts = []
+        parts.append(fmt("Solver", self.solver))
+        parts.append(fmt("Sorter", self.sorter))
+        parts.append(fmt("Precon", self.precon))
+        parts.append(fmt("JobID", self.jobid))
+        parts.append(fmt("SimTime[s]", self.simtime))
+        parts.append(fmt("DOFsTot", self.ndof))
+        parts.append(fmt("NNZTot", self.nnz))
+        parts.append(fmt("DOFsSolve", self.ndof_solve))
+        parts.append(fmt("NNZSolve", self.nnz_solve))
+        parts.append(fmt("Exit", self.exit_code))
+
+        if self.aux:
+            for k, v in self.aux.items():
+                parts.append(fmt(str(k), v))
+
+        # Group into multiple lines (6 items per line for readability)
+        print_cal(f"FEM Report [JobID={self.jobid}]")
+        for i in range(0, len(parts), 6):
+            print_cal("  " + ", ".join(parts[i:i+6]))
+            
     def pretty_print(self, print_cal: Callable | None = None):
+        """Print the solve report in the terminal in a table format
+
+        Args:
+            print_cal (Callable | None, optional): _description_. Defaults to None.
+        """
         if print_cal is None:
             print_cal = print
         # Set column widths
@@ -623,7 +656,7 @@ class SolverPardiso(Solver):
         return x, SolveReport(solver=str(self), exit_code=error, aux=aux)
     
 
-class CuDSSSolver(Solver):
+class SolverCuDSS(Solver):
     real_only = False
     def __init__(self):
         super().__init__()
@@ -838,34 +871,31 @@ class EMSolver(Enum):
     SMART_ARPACK_BMA = 7
     CUDSS = 8
 
-    def get_solver(self) -> Solver | EigSolver | None:
-        if self==EMSolver.SUPERLU:
-            return SolverSuperLU()
-        elif self==EMSolver.UMFPACK:
-            if _UMFPACK_AVAILABLE is False:
-                return None
-            else:
-                return SolverUMFPACK()
-        elif self==EMSolver.PARDISO:
-            if _PARDISO_AVAILABLE is False:
-                return None
-            else:
-                return SolverPardiso()
-        elif self==EMSolver.LAPACK:
-            return SolverLAPACK()
-        elif self==EMSolver.ARPACK:
-            return SolverARPACK()
-        elif self==EMSolver.SMART_ARPACK:
-            return SmartARPACK()
-        elif self==EMSolver.SMART_ARPACK_BMA:
-            return SmartARPACK_BMA()
-        elif self==EMSolver.CUDSS:
-            if _CUDSS_AVAILABLE is False:
-                return None
-            else:
-                return CuDSSSolver()
-        raise ValueError(f'An unsupported Enum case has been reached: {self}')
+    def create_solver(self) -> Solver | EigSolver | None:
+        if self==EMSolver.UMFPACK and not _UMFPACK_AVAILABLE:
+            return None
+        elif self==EMSolver.PARDISO and not _PARDISO_AVAILABLE:
+            return None
+        if self==EMSolver.CUDSS and not _CUDSS_AVAILABLE:
+            return None
+        return self._clss()
 
+    @property
+    def _clss(self) -> type[Solver]:
+        mapper = {1: SolverSuperLU,
+                  2: SolverUMFPACK,
+                  3: SolverPardiso,
+                  4: SolverLAPACK,
+                  5: SolverARPACK,
+                  6: SmartARPACK,
+                  7: SmartARPACK_BMA,
+                  8: SolverCuDSS
+            
+        }
+        return mapper.get(self.value, None)
+    
+    def istype(self, solver: Solver) -> bool:
+        return isinstance(solver, self._clss)
 ############################################################
 #                       SOLVE ROUTINE                      #
 ############################################################
@@ -881,7 +911,7 @@ class SolveRoutine:
         
         self.sorter: Sorter = ReverseCuthillMckee()
         self.precon: Preconditioner = ILUPrecon()
-        self.solvers: dict[EMSolver, Solver | EigSolver] = {slv: slv.get_solver() for slv in EMSolver}
+        self.solvers: dict[EMSolver, Solver | EigSolver] = {slv: slv.create_solver() for slv in EMSolver}
         self.solvers = {key: solver for key, solver in self.solvers.items() if solver is not None}
 
         self.parallel: Literal['SI','MT','MP'] = 'SI'
@@ -921,7 +951,6 @@ class SolveRoutine:
     @property
     def all_eig_solvers(self) -> list[EigSolver]:
         return list([solver for solver in self.solvers.values() if isinstance(solver, EigSolver)])
-    
 
     def _try_solver(self, solver_type: EMSolver) -> Solver:
         """Try to use the selected solver or else find another one that is working.
@@ -967,7 +996,7 @@ class SolveRoutine:
         """
         for solver in solvers:
             if isinstance(solver, EMSolver):
-                self.forced_solver.append(solver.get_solver())
+                self.forced_solver.append(self.solvers[solver])
             else:
                 self.forced_solver.append(solver)
     
@@ -980,7 +1009,7 @@ class SolveRoutine:
         """
         for solver in solvers:
             if isinstance(solver, EMSolver):
-                self.disabled_solver.append(solver.get_solver().__class__)
+                self.disabled_solver.append(solver.create_solver().__class__)
             else:
                 self.disabled_solver.append(solver.__class__)
 
@@ -1043,6 +1072,8 @@ class SolveRoutine:
 
         """
         for solver in self.forced_solver:
+            if solver is None:
+                continue
             if not self._legal_solver(solver):
                 continue
             if isinstance(solver, Solver):

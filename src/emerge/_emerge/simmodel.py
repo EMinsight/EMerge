@@ -37,6 +37,7 @@ import cloudpickle
 import os
 import inspect
 from pathlib import Path
+import joblib
 from atexit import register
 import signal
 from .. import __version__
@@ -120,10 +121,14 @@ class Simulation:
         self._initialize_simulation()
 
         self.set_loglevel(loglevel)
+        
         if write_log:
             self.set_write_log()
 
         LOG_CONTROLLER._flush_log_buffer()
+        
+        LOG_CONTROLLER._sys_info()
+        
         self._update_data()
     
 
@@ -226,10 +231,17 @@ class Simulation:
     
     def _set_mesh(self, mesh: Mesh3D) -> None:
         """Set the current model mesh to a given mesh."""
+        logger.trace(f'Setting {mesh} as model mesh')
         self.mesh = mesh
         self.mw.mesh = mesh
         self.display._mesh = mesh
     
+    def _save_geometries(self) -> None:
+        """Saves the current geometry state to the simulatin dataset
+        """
+        logger.trace('Storing geometries in data.sim')
+        self.data.sim['geos'] = {geo.name: geo for geo in _GEOMANAGER.all_geometries()}
+        self.data.sim['mesh'] = self.mesh
     ############################################################
     #                       PUBLIC FUNCTIONS                  #
     ############################################################
@@ -393,6 +405,7 @@ class Simulation:
         # Pack and save data
         dataset = dict(simdata=self.data, mesh=self.mesh)
         data_path = self.modelpath / 'simdata.emerge'
+        
         with open(str(data_path), "wb") as f_out:
             cloudpickle.dump(dataset, f_out)
             
@@ -418,13 +431,14 @@ class Simulation:
         gmsh.model.geo.synchronize()
         gmsh.model.occ.synchronize()
         logger.info(f"Loaded mesh from: {mesh_path}")
-        #self.mesh.update([])
 
         # Load data
         with open(str(data_path), "rb") as f_in:
             datapack= cloudpickle.load(f_in)
+        
         self.data = datapack['simdata']
-        self._set_mesh(datapack['mesh'])
+        self.activate(0)
+        
         logger.info(f"Loaded simulation data from: {data_path}")
     
     def set_loglevel(self, loglevel: Literal['DEBUG','INFO','WARNING','ERROR']) -> None:
@@ -433,12 +447,14 @@ class Simulation:
         Args:
             loglevel ('DEBUG','INFO','WARNING','ERROR'): The loglevel
         """
+        logger.trace(f'Setting loglevel to {loglevel}')
         LOG_CONTROLLER.set_std_loglevel(loglevel)
         if loglevel not in ('TRACE','DEBUG'):
             gmsh.option.setNumber("General.Terminal", 0)
 
     def set_write_log(self) -> None:
         """Adds a file output for the logger."""
+        logger.trace(f'Writing log to path = {self.modelpath}')
         LOG_CONTROLLER.set_write_file(self.modelpath)
         
     def view(self, 
@@ -471,17 +487,28 @@ class Simulation:
 
         return None
         
-    def set_periodic_cell(self, cell: PeriodicCell, included_faces: FaceSelection | None = None):
+    def set_periodic_cell(self, cell: PeriodicCell):
         """Set the given periodic cell object as the simulations peridicity.
 
         Args:
             cell (PeriodicCell): The PeriodicCell class
-            excluded_faces (list[FaceSelection], optional): Faces to exclude from the periodic boundary condition. Defaults to None.
         """
+        logger.trace(f'Setting {cell} as periodic cell object')
         self.mw.bc._cell = cell
         self._cell = cell
-        self._cell.included_faces = included_faces
 
+    def set_resolution(self, resolution: float) -> Simulation:
+        """Sets the discretization resolution in the various physics interfaces.
+        
+
+        Args:
+            resolution (float): The resolution as a float. Lower resolution is a finer mesh 
+
+        Returns:
+            Simulation: _description_
+        """
+        self.mw.set_resolution(resolution)
+        
     def commit_geometry(self, *geometries: GeoObject | list[GeoObject]) -> None:
         """Finalizes and locks the current geometry state of the simulation.
 
@@ -489,12 +516,14 @@ class Simulation:
         
         """
         geometries_parsed: Any = None
+        logger.trace('Committing final geometry.')
         if not geometries:
             geometries_parsed = _GEOMANAGER.all_geometries()
         else:
             geometries_parsed = unpack_lists(geometries + tuple([item for item in self.data.sim.default.values() if isinstance(item, GeoObject)]))
+        logger.trace(f'Parsed geometries = {geometries_parsed}')
+        self._save_geometries()
         
-        self.data.sim['geos'] = {geo.name: geo for geo in geometries_parsed}
         self.mesher.submit_objects(geometries_parsed)
         self._defined_geometries = True
         self.display._facetags = [dt[1] for dt in gmsh.model.get_entities(2)]
@@ -507,6 +536,19 @@ class Simulation:
         """
         return _GEOMANAGER.all_geometries()  
     
+    def activate(self, _indx: int | None = None, **variables) -> Simulation:
+        """Searches for the permutaions of parameter sweep variables and sets the current geometry to the provided set."""
+        if _indx is not None:
+            dataset = self.data.sim.index(_indx)
+        else:
+            dataset = self.data.sim.find(**variables)
+        
+        variables = ', '.join([f'{key}={value}' for key,value in dataset.vars.items()])
+        logger.info(f'Activated entry with variables: {variables}')
+        _GEOMANAGER.set_geometries(dataset['geos'])
+        self._set_mesh(dataset['mesh'])
+        return self
+        
     def generate_mesh(self) -> None:
         """Generate the mesh. 
         This can only be done after commit_geometry(...) is called and if frequencies are defined.
@@ -517,13 +559,15 @@ class Simulation:
         Raises:
             ValueError: ValueError if no frequencies are defined.
         """
+        logger.trace('Starting mesh generation phase.')
         if not self._defined_geometries:
             self.commit_geometry()
         
+        logger.trace(' (1) Installing periodic boundaries in mesher.')
         # Set the cell periodicity in GMSH
         if self._cell is not None:
             self.mesher.set_periodic_cell(self._cell)
-            
+        
         self.mw._initialize_bcs(_GEOMANAGER.get_surfaces())
 
         # Check if frequencies are defined: TODO: Replace with a more generic check
@@ -535,23 +579,24 @@ class Simulation:
         # Set the mesh size
         self.mesher.set_mesh_size(self.mw.get_discretizer(), self.mw.resolution)
         
+        logger.trace(' (2) Calling GMSH mesher')
         try:
             gmsh.logger.start()
             gmsh.model.mesh.generate(3)
             logs = gmsh.logger.get()
             gmsh.logger.stop()
             for log in logs:
-                logger.trace('[GMSH] '+log)
+                logger.trace('[GMSH] ' + log)
         except Exception:
             logger.error('GMSH Mesh error detected.')
             print(_GMSH_ERROR_TEXT)
             raise
-        
+        logger.info('GMSH Meshing complete!')
         self.mesh._pre_update(self.mesher._get_periodic_bcs())
         self.mesh.exterior_face_tags = self.mesher.domain_boundary_face_tags
         gmsh.model.occ.synchronize()
-        
         self._set_mesh(self.mesh)
+        logger.trace(' (3) Mesh routine complete')
 
     def parameter_sweep(self, clear_mesh: bool = True, **parameters: np.ndarray) -> Generator[tuple[float,...], None, None]:
         """Executes a parameteric sweep iteration.
@@ -579,9 +624,12 @@ class Simulation:
         paramlist = sorted(list(parameters.keys()))
         dims = np.meshgrid(*[parameters[key] for key in paramlist], indexing='ij')
         dims_flat = [dim.flatten() for dim in dims]
+        
         self.mw.cache_matrices = False
+        logger.trace('Starting parameter sweep.')
         for i_iter in range(dims_flat[0].shape[0]):
-            if clear_mesh:
+            
+            if clear_mesh and i_iter > 0:
                 logger.info('Cleaning up mesh.')
                 gmsh.clear()
                 mesh = Mesh3D(self.mesher)
@@ -592,7 +640,7 @@ class Simulation:
             params = {key: dim[i_iter] for key,dim in zip(paramlist, dims_flat)}
             self.mw._params = params
             self.data.sim.new(**params)
-
+            
             logger.info(f'Iterating: {params}')
             if len(dims_flat)==1:
                 yield dims_flat[0][i_iter]
@@ -613,6 +661,7 @@ class Simulation:
         Args:
             filename (str): The filename
         """
+        logger.trace(f'Writing geometry to {filename}')
         gmsh.write(filename)
         
     def set_solver(self, solver: EMSolver | Solver):
@@ -622,6 +671,7 @@ class Simulation:
         Args:
             solver (EMSolver | Solver): The solver objects
         """
+        logger.trace(f'Setting solver to {solver}')
         self.mw.solveroutine.set_solver(solver)
         
     ############################################################

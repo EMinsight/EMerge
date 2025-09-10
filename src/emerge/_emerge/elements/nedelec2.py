@@ -91,6 +91,7 @@ class Nedelec2(FEMBasis):
             vals = np.nan_to_num(vals)
         return vals
     
+    
     def interpolate_index(self, xs: np.ndarray,
                         ys: np.ndarray,
                         zs: np.ndarray,

@@ -712,18 +712,20 @@ class RectangularWaveguide(PortBC):
         self.mode: tuple[int,int] = mode
 
         if dims is None:
-            logger.info("Determining port face based on selection")
+            logger.debug(f" - Establishing RectangularWaveguide port face based on selection {self.selection}")
             cs, (width, height) = self.selection.rect_basis() # type: ignore
             self.cs = cs # type: ignore
             self.dims = (width, height)
-            logger.debug(f'Port CS: {self.cs}')
-            logger.debug(f'Detected port {self.port_number} size = {width*1000:.1f} mm x {height*1000:.1f} mm')
+            logger.debug(f' - Port CS: {self.cs}')
+            logger.debug(f' - Detected port {self.port_number} size = {width*1000:.1f} mm x {height*1000:.1f} mm')
         else:
             self.dims = dims
             self.cs = cs
+            
         if self.cs is None:
-            logger.info('Constructing coordinate system from normal port')
+            logger.info(' - Constructing coordinate system from normal port')
             self.cs = Axis(self.selection.normal).construct_cs()
+            logger.debug(f' - Port CS: {self.cs}')
     def get_basis(self) -> np.ndarray:
         return self.cs._basis
         

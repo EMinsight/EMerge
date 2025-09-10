@@ -262,6 +262,7 @@ class Microwave3D:
             logger.warning('A resolution greater than 0.33 may cause accuracy issues.')
         
         self.resolution = resolution
+        logger.trace(f'Resolution set to {self.resolution}')
 
     def set_conductivity_limit(self, condutivity: float) -> None:
         """Sets the limit of a material conductivity value beyond which
@@ -274,7 +275,9 @@ class Microwave3D:
         if condutivity < 0:
             raise ValueError('Conductivity values must be above 0. Ignoring assignment')
 
-        self.assembler.conductivity_limit = condutivity
+        self.assembler.settings.mw_2dbc_peclim = condutivity
+        self.assembler.settings.mw_3d_peclim = condutivity
+        logger.trace(f'Set conductivity limit to {condutivity} S/m')
     
     def get_discretizer(self) -> Callable:
         """Returns a discretizer function that defines the maximum mesh size.
@@ -295,7 +298,7 @@ class Microwave3D:
         if self.basis is not None:
             return
         if self.order == 1:
-            raise NotImplementedError('Nedelec 1 is temporarily not supported')
+            raise NotImplementedError('Nedelec 1 is currently not supported')
             from ...elements import Nedelec1
             self.basis = Nedelec1(self.mesh)
         elif self.order == 2:
@@ -310,6 +313,10 @@ class Microwave3D:
         for port in self.bc.oftype(LumpedPort):
             self.define_lumped_port_integration_points(port)
     
+    def _check_physics(self) -> None:
+        """ Executes a physics check before a simulation can be run."""
+        if not self.bc._is_excited():
+            raise SimulationError('The simulation has no boundary conditions that insert energy. Make sure to include at least one Port into your simulation.')
     def define_lumped_port_integration_points(self, port: LumpedPort) -> None:
         """Sets the integration points on Lumped Port objects for voltage integration
 
@@ -319,7 +326,7 @@ class Microwave3D:
         Raises:
             SimulationError: An error if there are no nodes associated with the port.
         """
-        logger.debug('Finding Lumped Port integration points')
+        logger.debug(' - Finding Lumped Port integration points')
         field_axis = port.Vdirection.np
 
         points = self.mesh.get_nodes(port.tags)
@@ -344,7 +351,7 @@ class Microwave3D:
             start = np.array([x,y,z])
             end = start + port.Vdirection.np*port.height
             port.vintline.append(Line.from_points(start, end, 21))
-            logger.trace(f'Port[{port.port_number}] integration line {start} -> {end}.')
+            logger.trace(f' - Port[{port.port_number}] integration line {start} -> {end}.')
         
         port.v_integration = True
     
@@ -388,7 +395,7 @@ class Microwave3D:
         if self.basis is None:
             raise ValueError('The field basis is not yet defined.')
 
-        logger.debug('Finding PEC TEM conductors')
+        logger.debug(' - Finding PEC TEM conductors')
         pecs: list[PEC] = self.bc.get_conductors() # type: ignore
         mesh = self.mesh
 
@@ -415,10 +422,10 @@ class Microwave3D:
         
         pec_islands = mesh.find_edge_groups(pec_port)
 
-        logger.debug(f'Found {len(pec_islands)} PEC islands.')
+        logger.debug(f' - Found {len(pec_islands)} PEC islands.')
 
         if len(pec_islands) != 2:
-            raise ValueError(f'Found {len(pec_islands)} PEC islands. Expected 2.')
+            raise ValueError(f' - Found {len(pec_islands)} PEC islands. Expected 2.')
         
         groups = []
         for island in pec_islands:
@@ -475,6 +482,8 @@ class Microwave3D:
                 The desired frequency at which the mode is solved. If None then it uses the lowest frequency of the provided range.
         '''
         T0 = time.time()
+        logger.info(f'Starting Mode Analysis for port {port}.')
+        
         if self.bc._initialized is False:
             raise SimulationError('Cannot run a modal analysis because no boundary conditions have been assigned.')
         
@@ -484,7 +493,7 @@ class Microwave3D:
         if self.basis is None:
             raise SimulationError('Cannot proceed, the current basis class is undefined.')
 
-        logger.debug('Retreiving material properties.')
+        logger.debug(' - retreiving material properties.')
         
         if freq is None:
             freq = self.frequencies[0]
@@ -522,6 +531,8 @@ class Microwave3D:
         urmax = np.max(ur[:,:,itri_port].flatten())
 
         k0 = 2*np.pi*freq/299792458
+        
+        logger.debug(f' - mean(max): εr = {ermean:.2f}({ermax:.2f}), μr = {urmean:.2f}({urmax:.2f})')
         
         Amatrix, Bmatrix, solve_ids, nlf = self.assembler.assemble_bma_matrices(self.basis, er, ur, cond, k0, port, self.bc)
         
@@ -643,6 +654,7 @@ class Microwave3D:
         
         self._initialize_field()
         self._initialize_bc_data()
+        self._check_physics()
         
         if self.basis is None:
             raise SimulationError('Cannot proceed, the simulation basis class is undefined.')
@@ -664,8 +676,10 @@ class Microwave3D:
 
         logger.info(f'Pre-assembling matrices of {len(self.frequencies)} frequency points.')
 
-        # Thread-local storage for per-thread resources
-        thread_local = threading.local()
+        thread_local = None
+        if parallel:
+            # Thread-local storage for per-thread resources
+            thread_local = threading.local()
 
         ## DEFINE SOLVE FUNCTIONS
         def get_routine():
@@ -700,6 +714,7 @@ class Microwave3D:
         results: list[SimJob] = []
         matset: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
         
+        logger.trace(f'Frequency groups: {freq_groups}')
         ## Single threaded
         job_id = 1
 
@@ -797,8 +812,8 @@ class Microwave3D:
                     # Distribute taks
                     group_results = pool.map(run_job_multi, jobs)
                     results.extend(group_results)
-
-        thread_local.__dict__.clear()
+        if parallel:
+            thread_local.__dict__.clear()
         logger.info('Solving complete')
 
         for freq, job in zip(self.frequencies, results):
@@ -807,7 +822,7 @@ class Microwave3D:
         for variables, data in self.data.sim.iterate():
             logger.trace(f'Sim variable: {variables}')
             for item in data['report']:
-                item.pretty_print(logger.trace)
+                item.logprint(logger.trace)
 
         self.solveroutine.reset()
         ### Compute S-parameters and return
@@ -914,8 +929,7 @@ class Microwave3D:
         mesh = self.mesh
         all_ports = self.bc.oftype(PortBC)
         port_numbers = [port.port_number for port in all_ports]
-        all_port_tets = self.mesh.get_face_tets(*[port.tags for port in all_ports])
-
+        
         logger.info('Computing S-parameters')
         
 
@@ -947,6 +961,8 @@ class Microwave3D:
 
             # Recording port information
             for active_port in all_ports:
+                port_tets = self.mesh.get_face_tets(active_port.tags)
+                
                 fielddata.add_port_properties(active_port.port_number,
                                          mode_number=active_port.mode_number,
                                          k0 = k0,
@@ -969,7 +985,7 @@ class Microwave3D:
                 fielddata.basis = self.basis
                 # Compute the S-parameters
                 # Define the field interpolation function
-                fieldf = self.basis.interpolate_Ef(solution, tetids=all_port_tets)
+                fieldf = self.basis.interpolate_Ef(solution, tetids=port_tets)
                 Pout = 0.0 + 0j
 
                 # Active port power
@@ -981,6 +997,8 @@ class Microwave3D:
                 
                 #Passive ports
                 for bc in all_ports:
+                    port_tets = self.mesh.get_face_tets(bc.tags)
+                    fieldf = self.basis.interpolate_Ef(solution, tetids=port_tets)
                     tris = mesh.get_triangles(bc.tags)
                     tri_vertices = mesh.tris[:,tris]
                     pfield, pmode = self._compute_s_data(bc, fieldf,tri_vertices, k0, ertri[:,:,tris], urtri[:,:,tris])

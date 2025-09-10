@@ -302,7 +302,7 @@ class Mesh3D(Mesh):
         """
         from .mth.optimized import area
         
-        logger.trace('Generating mesh data.')
+        logger.trace('Generating internal mesh data.')
         if periodic_bcs is None:
             periodic_bcs = []
             
@@ -502,7 +502,7 @@ class Mesh3D(Mesh):
                 self.dimtag_to_center[dt] = gmsh.model.occ.get_center_of_mass(*dt)
                 self.dimtag_to_edges[dt] = self._domain_edge(dt)
                 
-        logger.trace('Done analyzing mesh.')
+        logger.trace('Finalized mesh data generation!')
 
 
     ## Higher order functions

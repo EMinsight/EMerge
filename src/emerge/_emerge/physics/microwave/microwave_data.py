@@ -20,7 +20,7 @@ from ...simulation_data import BaseDataset, DataContainer
 from ...elements.femdata import FEMBasis
 from dataclasses import dataclass
 import numpy as np
-from typing import Literal, Callable
+from typing import Literal
 from loguru import logger
 from .adaptive_freq import SparamModel
 from ...cs import Axis, _parse_axis
@@ -720,6 +720,7 @@ class MWField:
         constants = 1/ (-1j*2*np.pi*self.freq*(self._dur*MU0) )
         Hx, Hy, Hz = self.basis.interpolate_curl(self._field, xf, yf, zf, constants)
         ids = self.basis.interpolate_index(xf, yf, zf)
+        
         self.er = self._der[ids].reshape(shp)
         self.ur = self._dur[ids].reshape(shp)
         self.Hx = Hx.reshape(shp)

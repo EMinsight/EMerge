@@ -30,8 +30,11 @@ os.environ["EMERGE_FILE_LOGLEVEL"] = os.getenv("EMERGE_FILE_LOGLEVEL", default="
 os.environ["OMP_NUM_THREADS"] = os.getenv("OMP_NUM_THREADS", default="1")
 os.environ["MKL_NUM_THREADS"] = os.getenv("MKL_NUM_THREADS", default="4")
 os.environ["OPENBLAS_NUM_THREADS"] = NTHREADS
+os.environ["VECLIB_NUM_THREADS"] = NTHREADS
 os.environ["VECLIB_MAXIMUM_THREADS"] = NTHREADS
 os.environ["NUMEXPR_NUM_THREADS"] = NTHREADS
+os.environ["NUMBA_NUM_THREADS"] = "4"
+os.environ.setdefault("NUMBA_THREADING_LAYER", "workqueue")
 
 ############################################################
 #                      IMPORT MODULES                     #
@@ -44,6 +47,7 @@ LOG_CONTROLLER.set_default()
 logger.debug('Importing modules')
 LOG_CONTROLLER._set_log_buffer()
 
+import gmsh
 from ._emerge.simmodel import Simulation
 from ._emerge.material import Material, FreqCoordDependent, FreqDependent, CoordDependent
 from ._emerge import bc
