@@ -317,6 +317,7 @@ class Microwave3D:
         """ Executes a physics check before a simulation can be run."""
         if not self.bc._is_excited():
             raise SimulationError('The simulation has no boundary conditions that insert energy. Make sure to include at least one Port into your simulation.')
+    
     def define_lumped_port_integration_points(self, port: LumpedPort) -> None:
         """Sets the integration points on Lumped Port objects for voltage integration
 
@@ -326,6 +327,8 @@ class Microwave3D:
         Raises:
             SimulationError: An error if there are no nodes associated with the port.
         """
+        if len(port.vintline) > 0:
+            return
         logger.debug(' - Finding Lumped Port integration points')
         field_axis = port.Vdirection.np
 
