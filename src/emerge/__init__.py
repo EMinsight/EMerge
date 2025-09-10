@@ -62,7 +62,7 @@ from ._emerge.periodic import RectCell, HexCell
 from ._emerge.mesher import Algorithm2D, Algorithm3D
 from . import lib
 from ._emerge.howto import _HowtoClass
-
+from ._emerge.emerge_update import update_emerge
 howto = _HowtoClass()
 
 logger.debug('Importing complete!')

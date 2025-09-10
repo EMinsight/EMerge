@@ -627,6 +627,7 @@ class Simulation:
         
         self.mw.cache_matrices = False
         logger.trace('Starting parameter sweep.')
+        
         for i_iter in range(dims_flat[0].shape[0]):
             
             if clear_mesh and i_iter > 0:
@@ -646,6 +647,13 @@ class Simulation:
                 yield dims_flat[0][i_iter]
             else:
                 yield (dim[i_iter] for dim in dims_flat) # type: ignore
+            
+            if not clear_mesh:
+                self._save_geometries()
+        
+        if not clear_mesh:
+                self._save_geometries()
+        
         self.mw.cache_matrices = True
     
     def export(self, filename: str):
