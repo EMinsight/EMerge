@@ -330,8 +330,10 @@ def ned2_tet_interp_curl(coords: np.ndarray,
         Exl = np.zeros(x.shape, dtype=np.complex128)
         Eyl = np.zeros(x.shape, dtype=np.complex128)
         Ezl = np.zeros(x.shape, dtype=np.complex128)
-        V1 = (216*V**3)
-        V2 = (72*V**3)
+        
+        V1 = (216*V**3) #+ 1e-30
+        V2 = (72*V**3) #+ 1e-30
+        
         for ie in range(6):
             Em1, Em2 = Em1s[ie], Em2s[ie]
             edgeids = l_edge_ids[:, ie]
@@ -500,7 +502,7 @@ def ned2_tri_interp(coords: np.ndarray,
         Exl = np.zeros(x.shape, dtype=np.complex128)
         Eyl = np.zeros(x.shape, dtype=np.complex128)
 
-
+        #A = A + 1e-30
         for ie in range(3):
             Em1, Em2 = Em1s[ie], Em2s[ie]
             edgeids = l_edge_ids[:, ie]
@@ -588,7 +590,7 @@ def ned2_tri_interp_full(coords: np.ndarray,
         yvs = nodes[1, tris[:,itri]]
 
         a_s, b_s, c_s, A = tri_coefficients(xvs, yvs)
-        
+        #A = A + 1e-30
         e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14 = Etri
 
         a1, a2, a3 = a_s
@@ -671,7 +673,7 @@ def ned2_tri_interp_curl(coords: np.ndarray,
         yvs = nodes[1, tris[:,itri]]
 
         a_s, b_s, c_s, A = tri_coefficients(xvs, yvs)
-
+        #A = A + 1e-30
         e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14 = Etri
 
         a1, a2, a3 = a_s

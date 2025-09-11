@@ -159,7 +159,7 @@ class DataEntry:
         return all(self.vars[key]==other[key] for key in allkeys)
     
     def _dist(self, other: dict[str, float]) -> float:
-        return sum([(abs(self.vars.get(key,1e20)-other[key])/other[key]) for key in other.keys()])
+        return sum([(abs(self.vars.get(key,1e20)-other[key])/(other[key]+1e-12)) for key in other.keys()])
     
     def __getitem__(self, key) -> Any:
         return self.data[key]

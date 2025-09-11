@@ -18,7 +18,6 @@
 
 import numpy as np
 from ....elements import Nedelec2
-from scipy.sparse import csr_matrix
 from ....mth.optimized import local_mapping, compute_distances
 from numba import c16, types, f8, i8, njit, prange
 

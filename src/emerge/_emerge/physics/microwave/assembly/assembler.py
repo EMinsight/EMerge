@@ -27,6 +27,7 @@ from ..simjob import SimJob
 
 from ....const import MU0, EPS0, C0
 
+_PBC_DSMAX = 1e-15
 
 ############################################################
 #                         FUNCTIONS                        #
@@ -361,8 +362,8 @@ class Assembler:
             edge_ids_2 = mesh.get_edges(pbc.face2.tags)
             dv = np.array(pbc.dv)
             logger.trace(f'..displacement vector {dv}')
-            linked_tris = pair_coordinates(mesh.tri_centers, tri_ids_1, tri_ids_2, dv, 1e-9)
-            linked_edges = pair_coordinates(mesh.edge_centers, edge_ids_1, edge_ids_2, dv, 1e-9)
+            linked_tris = pair_coordinates(mesh.tri_centers, tri_ids_1, tri_ids_2, dv, _PBC_DSMAX)
+            linked_edges = pair_coordinates(mesh.edge_centers, edge_ids_1, edge_ids_2, dv, _PBC_DSMAX)
             dv = np.array(pbc.dv)
             phi = pbc.phi(K0)
             logger.trace(f'..ϕ={phi} rad/m')
@@ -547,8 +548,8 @@ class Assembler:
             tri_ids_2 = mesh.get_triangles(bcp.face2.tags)
             edge_ids_2 = mesh.get_edges(bcp.face2.tags)
             dv = np.array(bcp.dv)
-            linked_tris = pair_coordinates(mesh.tri_centers, tri_ids_1, tri_ids_2, dv, 1e-9)
-            linked_edges = pair_coordinates(mesh.edge_centers, edge_ids_1, edge_ids_2, dv, 1e-9)
+            linked_tris = pair_coordinates(mesh.tri_centers, tri_ids_1, tri_ids_2, dv, _PBC_DSMAX)
+            linked_edges = pair_coordinates(mesh.edge_centers, edge_ids_1, edge_ids_2, dv, _PBC_DSMAX)
             dv = np.array(bcp.dv)
             phi = bcp.phi(k0)
             

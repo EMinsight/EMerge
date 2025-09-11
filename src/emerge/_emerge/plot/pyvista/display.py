@@ -78,24 +78,24 @@ class _RunState:
     
 ANIM_STATE = _RunState()
 
-def gen_cmap(mesh, N: int = 256):
-    # build a linear grid of data‐values (not strictly needed for pure colormap)
-    vmin, vmax = mesh['values'].min(), mesh['values'].max()
-    mapping = np.linspace(vmin, vmax, N)
+# def gen_cmap(mesh, N: int = 256):
+#     # build a linear grid of data‐values (not strictly needed for pure colormap)
+#     vmin, vmax = mesh['values'].min(), mesh['values'].max()
+#     mapping = np.linspace(vmin, vmax, N)
     
-    # prepare output
-    newcolors = np.empty((N, 4))
+#     # prepare output
+#     newcolors = np.empty((N, 4))
     
-    # normalized positions of control points: start, middle, end
-    control_pos = np.array([0.0, 0.25, 0.5, 0.75, 1]) * (vmax - vmin) + vmin
-    # stack control colors
-    controls = np.vstack([col1, col2, col3, col4, col5])
+#     # normalized positions of control points: start, middle, end
+#     control_pos = np.array([0.0, 0.25, 0.5, 0.75, 1]) * (vmax - vmin) + vmin
+#     # stack control colors
+#     controls = np.vstack([col1, col2, col3, col4, col5])
     
-    # interp each RGBA channel independently
-    for chan in range(4):
-        newcolors[:, chan] = np.interp(mapping, control_pos, controls[:, chan])
+#     # interp each RGBA channel independently
+#     for chan in range(4):
+#         newcolors[:, chan] = np.interp(mapping, control_pos, controls[:, chan])
     
-    return ListedColormap(newcolors)
+#     return ListedColormap(newcolors)
 
 def setdefault(options: dict, **kwargs) -> dict:
     """Shorthand for overwriting non-existent keyword arguments with defaults

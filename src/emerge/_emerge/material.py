@@ -45,9 +45,10 @@ def _to_mat(value: float | complex | int | np.ndarray) -> np.ndarray:
 class MatProperty:
     _freq_dependent: bool = False
     _coord_dependent: bool = False
+    _pickle_exclude = {"_func","_fmax"}
     """The MatProperty class is an interface for EMerge to deal with frequency and coordinate dependent material properties
     """
-
+    
     def __init__(self, value: float | complex | int | np.ndarray):
         self.value: np.ndarray = _to_mat(value)
         
@@ -76,7 +77,19 @@ class MatProperty:
         self._x: np.ndarray = np.array([], dtype=np.float64)
         self._y: np.ndarray = np.array([], dtype=np.float64)
         self._z: np.ndarray = np.array([], dtype=np.float64)
+    
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        for k in self._pickle_exclude:
+            state.pop(k, None)
         
+        return state
+    
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        for k in self._pickle_exclude:
+            setattr(self, k, None)
+    
 class FreqDependent(MatProperty):
     _freq_dependent: bool = True
     _coord_dependent: bool = False
@@ -283,6 +296,7 @@ class Material:
     to supply a frequency and coordinate dependent property use: emerge.FreqCoordDependent()
     
     """
+    _pickle_exclude = {"_neff"}
     def __init__(self,
                  er: float | complex | np.ndarray | MatProperty = 1.0,
                  ur: float | complex | np.ndarray | MatProperty = 1.0,
@@ -320,6 +334,18 @@ class Material:
         hex_str = self.color.lstrip('#')
         self._color_rgb = tuple(int(hex_str[i:i+2], 16)/255.0 for i in (0, 2, 4))
         self._metal: bool = _metal
+        
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        for k in self._pickle_exclude:
+            state.pop(k, None)
+        
+        return state
+    
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        for k in self._pickle_exclude:
+            setattr(self, k, None)
 
     def __hash__(self):
         return self._hash_key

@@ -18,7 +18,7 @@
 import numpy as np
 from ....elements.nedleg2 import NedelecLegrange2
 from scipy.sparse import csr_matrix
-from ....mth.optimized import local_mapping, matinv, compute_distances, gaus_quad_tri
+from ....mth.optimized import local_mapping, matinv, compute_distances
 from numba import c16, types, f8, i8, njit, prange
 
 
@@ -48,7 +48,6 @@ def generelized_eigenvalue_matrix(field: NedelecLegrange2,
     edges = field.mesh.edges
     nodes = field.mesh.nodes
     
-    nT = tris.shape[1]
     tri_to_field = field.tri_to_field
 
     nodes = field.local_nodes

@@ -26,6 +26,8 @@ from loguru import logger
 from .bc import Periodic
 from .material import Material
 
+_MISSING_ID: int = -1234
+
 def shortest_distance(point_cloud):
     """
     Compute the shortest distance between any two points in a 3D point cloud.
@@ -128,7 +130,6 @@ class Mesh3D(Mesh):
         ## States
         self.defined: bool = False
 
-
         ## Memory
         self.ftag_to_tri: dict[int, list[int]] = dict()
         self.ftag_to_node: dict[int, list[int]] = dict()
@@ -167,8 +168,8 @@ class Mesh3D(Mesh):
         if i1==i2:
             raise ValueError("Edge cannot be formed by the same node.")
         search = (min(int(i1),int(i2)), max(int(i1),int(i2)))
-        result =  self.inv_edges.get(search, -10)
-        if result == -10 and not skip:
+        result =  self.inv_edges.get(search, _MISSING_ID)
+        if result == _MISSING_ID and not skip:
             raise ValueError(f'There is no edge with indices {i1}, {i2}')
         return result
     
@@ -383,10 +384,10 @@ class Mesh3D(Mesh):
         self.inv_tets = {_hash((self.tets[0,i], self.tets[1,i], self.tets[2,i], self.tets[3,i])): i for i in range(self.tets.shape[1])}
         
         # Tet links
-        self.tet_to_edge = np.zeros((6, self.tets.shape[1]), dtype=int)-99999
-        self.tet_to_edge_sign = np.zeros((6, self.tets.shape[1]), dtype=int)-999999
-        self.tet_to_tri = np.zeros((4, self.tets.shape[1]), dtype=int)-99999
-        self.tet_to_tri_sign = np.zeros((4, self.tets.shape[1]), dtype=int)-999999
+        self.tet_to_edge = np.zeros((6, self.tets.shape[1]), dtype=int) + _MISSING_ID
+        self.tet_to_edge_sign = np.zeros((6, self.tets.shape[1]), dtype=int) + _MISSING_ID
+        self.tet_to_tri = np.zeros((4, self.tets.shape[1]), dtype=int) + _MISSING_ID
+        self.tet_to_tri_sign = np.zeros((4, self.tets.shape[1]), dtype=int) + _MISSING_ID
 
         tri_to_tet = defaultdict(list)
         for itet in range(self.tets.shape[1]):
@@ -408,7 +409,7 @@ class Mesh3D(Mesh):
             tri_to_tet[self.tet_to_tri[3, itet]].append(itet)
         
         # Tri links
-        self.tri_to_tet = np.zeros((2, self.tris.shape[1]), dtype=int)-1
+        self.tri_to_tet = np.zeros((2, self.tris.shape[1]), dtype=int)+_MISSING_ID
         for itri in range(self.tris.shape[1]):
             tets = tri_to_tet[itri]
             self.tri_to_tet[:len(tets), itri] = tets
@@ -459,7 +460,7 @@ class Mesh3D(Mesh):
         ent = np.array(edge_node_tags).reshape(-1,2).T
         nET = ent.shape[1]
         self.edge_t2i = {int(edge_tags[i]): self.get_edge(self.n_t2i[ent[0,i]], self.n_t2i[ent[1,i]], skip=True) for i in range(nET)}
-        self.edge_t2i = {key: value for key,value in self.edge_t2i.items() if value!=-10}
+        self.edge_t2i = {key: value for key,value in self.edge_t2i.items() if value!=-_MISSING_ID}
         self.edge_i2t = {i: t for t, i in self.edge_t2i.items()}
         
         edge_dimtags = gmsh.model.get_entities(1)
@@ -548,7 +549,7 @@ class Mesh3D(Mesh):
         node_ids_2_arry = np.array(node_ids_2)
         dv = np.array(bc.dv)
         
-        nodemap = pair_coordinates(self.nodes, node_ids_1_arry, node_ids_2_arry, dv, dsmin/2)
+        nodemap = pair_coordinates(self.nodes, node_ids_1_arry, node_ids_2_arry, dv, dsmin/4)
         node_ids_2_unsorted = [nodemap[i] for i in sorted(node_ids_1)]
         node_ids_2_sorted = sorted(node_ids_2_unsorted)
         conv_map = {i1: i2 for i1, i2 in zip(node_ids_2_unsorted, node_ids_2_sorted)}

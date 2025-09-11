@@ -160,7 +160,6 @@ def tet_mass_stiffness_matrices(field: Nedelec2,
     edges = field.mesh.edges
     nodes = field.mesh.nodes
 
-    nT = tets.shape[1]
     tet_to_field = field.tet_to_field
     tet_to_edge = field.mesh.tet_to_edge
     nE = edges.shape[1]
