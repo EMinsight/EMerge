@@ -112,7 +112,7 @@ plot_sp(f, [S11, S21], xunit='MHz', labels=['S11', 'S21'])
 m.display.add_object(diel, opacity=0.1)
 m.display.add_object(traces, opacity=0.1)
 # Cut-plane of Ez field through substrate center
-cut = data.field.find(freq=2.25e9)\
+cut = data.field.find(freq=0.15e9)\
     .cutplane(0.1 * mm, z=-th/2 * mm)
-m.display.add_surf(*cut.scalar('Ez', 'real'), symmetrize=True, cmap='coolwarm')
+m.display.animate().add_surf(*cut.scalar('Ez', 'complex'), symmetrize=True)
 m.display.show()

@@ -91,6 +91,6 @@ for mode_index in range(Nmodes):
     model.display.add_title(f'Mode {mode_index+1}: {freq_ghz:.3f} GHz')
     model.display.add_text('E-field', color='red', abs_position=(0, 0.95))
     model.display.add_text('H-field', color='green', abs_position=(0, 0.9))
-    model.display.add_surf(*data.field[mode_index].cutplane(2*mm, y=0).scalar('normS','real'), cmap='plasma')
+    model.display.add_surf(*data.field[mode_index].cutplane(2*mm, y=0).scalar('normS'))
     # Render each mode one at a time
     model.display.show()

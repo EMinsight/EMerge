@@ -92,7 +92,6 @@ model.display.add_surf(
     *data.field[0].farfield_3d(radiation_boundary).surfplot(
         'normE', 'abs', True, True, -10, 5*cm, (waveguide_length+aperture_length,0,0)
     ),
-    cmap='jet', symmetrize=False
 )
 model.display.add_portmode(port1, k0=data.field[0].k0)
 model.display.show()

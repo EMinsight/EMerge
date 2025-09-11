@@ -141,6 +141,7 @@ model.display.add_object(dielectric)
 ff3d = data.field.find(freq=1.575e9).farfield_3d(boundary_selection)
 surf = ff3d.surfplot('normE', rmax=60 * mm,
                       offset=(0, 0, 20 * mm))
-model.display.add_surf(*surf, cmap='viridis', symmetrize=False)
-model.display.animate().add_surf(*data.field.find(freq=1.575e9).cutplane(2*mm, x=0).scalar('Ey','real'), scale='symlog', cmap='coolwarm')
+
+model.display.add_surf(*surf)
+model.display.cbar('Ey',clim=(-100,100)).animate().add_contour(*data.field.find(freq=1.575e9).grid(5*mm, False).scalar('Ey','complex'), Nlevels=40, symmetrize=True)
 model.display.show()

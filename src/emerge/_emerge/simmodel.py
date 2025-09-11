@@ -577,7 +577,7 @@ class Simulation:
         gmsh.model.occ.synchronize()
 
         # Set the mesh size
-        self.mesher.set_mesh_size(self.mw.get_discretizer(), self.mw.resolution)
+        self.mesher._configure_mesh_size(self.mw.get_discretizer(), self.mw.resolution)
         
         logger.trace(' (2) Calling GMSH mesher')
         try:

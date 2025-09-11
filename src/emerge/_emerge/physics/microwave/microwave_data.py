@@ -700,7 +700,7 @@ class MWField:
         ''' Return the magnetic field as a tuple of numpy arrays '''
         return self.Hx, self.Hy, self.Hz
     
-    def interpolate(self, xs: np.ndarray, ys: np.ndarray, zs: np.ndarray) -> EHField:
+    def interpolate(self, xs: np.ndarray, ys: np.ndarray, zs: np.ndarray, usenan: bool = True) -> EHField:
         ''' Interpolate the dataset in the provided xs, ys, zs values'''
         if isinstance(xs, (float, int, complex)):
             xs = np.array([xs,])
@@ -711,14 +711,14 @@ class MWField:
         xf = xs.flatten()
         yf = ys.flatten()
         zf = zs.flatten()
-        Ex, Ey, Ez = self.basis.interpolate(self._field, xf, yf, zf)
+        Ex, Ey, Ez = self.basis.interpolate(self._field, xf, yf, zf, usenan=usenan)
         self.Ex = Ex.reshape(shp)
         self.Ey = Ey.reshape(shp)
         self.Ez = Ez.reshape(shp)
 
         
         constants = 1/ (-1j*2*np.pi*self.freq*(self._dur*MU0) )
-        Hx, Hy, Hz = self.basis.interpolate_curl(self._field, xf, yf, zf, constants)
+        Hx, Hy, Hz = self.basis.interpolate_curl(self._field, xf, yf, zf, constants, usenan=usenan)
         ids = self.basis.interpolate_index(xf, yf, zf)
         
         self.er = self._der[ids].reshape(shp)
@@ -736,7 +736,8 @@ class MWField:
                      ds: float,
                      x: float | None = None,
                      y: float | None = None,
-                     z: float | None = None) -> EHField:
+                     z: float | None = None,
+                     usenan: bool = True) -> EHField:
         """Create a cartesian cut plane (XY, YZ or XZ) and compute the E and H-fields there
 
         Only one coordiante and thus cutplane may be defined. If multiple are defined only the last (x->y->z) is used.
@@ -764,12 +765,13 @@ class MWField:
         if z is not None:
             X,Y = np.meshgrid(xs, ys)
             Z = z*np.ones_like(Y)
-        return self.interpolate(X,Y,Z)
+        return self.interpolate(X,Y,Z, usenan=usenan)
     
     def cutplane_normal(self,
              point=(0,0,0),
              normal=(0,0,1),
-             npoints: int = 300) -> EHField:
+             npoints: int = 300,
+             usenan: bool = True) -> EHField:
         """
         Take a 2D slice of the field along an arbitrary plane.
         Args:
@@ -813,10 +815,10 @@ class MWField:
         Y = point[1] + S_mesh*u[1] + T_mesh*v[1]
         Z = point[2] + S_mesh*u[2] + T_mesh*v[2]
 
-        return self.interpolate(X, Y, Z)
+        return self.interpolate(X, Y, Z, usenan=usenan)
     
     
-    def grid(self, ds: float) -> EHField:
+    def grid(self, ds: float, usenan: bool = True) -> EHField:
         """Interpolate a uniform grid sampled at ds
 
         Args:
@@ -830,7 +832,7 @@ class MWField:
         ys = np.linspace(yb[0], yb[1], int((yb[1]-yb[0])/ds))
         zs = np.linspace(zb[0], zb[1], int((zb[1]-zb[0])/ds))
         X, Y, Z = np.meshgrid(xs, ys, zs)
-        return self.interpolate(X,Y,Z)
+        return self.interpolate(X,Y,Z, usenan=usenan)
     
     def vector(self, field: Literal['E','H'], metric: Literal['real','imag','complex'] = 'real') -> tuple[np.ndarray, np.ndarray,np.ndarray,np.ndarray,np.ndarray,np.ndarray]:
         """Returns the X,Y,Z,Fx,Fy,Fz data to be directly cast into plot functions.

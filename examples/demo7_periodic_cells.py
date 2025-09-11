@@ -110,6 +110,6 @@ data = model.mw.run_sweep()
 
 model.display.add_object(waveguide)
 model.display.add_object(box)
-model.display.add_surf(*data.field[0].cutplane(3*mm, y=0).scalar('Ey','real'), cmap='coolwarm')
-model.display.add_surf(*data.field[0].cutplane(3*mm, x=0).scalar('Ey','real'), cmap='coolwarm')
+model.display.add_surf(*data.field[0].cutplane(3*mm, y=0).scalar('Ey','real'), symmetrize=True)
+model.display.add_surf(*data.field[0].cutplane(3*mm, x=0).scalar('Ey','real'), symmetrize=True)
 model.display.show()

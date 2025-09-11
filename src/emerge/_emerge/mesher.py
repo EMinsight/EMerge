@@ -210,8 +210,32 @@ class Mesher:
         gmsh.model.mesh.field.set_numbers(ctag, "SurfacesList", tags)
         gmsh.model.mesh.field.set_number(ctag, "VIn", max_size)
         self.mesh_fields.append(ctag)
+        
+    def _set_size_on_edge(self, tags: list[int], max_size: float) -> None:
+        """Define the size of the mesh on an edge
 
-    def set_mesh_size(self, discretizer: Callable, resolution: float):
+        Args:
+            tags (list[int]): The tags of the geometry
+            max_size (float): The maximum size (in meters)
+        """
+        ctag = gmsh.model.mesh.field.add("Constant")
+        gmsh.model.mesh.field.set_numbers(ctag, "CurvesList", tags)
+        gmsh.model.mesh.field.set_number(ctag, "VIn", max_size)
+        self.mesh_fields.append(ctag)
+        
+    def _set_size_on_point(self, tags: list[int], max_size: float) -> None:
+        """Define the size of the mesh on a point
+
+        Args:
+            tags (list[int]): The tags of the geometry
+            max_size (float): The maximum size (in meters)
+        """
+        ctag = gmsh.model.mesh.field.add("Constant")
+        gmsh.model.mesh.field.set_numbers(ctag, "PointsList", tags)
+        gmsh.model.mesh.field.set_number(ctag, "VIn", max_size)
+        self.mesh_fields.append(ctag)
+
+    def _configure_mesh_size(self, discretizer: Callable, resolution: float):
         """Defines the mesh sizes based on a discretization callable.
         The discretizer must take a material and return a maximum
         size for that material.
@@ -332,6 +356,22 @@ class Mesher:
         
         logger.debug(f'Setting size {size*1000:.3f}ff for face {obj}')
         self._set_size_on_face(obj.tags, size)
+    
+    def set_size(self, obj: GeoObject, size: float) -> None:
+        """Manually set the size in or on an object
+
+        Args:
+            obj (GeoObject): _description_
+            size (float): _description_
+        """
+        if obj.dim == 2:
+            self._set_size_on_face(obj.tags, size)
+        elif obj.dim == 3:
+            self._set_size_in_domain(obj.tags, size)
+        elif obj.dim == 1:
+            self._set_size_on_edge(obj.tags, size)
+        elif obj.dim == 0:
+            self._set_size_on_point(obj.tags, size)
         
     def refine_conductor_edge(self, dimtags: list[tuple[int,int]], size):
         nodes = gmsh.model.getBoundary(dimtags, combined=False, recursive=False)

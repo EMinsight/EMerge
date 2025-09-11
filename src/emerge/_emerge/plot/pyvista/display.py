@@ -26,6 +26,8 @@ from typing import Iterable, Literal, Callable, Any
 from ..display import BaseDisplay
 from .display_settings import PVDisplaySettings
 from matplotlib.colors import ListedColormap
+from .cmap_maker import make_colormap
+
 from itertools import cycle
 ### Color scale
 
@@ -40,6 +42,8 @@ cmap_names = Literal['bgy','bgyw','kbc','blues','bmw','bmy','kgy','gray','dimgra
                      'bkr','bky','coolwarm','gwv','bjy','bwy','cwr','colorwheel','isolum','rainbow','fire',
                      'cet_fire','gouldian','kbgyw','cwr','CET_CBL1','CET_CBL3','CET_D1A']
 
+EMERGE_AMP =  make_colormap(["#1F0061","#35188e","#1531ab", "#ff007b", "#ff7c51"], (0.0, 0.2, 0.4, 0.7, 0.9))
+EMERGE_WAVE = make_colormap(["#4ab9ff","#0510B2B8","#3A37466E","#CC0954B9","#ff9036"], (0.0, 0.3, 0.5, 0.7, 1.0))
 
 def _gen_c_cycle():
     colors = [
@@ -252,8 +256,20 @@ class PVDisplay(BaseDisplay):
 
         self._ctr: int = 0 
         
+        self._cbar_args: dict = {}
+        self._cbar_lim: tuple[float, float] | None = None
         self.camera_position = (1, -1, 1)     # +X, +Z, -Y
     
+    
+    def cbar(self, name: str, n_labels: int = 5, interactive: bool = False, clim: tuple[float, float] | None = None ) -> PVDisplay:
+        self._cbar_args = dict(title=name, n_labels=n_labels, interactive=interactive)
+        self._cbar_lim = clim
+        return self
+    
+    def _reset_cbar(self) -> None:
+        self._cbar_args: dict = {}
+        self._cbar_lim: tuple[float, float] | None = None
+        
     def _wire_close_events(self):
         self._closed = False
 
@@ -378,6 +394,7 @@ class PVDisplay(BaseDisplay):
         >>> display.animate().surf(...)
         >>> display.show()
         """
+        print('If you closed the animation without using (Q) press Ctrl+C to kill the process.')
         self._Nsteps = Nsteps
         self._fps = fps
         self._do_animate = True
@@ -573,7 +590,6 @@ class PVDisplay(BaseDisplay):
         else:
             F = np.real(F.T)
             Fnorm = np.sqrt(Fx.real**2 + Fy.real**2 + Fz.real**2).T
-
         if XYZ is not None:
             grid = pv.StructuredGrid(X,Y,Z)
             self.add_surf(X,Y,Z,Fnorm, _fieldname = 'portfield')
@@ -633,22 +649,26 @@ class PVDisplay(BaseDisplay):
 
         grid_no_nan = grid.threshold(scalars=name)
         
-        default_cmap = 'viridis'
+        default_cmap = EMERGE_AMP
         # Determine color limits
         if clim is None:
-            fmin = np.nanmin(static_field)
-            fmax = np.nanmax(static_field)
-            clim = (fmin, fmax)
+            if self._cbar_lim is not None:
+                clim = self._cbar_lim
+            else:
+                fmin = np.nanmin(static_field)
+                fmax = np.nanmax(static_field)
+                clim = (fmin, fmax)
+        
         if symmetrize:
             lim = max(abs(clim[0]), abs(clim[1]))
             clim = (-lim, lim)
-            default_cmap = 'coolwarm'
+            default_cmap = EMERGE_WAVE
         
         if cmap is None:
             cmap = default_cmap
         
         kwargs = setdefault(kwargs, cmap=cmap, clim=clim, opacity=opacity, pickable=False, multi_colors=True)
-        actor = self._plot.add_mesh(grid_no_nan, scalars=name, **kwargs)
+        actor = self._plot.add_mesh(grid_no_nan, scalars=name, scalar_bar_args=self._cbar_args, **kwargs)
 
 
         if self._do_animate:
@@ -658,8 +678,9 @@ class PVDisplay(BaseDisplay):
                 obj.fgrid[name] = obj.grid.threshold(scalars=name)[name]
                 #obj.fgrid replace with thresholded scalar data.
             self._objs.append(_AnimObject(field_flat, T, grid, grid_no_nan, actor, on_update))
-
-
+        
+        self._reset_cbar()
+        
     def add_title(self, title: str) -> None:
         """Adds a title
 
@@ -692,6 +713,7 @@ class PVDisplay(BaseDisplay):
               dx: np.ndarray, dy: np.ndarray, dz: np.ndarray,
               scale: float = 1,
               color: tuple[float, float, float] | None = None,
+              cmap: cmap_names | None = None,
               scalemode: Literal['lin','log'] = 'lin'):
         """Add a quiver plot to the display
 
@@ -714,6 +736,8 @@ class PVDisplay(BaseDisplay):
         
         ids = np.invert(np.isnan(dx))
         
+        if cmap is None:
+            cmap = EMERGE_AMP
         x, y, z, dx, dy, dz = x[ids], y[ids], z[ids], dx[ids], dy[ids], dz[ids]
         
         dmin = _min_distance(x,y,z)
@@ -732,8 +756,8 @@ class PVDisplay(BaseDisplay):
         if color is not None:
             kwargs['color'] = color
             
-        pl = self._plot.add_arrows(Coo, Vec, scalars=None, clim=None, cmap=None, **kwargs)
-
+        pl = self._plot.add_arrows(Coo, Vec, scalars=None, clim=None, cmap=cmap, **kwargs)
+        self._reset_cbar()
         
     def add_contour(self,
                      X: np.ndarray,
@@ -742,7 +766,8 @@ class PVDisplay(BaseDisplay):
                      V: np.ndarray,
                      Nlevels: int = 5,
                      symmetrize: bool = True,
-                     cmap: str = 'viridis'):
+                     clim: tuple[float, float] | None = None,
+                     cmap: cmap_names | None = None,):
         """Adds a 3D volumetric contourplot based on a 3D grid of X,Y,Z and field values
 
 
@@ -756,27 +781,47 @@ class PVDisplay(BaseDisplay):
             cmap (str, optional): The color map. Defaults to 'viridis'.
         """
         Vf = V.flatten()
+        Vf = np.nan_to_num(Vf)
         vmin = np.min(np.real(Vf))
         vmax = np.max(np.real(Vf))
+        
+        default_cmap = EMERGE_AMP
+        
         if symmetrize:
-            level = max(np.abs(vmin),np.abs(vmax))
+            level = np.max(np.abs(Vf))
             vmin, vmax = (-level, level)
+            default_cmap = EMERGE_WAVE
+            
+        if cmap is None:
+            cmap = default_cmap
+            
         grid = pv.StructuredGrid(X,Y,Z)
         field = V.flatten(order='F')
         grid['anim'] = np.real(field)
         levels = list(np.linspace(vmin, vmax, Nlevels))
         contour = grid.contour(isosurfaces=levels)
-        actor = self._plot.add_mesh(contour, opacity=0.25, cmap=cmap, pickable=False)
+        
+        if clim is None:
+            if self._cbar_lim is not None:
+                clim = self._cbar_lim
+            else:
+                clim = (vmin, vmax)
+                
+        actor = self._plot.add_mesh(contour, opacity=0.25, cmap=cmap, clim=clim, pickable=False, scalar_bar_args=self._cbar_args)
 
+        
+                
         if self._do_animate:
             def on_update(obj: _AnimObject, phi: complex):
                 new_vals = np.real(obj.field * phi)
                 obj.grid['anim'] = new_vals
                 new_contour = obj.grid.contour(isosurfaces=levels)
                 obj.actor.GetMapper().SetInputData(new_contour) # type: ignore
+                
+            self._objs.append(_AnimObject(field, lambda x: x, grid, None, actor, on_update)) # type: ignore
             
-            self._objs.append(_AnimObject(field, lambda x: x, grid, actor, on_update)) # type: ignore
-
+        self._reset_cbar()
+        
     def _add_aux_items(self) -> None:
         saved_camera = {
             "position": self._plot.camera.position,

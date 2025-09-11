@@ -46,7 +46,7 @@ def update_emerge(branch: str = "main", confirm: bool = True, _dryrun: bool = Fa
     if not _dryrun:
         try:
             subprocess.check_call(
-                [sys.executable, "-m", "pip", "install", "--upgrade", url]
+                [sys.executable, "-m", "pip", "install", "--upgrade", "--force-reinstall", url]
             )
         except subprocess.CalledProcessError as e:
             logger.error(f"Update failed: {e}")

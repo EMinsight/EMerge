@@ -141,5 +141,5 @@ plot_sp(f, [S11, S21], labels=['S11','S21'], dblim=[-40,6], logx=True)
 
 m.display.add_object(pcb, opacity=0.1)
 m.display.add_object(polies, opacity=0.5)
-m.display.add_surf(*sol.field[0].cutplane(1*mm, z=-0.75*th*mil).scalar('Ez','real'))
+m.display.add_surf(*sol.field[0].cutplane(1*mm, z=-0.75*th*mil).scalar('Ez','real'), symmetrize=True)
 m.display.show()

@@ -150,7 +150,7 @@ with em.Simulation('FullFilter') as mf:
     mf.commit_geometry(feed1, feed2, last_iris, *(cavities + irises))
 
     # Simulation settings and mesh
-    mf.mw.set_frequency_range(f1 - 0.2e9, f2 + 0.2e9, 51)
+    mf.mw.set_frequency_range(f1 - 0.2e9, f2 + 0.2e9, 31)
     mf.mw.set_resolution(0.10)
     for ir in irises:
         mf.mesher.set_domain_size(ir, 2*mm)
@@ -161,7 +161,7 @@ with em.Simulation('FullFilter') as mf:
     p2 = mf.mw.bc.RectangularWaveguide(feed2.face('back'), 2)
 
     # Run frequency-domain sweep and extract S-parameters
-    data = mf.mw.run_sweep(parallel=True, njobs=3, frequency_groups=8)
+    data = mf.mw.run_sweep(parallel=True, njobs=3, frequency_groups=9)
     grid = data.scalar.grid
     freqs = grid.freq
     fdense = np.linspace(freqs[0], freqs[-1], 2001)
@@ -186,7 +186,7 @@ with em.Simulation('FullFilter') as mf:
         mf.display.add_object(obj, opacity=0.1)
     # Show electric field cut-plane at center frequency
     cut = data.field.find(freq=f0).cutplane(2*mm, z=wgb/2)
-    mf.display.add_surf(*cut.scalar('Ez','real'), symmetrize=True, cmap='coolwarm')
+    mf.display.add_surf(*cut.scalar('Ez','real'), symmetrize=True)
     mf.display.add_portmode(p1)
     mf.display.add_portmode(p2)
     mf.display.show()

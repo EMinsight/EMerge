@@ -91,5 +91,5 @@ model.display.add_object(vias)
 # This is equivalent to the interpolate method except it automatically generates
 # the point cloud based on a plane x,y or z coordinate.
 model.display.add_quiver(*data.field[3].cutplane(ds=0.001, z=-0.00025).vector('E'))
-model.display.add_surf(*data.field[3].cutplane(ds=0.001, z=-0.00075).scalar('Ez','real'), cmap='coolwarm')
+model.display.add_surf(*data.field[3].cutplane(ds=0.001, z=-0.00075).scalar('Ez','real'), symmetrize=True)
 model.display.show()

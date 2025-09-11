@@ -113,6 +113,6 @@ m.display.add_object(air2, opacity=0.1)
 m.display.add_object(feed, opacity=0.1)
 m.display.add_surf(*data.field[0].farfield_3d(radiation_boundary, syms=['Ez','Hy'])\
                 .surfplot('normE', 'abs', True, True, -30, 5*mm, (Lhorn,0,0)))
-m.display.add_surf(*data.field[0].cutplane(0.25*mm, z=0).scalar('Ez','real'), cmap='coolwarm', symmetrize=True)
+m.display.add_surf(*data.field[0].cutplane(0.25*mm, z=0).scalar('Ez','real'), symmetrize=True)
 m.display.show()
 
