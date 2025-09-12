@@ -5,7 +5,7 @@ Hello everybody. Thanks for showing interest in this repository.
 Feel free to download your version of EMerge and start playing around with it!
 If you have suggestions/changes/questions either use the Github issue system or join the Discord using the following link:
 
-**https://discord.gg/7PF4WcS6uA**
+**https://discord.gg/uArxywnz**
 
 ## How to install
 
