@@ -17,7 +17,6 @@ dependencies = [
     "pyvista>=0.45.2",
     "scipy>=1.14.0",
     "mkl!=2024.0; platform_machine == \"x86_64\" or platform_machine == \"AMD64\"",
-    "cloudpickle>=3.1.1",
 ]
 
 [project.scripts]

@@ -33,7 +33,6 @@ from typing import Literal, Generator, Any
 from loguru import logger
 import numpy as np
 import gmsh # type: ignore
-#import cloudpickle
 import os
 import inspect
 from pathlib import Path
@@ -407,9 +406,7 @@ class Simulation:
         data_path = self.modelpath / 'simdata.emerge'
         
         joblib.dump(dataset, str(data_path))
-        #with open(str(data_path), "wb") as f_out:
-        #    cloudpickle.dump(dataset, f_out)
-            
+        
         if self._cache_run:
             cachepath = self.modelpath / 'pylines.txt'
             with open(str(cachepath), 'w') as f_out:
@@ -432,10 +429,7 @@ class Simulation:
         gmsh.model.geo.synchronize()
         gmsh.model.occ.synchronize()
         logger.info(f"Loaded mesh from: {mesh_path}")
-
-        # Load data
-        #with open(str(data_path), "rb") as f_in:
-        #    datapack= cloudpickle.load(f_in)
+        
         datapack = joblib.load(str(data_path))
         
         self.data = datapack['simdata']

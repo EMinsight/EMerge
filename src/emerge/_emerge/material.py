@@ -275,13 +275,6 @@ class FreqCoordDependent(MatProperty):
     def scalar(self, f: float):
         return self._func(f, 0,0,0)[0,0]
 
-# To be finished once its clear how to deal with default values for functions
-
-# def parse_material_property(value: complex | float | Callable):
-#     if not isinstance(value, Callable):
-#         return MatProperty(value)
-#     pass
-
 class Material:
     """The Material class generalizes a material in the EMerge FEM environment.
 
@@ -297,6 +290,7 @@ class Material:
     
     """
     _pickle_exclude = {"_neff"}
+    
     def __init__(self,
                  er: float | complex | np.ndarray | MatProperty = 1.0,
                  ur: float | complex | np.ndarray | MatProperty = 1.0,

@@ -765,9 +765,11 @@ class PVDisplay(BaseDisplay):
                      Z: np.ndarray,
                      V: np.ndarray,
                      Nlevels: int = 5,
+                     scale: Literal['lin','log','symlog'] = 'lin',
                      symmetrize: bool = True,
                      clim: tuple[float, float] | None = None,
-                     cmap: cmap_names | None = None,):
+                     cmap: cmap_names | None = None,
+                     opacity: float = 0.25):
         """Adds a 3D volumetric contourplot based on a 3D grid of X,Y,Z and field values
 
 
@@ -787,38 +789,45 @@ class PVDisplay(BaseDisplay):
         
         default_cmap = EMERGE_AMP
         
+        if scale=='log':
+            T = lambda x: np.log10(np.abs(x+1e-12))
+        elif scale=='symlog':
+            T = lambda x: np.sign(x) * np.log10(1 + np.abs(x*np.log(10)))
+        else:
+            T = lambda x: x
+        
         if symmetrize:
             level = np.max(np.abs(Vf))
             vmin, vmax = (-level, level)
             default_cmap = EMERGE_WAVE
-            
+        
+        if clim is None:
+            if self._cbar_lim is not None:
+                clim = self._cbar_lim
+                vmin, vmax = clim
+            else:
+                clim = (vmin, vmax)
+        
         if cmap is None:
             cmap = default_cmap
             
         grid = pv.StructuredGrid(X,Y,Z)
         field = V.flatten(order='F')
-        grid['anim'] = np.real(field)
+        grid['anim'] = T(np.real(field))
+        
         levels = list(np.linspace(vmin, vmax, Nlevels))
         contour = grid.contour(isosurfaces=levels)
         
-        if clim is None:
-            if self._cbar_lim is not None:
-                clim = self._cbar_lim
-            else:
-                clim = (vmin, vmax)
-                
-        actor = self._plot.add_mesh(contour, opacity=0.25, cmap=cmap, clim=clim, pickable=False, scalar_bar_args=self._cbar_args)
-
+        actor = self._plot.add_mesh(contour, opacity=opacity, cmap=cmap, clim=clim, pickable=False, scalar_bar_args=self._cbar_args)
         
-                
         if self._do_animate:
             def on_update(obj: _AnimObject, phi: complex):
-                new_vals = np.real(obj.field * phi)
+                new_vals = obj.T(np.real(obj.field * phi))
                 obj.grid['anim'] = new_vals
                 new_contour = obj.grid.contour(isosurfaces=levels)
                 obj.actor.GetMapper().SetInputData(new_contour) # type: ignore
                 
-            self._objs.append(_AnimObject(field, lambda x: x, grid, None, actor, on_update)) # type: ignore
+            self._objs.append(_AnimObject(field, T, grid, None, actor, on_update)) # type: ignore
             
         self._reset_cbar()
         

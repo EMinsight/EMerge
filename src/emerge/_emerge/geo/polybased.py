@@ -238,7 +238,8 @@ class XYPolygon:
     def __init__(self, 
                  xs: np.ndarray | list | tuple | None = None,
                  ys: np.ndarray | list | tuple | None = None,
-                 cs: CoordinateSystem | None = None):
+                 cs: CoordinateSystem | None = None,
+                 resolution: float = 1e-6):
         """Constructs an XY-plane placed polygon.
 
         Args:
@@ -256,6 +257,7 @@ class XYPolygon:
         self.fillets: list[tuple[float, int]] = []
         
         self._cs: CoordinateSystem = cs
+        self.resolution: float = resolution
 
     @property
     def center(self) -> tuple[float, float]:
@@ -279,7 +281,7 @@ class XYPolygon:
         The XYPolygon does not store redundant points p[0]==p[N] so if these are
         the same, this function will remove the last point.
         """
-        if np.sqrt((self.x[-1]-self.x[0])**2 + (self.y[-1]-self.y[0])**2) < 1e-6:
+        if np.sqrt((self.x[-1]-self.x[0])**2 + (self.y[-1]-self.y[0])**2) < 1e-9:
             self.x = self.x[:-1]
             self.y = self.y[:-1]
         
@@ -329,6 +331,23 @@ class XYPolygon:
             self.fillets.append((radius, i))
         return self
 
+    def _cleanup(self, resolution: float | None = None) -> None:
+        # Compute differences between consecutive points
+        if resolution is None:
+            resolution = self.resolution
+        dx = np.diff(self.x)
+        dy = np.diff(self.y)
+
+        # Distances between consecutive points
+        dist = np.sqrt(dx**2 + dy**2)
+
+        # Keep the first point, then points where distance >= threshold
+        keep = np.insert(dist >= resolution, 1, True)
+
+        # Apply mask
+        self.x = self.x[keep]
+        self.y = self.y[keep]
+        
     def _make_wire(self, cs: CoordinateSystem) -> tuple[list[int], list[int], int]:
         """Turns the XYPolygon object into a GeoPolygon that is embedded in 3D space.
 
@@ -345,8 +364,11 @@ class XYPolygon:
         ptags = []
         xg, yg, zg = cs.in_global_cs(self.x, self.y, 0*self.x)
 
+        points = dict()
         for x,y,z in zip(xg, yg, zg):
-            ptags.append(gmsh.model.occ.add_point(x,y,z))
+            ptag = gmsh.model.occ.add_point(x,y,z)
+            points[ptag] = (x,y,z)
+            ptags.append(ptag)
         
         lines = []
         for i1, p1 in enumerate(ptags):
@@ -375,6 +397,7 @@ class XYPolygon:
         Returns:
             GeoPolygon: The resultant 3D GeoPolygon object.
         """
+        self._cleanup()
         ptags, lines, wiretag = self._make_wire(cs)
         surftag = gmsh.model.occ.add_plane_surface([wiretag,])
         poly = GeoPolygon([surftag,], name=name)
@@ -635,8 +658,6 @@ class Curve(GeoEdge):
         self.dstart: tuple[float, float, float] = (p2[0]-p1[0], p2[1]-p1[1], p2[2]-p1[2])
     
         
-        
-    
     @property
     def p0(self) -> tuple[float, float, float]:
         """The start coordinate

@@ -300,14 +300,15 @@ def unite(*objects: GeoObject) -> GeoObject:
         GeoObject: The resultant object
     """
     main, *rest = objects
+    
     if not rest:
         return main
+    
     main._exists = False
     dts = []
     for other in rest:
         dts.extend(other.dimtags)
         other._exists = False
-    
     new_dimtags, mapping = gmsh.model.occ.fuse(main.dimtags, dts)
     
     new_obj = GeoObject.from_dimtags(new_dimtags)._take_tools(*objects)

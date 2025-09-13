@@ -344,7 +344,7 @@ class FarFieldData:
         }
         mapping = fmap.get(quantity.lower(),np.abs)
         
-        F = mapping(self.__dict__.get(polarization, self.normE))
+        F = mapping(getattr(self, polarization))
         
         if isotropic:
             F = F/np.sqrt(Z0/(2*np.pi))

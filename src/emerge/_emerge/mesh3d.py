@@ -183,9 +183,10 @@ class Mesh3D(Mesh):
         
     def get_tri(self, i1, i2, i3) -> int:
         '''Return the triangle index given the three node indices'''
+        i11, i21, i31 = tuple(sorted((int(i1), int(i2), int(i3))))
         output = self.inv_tris.get(tuple(sorted((int(i1), int(i2), int(i3)))), None)
         if output is None:
-            raise ValueError(f'There is no triangle with indices {i1}, {i2}, {i3}')
+            raise ValueError(f'There is no triangle with indices {i11}, {i21}, {i31}')
         return output
     
     def get_tet(self, i1, i2, i3, i4) -> int:
@@ -480,6 +481,7 @@ class Mesh3D(Mesh):
             node_tags = [self.n_t2i[int(t)] for t in node_tags[0]]
             self.ftag_to_node[t] = node_tags
             node_tags = np.squeeze(np.array(node_tags)).reshape(-1,3).T
+            
             self.ftag_to_tri[t] = [self.get_tri(node_tags[0,i], node_tags[1,i], node_tags[2,i]) for i in range(node_tags.shape[1])]
             self.ftag_to_edge[t] = sorted(list(np.unique(self.tri_to_edge[:,self.ftag_to_tri[t]].flatten())))
         

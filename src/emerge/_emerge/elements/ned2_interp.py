@@ -331,8 +331,8 @@ def ned2_tet_interp_curl(coords: np.ndarray,
         Eyl = np.zeros(x.shape, dtype=np.complex128)
         Ezl = np.zeros(x.shape, dtype=np.complex128)
         
-        V1 = (216*V**3) #+ 1e-30
-        V2 = (72*V**3) #+ 1e-30
+        V1 = (216*V**3)
+        V2 = (72*V**3)
         
         for ie in range(6):
             Em1, Em2 = Em1s[ie], Em2s[ie]
@@ -501,8 +501,7 @@ def ned2_tri_interp(coords: np.ndarray,
         
         Exl = np.zeros(x.shape, dtype=np.complex128)
         Eyl = np.zeros(x.shape, dtype=np.complex128)
-
-        #A = A + 1e-30
+        
         for ie in range(3):
             Em1, Em2 = Em1s[ie], Em2s[ie]
             edgeids = l_edge_ids[:, ie]
@@ -590,17 +589,11 @@ def ned2_tri_interp_full(coords: np.ndarray,
         yvs = nodes[1, tris[:,itri]]
 
         a_s, b_s, c_s, A = tri_coefficients(xvs, yvs)
-        #A = A + 1e-30
         e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14 = Etri
 
         a1, a2, a3 = a_s
         b1, b2, b3 = b_s
         c1, c2, c3 = c_s
-
-        # original Nedelec-1 order 2 formulation 
-        # ex =  (e1*(b1*(a2 + b2*x + c2*y) - b2*(a1 + b1*x + c1*y))*(a1 + b1*x + c1*y) + e2*(b2*(a3 + b3*x + c3*y) - b3*(a2 + b2*x + c2*y))*(a2 + b2*x + c2*y) + e3*(b1*(a3 + b3*x + c3*y) - b3*(a1 + b1*x + c1*y))*(a1 + b1*x + c1*y) - e4*(b1*(a3 + b3*x + c3*y) - b3*(a1 + b1*x + c1*y))*(a2 + b2*x + c2*y) + e5*(b1*(a2 + b2*x + c2*y) - b2*(a1 + b1*x + c1*y))*(a2 + b2*x + c2*y) + e6*(b2*(a3 + b3*x + c3*y) - b3*(a2 + b2*x + c2*y))*(a3 + b3*x + c3*y) + e7*(b1*(a3 + b3*x + c3*y) - b3*(a1 + b1*x + c1*y))*(a3 + b3*x + c3*y) + e8*(b1*(a2 + b2*x + c2*y) - b2*(a1 + b1*x + c1*y))*(a3 + b3*x + c3*y))/(8*A**3)
-        # ey =  (e1*(c1*(a2 + b2*x + c2*y) - c2*(a1 + b1*x + c1*y))*(a1 + b1*x + c1*y) + e2*(c2*(a3 + b3*x + c3*y) - c3*(a2 + b2*x + c2*y))*(a2 + b2*x + c2*y) + e3*(c1*(a3 + b3*x + c3*y) - c3*(a1 + b1*x + c1*y))*(a1 + b1*x + c1*y) - e4*(c1*(a3 + b3*x + c3*y) - c3*(a1 + b1*x + c1*y))*(a2 + b2*x + c2*y) + e5*(c1*(a2 + b2*x + c2*y) - c2*(a1 + b1*x + c1*y))*(a2 + b2*x + c2*y) + e6*(c2*(a3 + b3*x + c3*y) - c3*(a2 + b2*x + c2*y))*(a3 + b3*x + c3*y) + e7*(c1*(a3 + b3*x + c3*y) - c3*(a1 + b1*x + c1*y))*(a3 + b3*x + c3*y) + e8*(c1*(a2 + b2*x + c2*y) - c2*(a1 + b1*x + c1*y))*(a3 + b3*x + c3*y))/(8*A**3)
-        # ez =  (a1 + b1*x + c1*y)*(e10*(-A + a1 + b1*x + c1*y) + e11*(-A + a1 + b1*x + c1*y) + e12*(a2 + b2*x + c2*y) + e13*(a2 + b2*x + c2*y) + e14*(a2 + b2*x + c2*y) + e9*(-A + a1 + b1*x + c1*y))/(2*A**2)
         
         # New Nedelec-1 order 2 formulation
         ex = (-2*A*(e1*(b1*(a2 + b2*x + c2*y) - b2*(a1 + b1*x + c1*y)) + e2*(b2*(a3 + b3*x + c3*y) - b3*(a2 + b2*x + c2*y)) + e3*(b1*(a3 + b3*x + c3*y) - b3*(a1 + b1*x + c1*y))) - e4*((b1*(a3 + b3*x + c3*y) - b3*(a1 + b1*x + c1*y))*(a2 + b2*x + c2*y) + (b2*(a3 + b3*x + c3*y) - b3*(a2 + b2*x + c2*y))*(a1 + b1*x + c1*y)) - e5*(b1*(a2 + b2*x + c2*y) - b2*(a1 + b1*x + c1*y))*(a1 - a2 + b1*x - b2*x + c1*y - c2*y) - e6*(b2*(a3 + b3*x + c3*y) - b3*(a2 + b2*x + c2*y))*(a2 - a3 + b2*x - b3*x + c2*y - c3*y) - e7*(b1*(a3 + b3*x + c3*y) - b3*(a1 + b1*x + c1*y))*(a1 - a3 + b1*x - b3*x + c1*y - c3*y) + e8*((b1*(a2 + b2*x + c2*y) - b2*(a1 + b1*x + c1*y))*(a3 + b3*x + c3*y) + (b1*(a3 + b3*x + c3*y) - b3*(a1 + b1*x + c1*y))*(a2 + b2*x + c2*y)))/(8*A**3)
@@ -673,18 +666,12 @@ def ned2_tri_interp_curl(coords: np.ndarray,
         yvs = nodes[1, tris[:,itri]]
 
         a_s, b_s, c_s, A = tri_coefficients(xvs, yvs)
-        #A = A + 1e-30
         e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14 = Etri
 
         a1, a2, a3 = a_s
         b1, b2, b3 = b_s
         c1, c2, c3 = c_s
         
-        # original Nedelec-1 order 2 formulation 
-        #hx =  (4*A*(c1*(e10*(-A + a1 + b1*x + c1*y) + e11*(-A + a1 + b1*x + c1*y) + e12*(a2 + b2*x + c2*y) + e13*(a2 + b2*x + c2*y) + e14*(a2 + b2*x + c2*y) + e9*(-A + a1 + b1*x + c1*y)) + (a1 + b1*x + c1*y)*(c1*e10 + c1*e11 + c1*e9 + c2*e12 + c2*e13 + c2*e14)) + jB*(e1*(c1*(a2 + b2*x + c2*y) - c2*(a1 + b1*x + c1*y))*(a1 + b1*x + c1*y) + e2*(c2*(a3 + b3*x + c3*y) - c3*(a2 + b2*x + c2*y))*(a2 + b2*x + c2*y) + e3*(c1*(a3 + b3*x + c3*y) - c3*(a1 + b1*x + c1*y))*(a1 + b1*x + c1*y) - e4*(c1*(a3 + b3*x + c3*y) - c3*(a1 + b1*x + c1*y))*(a2 + b2*x + c2*y) + e5*(c1*(a2 + b2*x + c2*y) - c2*(a1 + b1*x + c1*y))*(a2 + b2*x + c2*y) + e6*(c2*(a3 + b3*x + c3*y) - c3*(a2 + b2*x + c2*y))*(a3 + b3*x + c3*y) + e7*(c1*(a3 + b3*x + c3*y) - c3*(a1 + b1*x + c1*y))*(a3 + b3*x + c3*y) + e8*(c1*(a2 + b2*x + c2*y) - c2*(a1 + b1*x + c1*y))*(a3 + b3*x + c3*y)))/(8*A**3)
-        # hy =  (4*A*(b1*(e10*(-A + a1 + b1*x + c1*y) + e11*(-A + a1 + b1*x + c1*y) + e12*(a2 + b2*x + c2*y) + e13*(a2 + b2*x + c2*y) + e14*(a2 + b2*x + c2*y) + e9*(-A + a1 + b1*x + c1*y)) + (a1 + b1*x + c1*y)*(b1*e10 + b1*e11 + b1*e9 + b2*e12 + b2*e13 + b2*e14)) - jB*(e1*(b1*(a2 + b2*x + c2*y) - b2*(a1 + b1*x + c1*y))*(a1 + b1*x + c1*y) + e2*(b2*(a3 + b3*x + c3*y) - b3*(a2 + b2*x + c2*y))*(a2 + b2*x + c2*y) + e3*(b1*(a3 + b3*x + c3*y) - b3*(a1 + b1*x + c1*y))*(a1 + b1*x + c1*y) - e4*(b1*(a3 + b3*x + c3*y) - b3*(a1 + b1*x + c1*y))*(a2 + b2*x + c2*y) + e5*(b1*(a2 + b2*x + c2*y) - b2*(a1 + b1*x + c1*y))*(a2 + b2*x + c2*y) + e6*(b2*(a3 + b3*x + c3*y) - b3*(a2 + b2*x + c2*y))*(a3 + b3*x + c3*y) + e7*(b1*(a3 + b3*x + c3*y) - b3*(a1 + b1*x + c1*y))*(a3 + b3*x + c3*y) + e8*(b1*(a2 + b2*x + c2*y) - b2*(a1 + b1*x + c1*y))*(a3 + b3*x + c3*y)))/(8*A**3)
-        # hz =  (-3*a1*b1*c2*e1 - 3*a1*b1*c3*e3 + 3*a1*b2*c1*e1 + a1*b2*c3*e4 + a1*b2*c3*e8 + 3*a1*b3*c1*e3 - a1*b3*c2*e4 - a1*b3*c2*e8 - 3*a2*b1*c2*e5 + 2*a2*b1*c3*e4 - a2*b1*c3*e8 + 3*a2*b2*c1*e5 - 3*a2*b2*c3*e2 - 2*a2*b3*c1*e4 + a2*b3*c1*e8 + 3*a2*b3*c2*e2 + a3*b1*c2*e4 - 2*a3*b1*c2*e8 - 3*a3*b1*c3*e7 - a3*b2*c1*e4 + 2*a3*b2*c1*e8 - 3*a3*b2*c3*e6 + 3*a3*b3*c1*e7 + 3*a3*b3*c2*e6 - 3*b1**2*c2*e1*x - 3*b1**2*c3*e3*x + 3*b1*b2*c1*e1*x - 3*b1*b2*c2*e5*x + 3*b1*b2*c3*e4*x + 3*b1*b3*c1*e3*x - 3*b1*b3*c2*e8*x - 3*b1*b3*c3*e7*x - 3*b1*c1*c2*e1*y - 3*b1*c1*c3*e3*y - 3*b1*c2**2*e5*y + 3*b1*c2*c3*e4*y - 3*b1*c2*c3*e8*y - 3*b1*c3**2*e7*y + 3*b2**2*c1*e5*x - 3*b2**2*c3*e2*x - 3*b2*b3*c1*e4*x + 3*b2*b3*c1*e8*x + 3*b2*b3*c2*e2*x - 3*b2*b3*c3*e6*x + 3*b2*c1**2*e1*y + 3*b2*c1*c2*e5*y + 3*b2*c1*c3*e8*y - 3*b2*c2*c3*e2*y - 3*b2*c3**2*e6*y + 3*b3**2*c1*e7*x + 3*b3**2*c2*e6*x + 3*b3*c1**2*e3*y - 3*b3*c1*c2*e4*y + 3*b3*c1*c3*e7*y + 3*b3*c2**2*e2*y + 3*b3*c2*c3*e6*y)/(8*A**3)
-       
         # New Nedelec-1 order 2 formulation
         hx = (4*A*(2*c1*e12*(a2 + b2*x + c2*y) + 2*c1*e14*(a3 + b3*x + c3*y) + c1*e9*(a1 + b1*x + c1*y) - c1*e9*(A - a1 - b1*x - c1*y) + c2*e10*(a2 + b2*x + c2*y) - c2*e10*(A - a2 - b2*x - c2*y) + 2*c2*e12*(a1 + b1*x + c1*y) + 2*c2*e13*(a3 + b3*x + c3*y) + c3*e11*(a3 + b3*x + c3*y) - c3*e11*(A - a3 - b3*x - c3*y) + 2*c3*e13*(a2 + b2*x + c2*y) + 2*c3*e14*(a1 + b1*x + c1*y)) + jB*(2*A*(e1*(c1*(a2 + b2*x + c2*y) - c2*(a1 + b1*x + c1*y)) + e2*(c2*(a3 + b3*x + c3*y) - c3*(a2 + b2*x + c2*y)) + e3*(c1*(a3 + b3*x + c3*y) - c3*(a1 + b1*x + c1*y))) + e4*((c1*(a3 + b3*x + c3*y) - c3*(a1 + b1*x + c1*y))*(a2 + b2*x + c2*y) + (c2*(a3 + b3*x + c3*y) - c3*(a2 + b2*x + c2*y))*(a1 + b1*x + c1*y)) + e5*(c1*(a2 + b2*x + c2*y) - c2*(a1 + b1*x + c1*y))*(a1 - a2 + b1*x - b2*x + c1*y - c2*y) + e6*(c2*(a3 + b3*x + c3*y) - c3*(a2 + b2*x + c2*y))*(a2 - a3 + b2*x - b3*x + c2*y - c3*y) + e7*(c1*(a3 + b3*x + c3*y) - c3*(a1 + b1*x + c1*y))*(a1 - a3 + b1*x - b3*x + c1*y - c3*y) - e8*((c1*(a2 + b2*x + c2*y) - c2*(a1 + b1*x + c1*y))*(a3 + b3*x + c3*y) + (c1*(a3 + b3*x + c3*y) - c3*(a1 + b1*x + c1*y))*(a2 + b2*x + c2*y))))/(8*A**3)
         hy = (4*A*(-2*b1*e12*(a2 + b2*x + c2*y) - 2*b1*e14*(a3 + b3*x + c3*y) - b1*e9*(a1 + b1*x + c1*y) + b1*e9*(A - a1 - b1*x - c1*y) - b2*e10*(a2 + b2*x + c2*y) + b2*e10*(A - a2 - b2*x - c2*y) - 2*b2*e12*(a1 + b1*x + c1*y) - 2*b2*e13*(a3 + b3*x + c3*y) - b3*e11*(a3 + b3*x + c3*y) + b3*e11*(A - a3 - b3*x - c3*y) - 2*b3*e13*(a2 + b2*x + c2*y) - 2*b3*e14*(a1 + b1*x + c1*y)) - jB*(2*A*(e1*(b1*(a2 + b2*x + c2*y) - b2*(a1 + b1*x + c1*y)) + e2*(b2*(a3 + b3*x + c3*y) - b3*(a2 + b2*x + c2*y)) + e3*(b1*(a3 + b3*x + c3*y) - b3*(a1 + b1*x + c1*y))) + e4*((b1*(a3 + b3*x + c3*y) - b3*(a1 + b1*x + c1*y))*(a2 + b2*x + c2*y) + (b2*(a3 + b3*x + c3*y) - b3*(a2 + b2*x + c2*y))*(a1 + b1*x + c1*y)) + e5*(b1*(a2 + b2*x + c2*y) - b2*(a1 + b1*x + c1*y))*(a1 - a2 + b1*x - b2*x + c1*y - c2*y) + e6*(b2*(a3 + b3*x + c3*y) - b3*(a2 + b2*x + c2*y))*(a2 - a3 + b2*x - b3*x + c2*y - c3*y) + e7*(b1*(a3 + b3*x + c3*y) - b3*(a1 + b1*x + c1*y))*(a1 - a3 + b1*x - b3*x + c1*y - c3*y) - e8*((b1*(a2 + b2*x + c2*y) - b2*(a1 + b1*x + c1*y))*(a3 + b3*x + c3*y) + (b1*(a3 + b3*x + c3*y) - b3*(a1 + b1*x + c1*y))*(a2 + b2*x + c2*y))))/(8*A**3)

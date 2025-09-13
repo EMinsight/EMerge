@@ -36,7 +36,7 @@ wga = 22.86*mm
 wgb = 10.16*mm
 L = 50*mm
 
-model = em.Simulation('Test Mode')
+model = em.Simulation('BoundarySelectionDemo')
 model.check_version("1.0.3") # Checks version compatibility.
 
 # first lets define a WR90 waveguide
