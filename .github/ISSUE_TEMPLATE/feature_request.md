@@ -18,3 +18,6 @@ A clear and concise description of any alternative solutions or features you've 
 
 **Additional context**
 Add any other context or screenshots about the feature request here.
+
+**IMPORTANT**
+If you propose any support for file imports, please include an example file for me to use. Without file to be included, feature requests will not be worked on.
