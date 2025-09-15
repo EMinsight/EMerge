@@ -24,6 +24,7 @@ from typing import Generator, Callable
 from ..selection import FaceSelection
 from typing import Literal
 from functools import reduce
+from loguru import logger
 
 
 def _discretize_curve(xfunc: Callable, yfunc: Callable, 
@@ -362,10 +363,20 @@ class XYPolygon:
         self._check()
 
         ptags = []
+        
         xg, yg, zg = cs.in_global_cs(self.x, self.y, 0*self.x)
 
         points = dict()
         for x,y,z in zip(xg, yg, zg):
+            reuse = False
+            for key, (px, py, pz) in points.items():
+                if ((x-px)**2 + (y-py)**2 + (z-pz)**2)**0.5 < 1e-12:
+                    ptags.append(key)
+                    reuse = True
+                    break
+            if reuse:
+                logger.warning(f'Reusing {ptags[-1]}')
+                continue
             ptag = gmsh.model.occ.add_point(x,y,z)
             points[ptag] = (x,y,z)
             ptags.append(ptag)

@@ -51,11 +51,13 @@ def add(main: T, tool: T,
     GeoSurface | GeoVolume
         A new object that is the union of the main and tool objects.
     '''
+    
     out_dim_tags, out_dim_tags_map = gmsh.model.occ.fuse(main.dimtags, tool.dimtags, removeObject=remove_object, removeTool=remove_tool)
     if out_dim_tags[0][0] == 3:
         output = GeoVolume([dt[1] for dt in out_dim_tags])._take_tools(tool,main)
     elif out_dim_tags[0][0] == 2:
         output = GeoSurface([dt[1] for dt in out_dim_tags])._take_tools(tool,main)
+    
     if remove_object:
         main._exists = False
     if remove_tool:
@@ -306,10 +308,10 @@ def unite(*objects: GeoObject) -> GeoObject:
     
     main._exists = False
     dts = []
-    for other in rest:
+    for other in objects:
         dts.extend(other.dimtags)
         other._exists = False
-    new_dimtags, mapping = gmsh.model.occ.fuse(main.dimtags, dts)
+    new_dimtags, mapping = gmsh.model.occ.fuse(dts, main.dimtags)
     
     new_obj = GeoObject.from_dimtags(new_dimtags)._take_tools(*objects)
     new_obj.set_material(main.material)
