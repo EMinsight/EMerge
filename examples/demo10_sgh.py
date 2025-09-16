@@ -44,7 +44,6 @@ feed = em.geo.Box(
     wgb/2,     # half-height along Z
     position=(-Lfeed, 0, 0)
 )
-
 # --- Horn geometry ------------------------------------------------------
 # Inner horn taper from (D,E) at throat to (B,C) at mouth over length F
 horn_in = em.geo.Horn(
@@ -115,4 +114,3 @@ m.display.add_surf(*data.field[0].farfield_3d(radiation_boundary, syms=['Ez','Hy
                 .surfplot('normE', 'abs', True, True, -30, 5*mm, (Lhorn,0,0)))
 m.display.add_surf(*data.field[0].cutplane(0.25*mm, z=0).scalar('Ez','real'), symmetrize=True)
 m.display.show()
-

@@ -241,6 +241,7 @@ class Simulation:
         logger.trace('Storing geometries in data.sim')
         self.data.sim['geos'] = {geo.name: geo for geo in _GEOMANAGER.all_geometries()}
         self.data.sim['mesh'] = self.mesh
+        self.data.sim.entries.append(self.data.sim.stock)
     ############################################################
     #                       PUBLIC FUNCTIONS                  #
     ############################################################
@@ -518,6 +519,7 @@ class Simulation:
         else:
             geometries_parsed = unpack_lists(geometries + tuple([item for item in self.data.sim.default.values() if isinstance(item, GeoObject)]))
         logger.trace(f'Parsed geometries = {geometries_parsed}')
+        
         self._save_geometries()
         
         self.mesher.submit_objects(geometries_parsed)

@@ -95,6 +95,10 @@ class SolveReport:
         for key, value in kwargs.items():
             self.aux[key] = str(value)
     
+    @property
+    def mdof(self) -> float:
+        return (self.ndof**2)/((self.simtime+1e-6)*1e6)
+    
     def logprint(self, print_cal: Callable | None = None):
         if print_cal is None:
             print_cal = print
