@@ -105,7 +105,7 @@ class Assembler:
     def __init__(self, settings: Settings):
         
         self.cached_matrices = None
-        self.settings = settings
+        self.settings: Settings = settings
     
     def assemble_bma_matrices(self,
                               field: Nedelec2,

@@ -61,6 +61,9 @@ def run_job_multi(job: SimJob) -> SimJob:
         job.submit_solution(solution, report)
     return job
 
+def _init_worker():
+    nr = int(mp.current_process().name.split('-')[1])
+    DEFAULT_ROUTINE._configure_routine(proc_nr=nr)
 
 def _dimstring(data: list[float] | np.ndarray) -> str:
     """A String formatter for dimensions in millimeters
@@ -190,7 +193,6 @@ class Microwave3D:
                     logger.debug(f'Assinging PEC to {surf}')
                     self.bc.PEC(surf)
                 elif surf.material.cond.scalar(1e9) > self._settings.mw_2dbc_lim:
-                    logger.debug(f'Assigning SurfaceImpedance to {surf}')
                     self.bc.SurfaceImpedance(surf, surf.material)
                 
         
@@ -619,7 +621,7 @@ class Microwave3D:
     
     def run_sweep(self, 
                 parallel: bool = False,
-                njobs: int = 2, 
+                n_workers: int = 2, 
                 harddisc_threshold: int | None = None,
                 harddisc_path: str = 'EMergeSparse',
                 frequency_groups: int = -1,
@@ -627,7 +629,7 @@ class Microwave3D:
                 automatic_modal_analysis: bool = True) -> MWData:
         """Executes a frequency domain study
 
-        The study is distributed over "njobs" workers.
+        The study is distributed over "n_workers" workers.
         As optional parameter you may set a harddisc_threshold as integer. This determines the maximum
         number of degrees of freedom before which the jobs will be cahced to the harddisk. The
         path that will be used to cache the sparse matrices can be specified.
@@ -637,7 +639,7 @@ class Microwave3D:
         frequency indices will be precomputed and then solved: [[1,2,3,4],[5,6,7,8],[9,10,11]]
 
         Args:
-            njobs (int, optional): The number of jobs. Defaults to 2.
+            n_workers (int, optional): The number of workers. Defaults to 2.
             harddisc_threshold (int, optional): The number of DOF limit. Defaults to None.
             harddisc_path (str, optional): The cached matrix path name. Defaults to 'EMergeSparse'.
             frequency_groups (int, optional): The number of frequency points in a solve group. Defaults to -1.
@@ -687,7 +689,8 @@ class Microwave3D:
         ## DEFINE SOLVE FUNCTIONS
         def get_routine():
             if not hasattr(thread_local, "routine"):
-                thread_local.routine = self.solveroutine.duplicate()._configure_routine('MT')
+                worker_nr = int(threading.current_thread().name.split('_')[1])+1
+                thread_local.routine = self.solveroutine.duplicate()._configure_routine('MT', thread_nr=worker_nr)
             return thread_local.routine
 
         def run_job(job: SimJob):
@@ -750,7 +753,7 @@ class Microwave3D:
                 results.extend(group_results)
         elif not multi_processing:
              # MULTI THREADED
-            with ThreadPoolExecutor(max_workers=njobs) as executor:
+            with ThreadPoolExecutor(max_workers=n_workers, thread_name_prefix='WKR') as executor:
                 # ITERATE OVER FREQUENCIES
                 for i_group, fgroup in enumerate(freq_groups):
                     logger.info(f'Precomputing group {i_group}.')
@@ -771,7 +774,7 @@ class Microwave3D:
                         jobs.append(job)
                         matset.append(mats)
                     
-                    logger.info(f'Starting distributed solve of {len(jobs)} jobs with {njobs} threads.')
+                    logger.info(f'Starting distributed solve of {len(jobs)} jobs with {n_workers} threads.')
                     group_results = list(executor.map(run_job, jobs))
                     results.extend(group_results)
                 executor.shutdown()
@@ -784,7 +787,7 @@ class Microwave3D:
                     "if __name__ == '__main__' guard in the top-level script."
                 )
             # Start parallel pool
-            with mp.Pool(processes=njobs) as pool:
+            with mp.Pool(processes=n_workers, initializer=_init_worker) as pool:
                 for i_group, fgroup in enumerate(freq_groups):
                     logger.debug(f'Precomputing group {i_group}.')
                     jobs = []
@@ -810,7 +813,7 @@ class Microwave3D:
 
                     logger.info(
                         f'Starting distributed solve of {len(jobs)} jobs '
-                        f'with {njobs} processes in parallel'
+                        f'with {n_workers} processes in parallel'
                     )
                     # Distribute taks
                     group_results = pool.map(run_job_multi, jobs)

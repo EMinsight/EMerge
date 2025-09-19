@@ -97,6 +97,35 @@ class Box(GeoVolume):
         self._add_face_pointer('top', pc + height/2*hax, hax)
         self._add_face_pointer('bottom', pc - height/2*hax, -hax)
         
+    @property
+    def left(self) -> FaceSelection:
+        """The left (-X) face."""
+        return self.face('left')
+    
+    @property
+    def right(self) -> FaceSelection:
+        """The right (+X) face."""
+        return self.face('right')
+    
+    @property
+    def top(self) -> FaceSelection:
+        """The top (+Z) face."""
+        return self.face('top')
+    
+    @property
+    def bottom(self) -> FaceSelection:
+        """The bottom (-Z) face."""
+        return self.face('bottom')
+    
+    @property
+    def front(self) -> FaceSelection:
+        """The front (-Y) face."""
+        return self.face('front')
+    
+    @property
+    def back(self) -> FaceSelection:
+        """The back (+Y) face."""
+        return self.face('back')
     
     def outside(self, *exclude: Literal['bottom','top','right','left','front','back']) -> FaceSelection:
         """Select all outside faces except for the once specified by outside
@@ -131,6 +160,11 @@ class Sphere(GeoVolume):
         x,y,z = position
         self.tags: list[int] = [gmsh.model.occ.addSphere(x,y,z,radius),]
 
+    @property
+    def outside(self) -> FaceSelection:
+        """The outside boundary of the sphere.
+        """
+        return self.boundary()
 
 class XYPlate(GeoSurface):
     """Generates and XY-plane oriented plate
@@ -301,6 +335,21 @@ class Cylinder(GeoVolume):
 
         xo, yo, zo = self.cs.in_global_cs(x.flatten(), y.flatten(), z.flatten())
         return xo, yo, zo
+    
+    @property
+    def front(self) -> FaceSelection:
+        """The first local -Z face of the cylinder."""
+        return self.face('front')
+    
+    @property
+    def back(self) -> FaceSelection:
+        """The back local +Z face of the cylinder."""
+        return self.face('back')
+    
+    @property
+    def shell(self) -> FaceSelection:
+        """The outside faces excluding the top and bottom."""
+        return self.boundary(exclude=('front','back'))
 
 
 class CoaxCylinder(GeoVolume):
@@ -382,6 +431,16 @@ class CoaxCylinder(GeoVolume):
         xo, yo, zo = self.cs.in_global_cs(x.flatten(), y.flatten(), z.flatten())
         return xo, yo, zo
     
+    @property
+    def front(self) -> FaceSelection:
+        """The first local -Z face of the cylinder."""
+        return self.face('front')
+    
+    @property
+    def back(self) -> FaceSelection:
+        """The back local +Z face of the cylinder."""
+        return self.face('back')
+    
 class HalfSphere(GeoVolume):
     """A half sphere volume."""
     _default_name: str = 'HalfSphere'
@@ -411,7 +470,25 @@ class HalfSphere(GeoVolume):
         self._add_face_pointer('back',np.array(position), np.array(direction))
         self._add_face_pointer('bottom',np.array(position), np.array(direction))
         self._add_face_pointer('face',np.array(position), np.array(direction))
+        self._add_face_pointer('disc',np.array(position), np.array(direction))
 
+    @property
+    def outside(self) -> FaceSelection:
+        """The outside of the sphere excluding the flat disc face
+
+        Returns:
+            FaceSelection: _description_
+        """
+        return self.boundary(exclude=('disc',))
+    
+    @property
+    def disc(self) -> FaceSelection:
+        """The flat disc face that cuts the sphere in half
+
+        Returns:
+            FaceSelection: _description_
+        """
+        return self.face('disc')
 
 class OldBox(GeoVolume):
     '''The sided box class creates a box just like the Box class but with selectable face tags.
@@ -565,3 +642,18 @@ class Cone(GeoVolume):
         self._add_face_pointer('front', p0, ds)
         if r2>0:
             self._add_face_pointer('back', p0+ds, ds)
+            
+    @property
+    def front(self) -> FaceSelection:
+        """The first local -Z face of the Cone."""
+        return self.face('front')
+    
+    @property
+    def back(self) -> FaceSelection:
+        """The back local +Z face of the Cone. If the tip of the cone has a 0 radius, no back face can be selected."""
+        return self.face('back')
+    
+    @property
+    def shell(self) -> FaceSelection:
+        """The outside faces excluding the top and bottom."""
+        return self.boundary(exclude=('front','back'))

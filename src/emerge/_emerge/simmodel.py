@@ -479,7 +479,7 @@ class Simulation:
         for geo in _GEOMANAGER.all_geometries():
             self.display.add_object(geo, mesh=plot_mesh, opacity=opacity, volume_mesh=volume_mesh, label=labels)
         if selections:
-            [self.display.add_object(sel, color='red', opacity=0.3, label=labels) for sel in selections]
+            [self.display.add_object(sel, color='red', opacity=0.6, label=labels) for sel in selections]
         self.display.show()
 
         return None

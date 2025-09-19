@@ -1331,7 +1331,6 @@ class PCB:
         poly._aux_data['width'] = stripline.width*self.unit
         poly._aux_data['height'] = height*self.unit
         poly._aux_data['vdir'] = self.cs.zax
-        poly._aux_data['idir'] = Axis(self.cs.xax.np*stripline.dirright[0] + self.cs.yax.np*stripline.dirright[1])
         
         return poly
 
@@ -1346,6 +1345,7 @@ class PCB:
                   point: StripLine,
                   height: float,
                   width_multiplier: float = 5.0,
+                  width: float | None = None,
                   name: str | None = 'ModalPort'
                   ) -> GeoSurface:
         """Generate a wave-port as a GeoSurface.
@@ -1365,11 +1365,16 @@ class PCB:
         
         height = (self.thickness + height)
         
+        if width is not None:
+            W = width
+        else:
+            W = point.width*width_multiplier
+            
         ds = point.dirright
-        x0 = point.x - ds[0]*point.width*width_multiplier/2
-        y0 = point.y - ds[1]*point.width*width_multiplier/2
+        x0 = point.x - ds[0]*W/2
+        y0 = point.y - ds[1]*W/2
         z0 =  - self.thickness
-        ax1 = np.array([ds[0], ds[1], 0])*self.unit*point.width*width_multiplier
+        ax1 = np.array([ds[0], ds[1], 0])*self.unit*W
         ax2 = np.array([0,0,1])*height*self.unit
 
         plate = Plate(np.array([x0,y0,z0])*self.unit, ax1, ax2, name=name)
@@ -1443,7 +1448,7 @@ class PCB:
         tag_wire = gmsh.model.occ.addWire(ltags)
         planetag = gmsh.model.occ.addPlaneSurface([tag_wire,])
         poly = GeoPolygon([planetag,], name=name)
-        poly._store('thickness', self.thickness)
+        poly._store('thickness', self.trace_thickness)
         return poly
     
     @overload
@@ -1508,6 +1513,5 @@ class PCB:
         
         if merge:
             polys = unite(*polys)
-            
         return polys
 

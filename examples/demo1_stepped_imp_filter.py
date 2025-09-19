@@ -78,13 +78,13 @@ m.mw.set_frequency_range(0.2e9, 8e9, 41)
 # With the set_boundary_size(method) we can define a meshing resolution for the edges of boundaries.
 # This is adviced for small stripline structures.
 # The growth_rate setting allows us to change how fast the mesh size will recover to the original size.
-m.mesher.set_boundary_size(polies, 2*mm, growth_rate=1.2)
-m.mesher.set_face_size(p1, 2*mm)
-m.mesher.set_face_size(p2, 2*mm)
+m.mesher.set_boundary_size(polies, 0.5*mm, growth_rate=1.2)
+m.mesher.set_face_size(p1, 1*mm)
+m.mesher.set_face_size(p2, 1*mm)
 
 # Finally we generate our mesh and view it
 m.generate_mesh()
-m.view()
+m.view(plot_mesh=True)
 # We can now define the modal ports for the in and outputs and set the conductor to PEC.
 port1 = m.mw.bc.ModalPort(p1, 1, TEM=True)
 port2 = m.mw.bc.ModalPort(p2, 2, TEM=True)
@@ -108,7 +108,7 @@ if False:
     m.display.show()
 
 # Finally we execute the frequency domain sweep and compute the Scattering Parameters.
-sol = m.mw.run_sweep(parallel=True, njobs=4, frequency_groups=8)
+sol = m.mw.run_sweep(parallel=True, n_workers=4, frequency_groups=8)
 
 # Our "sol" variable is of type MWData (Microwave Data). This contains a set of scalar data 
 # like S-parameters and field data like the E/H field. The scalar data is in sol.scalar and the 

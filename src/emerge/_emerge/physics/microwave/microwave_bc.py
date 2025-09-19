@@ -805,7 +805,7 @@ class LumpedPort(PortBC):
                  port_number: int, 
                  width: float | None = None,
                  height: float | None = None,
-                 direction: Axis | None = None,
+                 direction: Axis | tuple[float, float, float] | None = None,
                  power: float = 1,
                  Z0: float = 50):
         """Generates a lumped power boundary condition.
@@ -843,7 +843,7 @@ class LumpedPort(PortBC):
         
         self.width: float = width
         self.height: float = height # type: ignore
-        self.Vdirection: Axis = direction # type: ignore
+        self.Vdirection: Axis = _parse_axis(direction) # type: ignore
         self.type = 'TEM'
         
         # logger.info('Constructing coordinate system from normal port')

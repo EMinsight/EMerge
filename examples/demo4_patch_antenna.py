@@ -143,5 +143,4 @@ surf = ff3d.surfplot('normE', rmax=60 * mm,
                       offset=(0, 0, 20 * mm))
 
 model.display.add_surf(*surf)
-model.display.cbar('Ey',clim=(-100,100)).animate().add_contour(*data.field.find(freq=1.575e9).grid(5*mm, False).scalar('Ey','complex'), Nlevels=40, symmetrize=True)
 model.display.show()

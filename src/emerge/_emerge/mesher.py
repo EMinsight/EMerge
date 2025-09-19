@@ -280,7 +280,8 @@ class Mesher:
         for dimtag in dimtags:
             gmsh.model.mesh.setSizeFromBoundary(dimtag[0], dimtag[1], 0)
             
-    def set_boundary_size(self, boundary: GeoObject | Selection | Iterable, 
+    def set_boundary_size(self, 
+                          boundary: GeoObject | Selection | Iterable, 
                           size:float,
                           growth_rate: float = 1.4,
                           max_size: float | None = None) -> None:

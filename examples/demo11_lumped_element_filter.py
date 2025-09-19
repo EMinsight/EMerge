@@ -100,7 +100,7 @@ for le in LEs:
     m.mw.bc.LumpedElement(le)
 
 # --- Run frequency-domain simulation ------------------------------------
-data = m.mw.run_sweep(parallel=True, njobs=4, frequency_groups=8)
+data = m.mw.run_sweep(parallel=True, n_workers=4, frequency_groups=8)
 
 # --- Post-processing: plot S-parameters ---------------------------------
 f = data.scalar.grid.freq

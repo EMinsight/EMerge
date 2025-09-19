@@ -231,7 +231,22 @@ class GeoPrism(GeoVolume):
         tagslist = [self._face_tags(name) for name in  self._face_pointers.keys() if name not in exclude]
         
         tags = list(reduce(lambda a,b: a+b, tagslist))
-        return FaceSelection(tags)       
+        return FaceSelection(tags)
+    
+    @property
+    def front(self) -> FaceSelection:
+        """The first local -Z face of the prism."""
+        return self.face('front')
+    
+    @property
+    def back(self) -> FaceSelection:
+        """The back local +Z face of the prism."""
+        return self.face('back')
+    
+    @property
+    def sides(self) -> FaceSelection:
+        """The outside faces excluding the top and bottom."""
+        return self.boundary(exclude=('front','back'))
 
 class XYPolygon:
     """This class generalizes a polygon in an un-embedded XY space that can be embedded in 3D space.

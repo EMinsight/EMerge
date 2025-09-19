@@ -82,7 +82,7 @@ m.mw.set_resolution(0.25)                  # mesh resolution fraction
 m.generate_mesh()
 
 # --- Boundary conditions ------------------------------------------------
-p1 = m.mw.bc.ModalPort(feed.face('left'), 1)     # excite TE10 in feed
+p1 = m.mw.bc.ModalPort(feed.left, 1)     # excite TE10 in feed
 PMC = m.mw.bc.PMC(m.select.face.inplane(0, 0, 0, plane=em.XZPLANE))  # perfect magnetic on symmetry
 radiation_boundary = air2.faces('back','top','right', tool=air)  # open faces
 abc = m.mw.bc.AbsorbingBoundary(m.select.face.inplane(Lhorn-dx,0,0,plane=em.YZPLANE))

@@ -109,7 +109,7 @@ port1 = model.mw.bc.ModalPort(p1, 1, TEM=True)
 port2 = model.mw.bc.ModalPort(p2, 2, TEM=True)
 
 # --- Run frequency-domain solver ----------------------------------------
-data = model.mw.run_sweep(parallel=True, njobs=4, frequency_groups=8)
+data = model.mw.run_sweep(parallel=True, n_workers=4, frequency_groups=8)
 
 # --- Extract and plot S-parameters ---------------------------------------
 f = data.scalar.grid.freq                  # frequency axis

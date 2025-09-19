@@ -71,7 +71,9 @@ feed_port = wg_box_new.face('left', tool=wg_box)
 
 # We can also select the outside and exclude a given face. Because our airbox
 # is not modified, we don't have to work with tools.
-radiation_boundary = airbox.boundary(exclude=('left',))
+radiation_boundary = airbox.boundary(exclude='left')
+# or one could use the no= optional argument in the face selection
+radiation_boundary = airbox.face(no='left')
 
 # Lets view our result
 model.view(selections=[feed_port, radiation_boundary])

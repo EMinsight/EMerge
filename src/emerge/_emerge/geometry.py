@@ -549,17 +549,26 @@ class GeoObject:
         self._priority = _GEOMANAGER.highest_priority()+10
         return self
     
-    def boundary(self, exclude: tuple[FaceNames,...] | None = None, 
+    def boundary(self, 
+                 exclude: Iterable[FaceNames,...] | str | None = None, 
                  tags: list[int] | None = None,
                  tool: GeoObject | None = None) -> FaceSelection:
         """Returns the complete set of boundary faces.
-
+        
         If implemented, it is possible to exclude a set of faces based on their name
-        or a list of tags (integers)
+        or a list of tags.
+        
+        Args:
+            exclude: (Iterable[str], str, None): A single string or list/tuple of strings.
+            tags: A list of face integers (if known)
+            tool: The tool object to base the selection face names one.
 
         Returns:
             FaceSelection: The selected faces
         """
+        if isinstance(exclude, str):
+            exclude = (exclude,)
+            
         if exclude is None:
             exclude = tuple()
             
@@ -572,17 +581,23 @@ class GeoObject:
         dimtags = gmsh.model.get_boundary(self.dimtags, True, False)
         return FaceSelection([t for d,t in dimtags if t not in tags])
     
-    def face(self, name: FaceNames, tool: GeoObject | None = None) -> FaceSelection:
+    def face(self, name: FaceNames = None, tool: GeoObject | None = None, no: FaceNames = None) -> FaceSelection:
         """Returns the FaceSelection for a given face name.
         
         The face name must be defined for the type of geometry.
 
+        FaceNames include: front, back, left, right, top, bottom, disc
+        
         Args:
             name (FaceNames): The name of the face to select.
+            tool (GeoObject, None): Which object should be used as a source for the face selection.
+            no (FaceNames): If everything BUT a face name should be selected, Equivalent to .boundary(exclude=name).
 
         Returns:
             FaceSelection: The selected face
         """
+        if no is not None:
+            return self.boundary(exclude=no)
         
         return FaceSelection(self._face_tags(name, tool))
 
@@ -593,6 +608,7 @@ class GeoObject:
 
         Args:
             name (FaceNames): The name of the face to select.
+            tool (GeoObject, None): The tool object to use as source of the selection.
 
         Returns:
             FaceSelection: The selected face
@@ -633,10 +649,12 @@ class GeoVolume(GeoObject):
     specific geometry data.'''
     dim = 3
     _default_name: str = 'GeoVolume'
+    
     def __init__(self, tag: int | Iterable[int], name: str | None = None):
         super().__init__(name=name)
         
         self.tags: list[int] = []
+        
         if isinstance(tag, Iterable):
             self.tags = list(tag)
         else:

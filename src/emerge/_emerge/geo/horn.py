@@ -17,6 +17,7 @@
 
 from ..geometry import GeoVolume
 from ..cs import CoordinateSystem
+from ..selection import FaceSelection
 
 import gmsh # type: ignore
 
@@ -104,3 +105,18 @@ class Horn(GeoVolume):
         pc = p0 + dax * height/2
         self._add_face_pointer('front', pc - height/2*dax, -dax)
         self._add_face_pointer('back', pc + height/2*dax, dax)
+        
+    @property
+    def front(self) -> FaceSelection:
+        """The first local -Z face of the Horn."""
+        return self.face('front')
+    
+    @property
+    def back(self) -> FaceSelection:
+        """The back local +Z face of the Horn."""
+        return self.face('back')
+    
+    @property
+    def sides(self) -> FaceSelection:
+        """The outside faces excluding the top and bottom."""
+        return self.boundary(exclude=('front','back'))

@@ -49,6 +49,8 @@ model.check_version("1.0.5") # Checks version compatibility.
 # First we create the airbox
 box = em.geo.Box(Lbox, a, b, position=(0,-a/2,0))
 
+#make an alias for later
+box_old = box
 # Next we create 5 cylinders using the Modeler class.
 # The modeler class also implements a method chaining interface. In this example we stick to simpler features.
 # The modeler class allows us to create a parameter series using the modeler.series() method. We provid it with quantities.
@@ -124,5 +126,6 @@ model.display.add_quiver(X,Y,Z, Ex.real, Ey.real, Ez.real)
 model.display.add_object(feed1out, opacity=0.1)
 model.display.add_portmode(port1, 21)
 model.display.add_portmode(port2, 21)
-model.display.add_surf(*data.field[3].cutplane(ds=0.5*mm, y=0).scalar('normE'))
+outside = box.boundary()
+model.display.add_boundary_field(outside, data.field[3].boundary(outside).scalar('normE'), opacity=0.4)
 model.display.show()

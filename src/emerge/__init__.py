@@ -33,7 +33,7 @@ os.environ["OPENBLAS_NUM_THREADS"] = NTHREADS
 os.environ["VECLIB_NUM_THREADS"] = NTHREADS
 os.environ["VECLIB_MAXIMUM_THREADS"] = NTHREADS
 os.environ["NUMEXPR_NUM_THREADS"] = NTHREADS
-os.environ["NUMBA_NUM_THREADS"] = "4"
+os.environ["NUMBA_NUM_THREADS"] = os.getenv("NUMBA_NUM_THREADS", default="4")
 os.environ.setdefault("NUMBA_THREADING_LAYER", "workqueue")
 
 ############################################################

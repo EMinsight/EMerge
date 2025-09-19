@@ -244,24 +244,24 @@ def ned2_tet_stiff_mass(tet_vertices, edge_lengths, local_edge_map, local_tri_ma
 
             L2 = edge_lengths[ej]
 
-            BB1 = matmul(Mm,GC)
-            BC1 = matmul(Mm,GD)
-            BD1 = dot_c(GA,BB1)
-            BE1 = dot_c(GA,BC1)
-            BF1 = dot_c(GB,BB1)
-            BG1 = dot_c(GB,BC1)
+            erGF = matmul(Mm,GC)
+            erGC = matmul(Mm,GD)
+            erGD = dot_c(GA,erGF)
+            GE_MUL_erGF = dot_c(GA,erGC)
+            GE_MUL_erGC = dot_c(GB,erGF)
+            GA_MUL_erGF = dot_c(GB,erGC)
 
-            Q2 = L1*L2
-            Q = Q2*9*dot_c(cross_c(GA,GB),matmul(Ms,cross_c(GC,GD)))
-            Dmat[ei+0,ej+0] = Q*VAC
-            Dmat[ei+0,ej+10] = Q*VAD
-            Dmat[ei+10,ej+0] = Q*VBC
-            Dmat[ei+10,ej+10] = Q*VBD
+            L12 = L1*L2
+            Factor = L12*9*dot_c(cross_c(GA,GB),matmul(Ms,cross_c(GC,GD)))
+            Dmat[ei+0,ej+0] = Factor*VAC
+            Dmat[ei+0,ej+10] = Factor*VAD
+            Dmat[ei+10,ej+0] = Factor*VBC
+            Dmat[ei+10,ej+10] = Factor*VBD
             
-            Fmat[ei+0,ej+0] = Q2*(VABCD*BD1-VABCC*BE1-VAACD*BF1+VAACC*BG1)
-            Fmat[ei+0,ej+10] = Q2*(VABDD*BD1-VABCD*BE1-VAADD*BF1+VAACD*BG1)
-            Fmat[ei+10,ej+0] = Q2*(VBBCD*BD1-VBBCC*BE1-VABCD*BF1+VABCC*BG1)
-            Fmat[ei+10,ej+10] = Q2*(VBBDD*BD1-VBBCD*BE1-VABDD*BF1+VABCD*BG1)       
+            Fmat[ei+0,ej+0] = L12*(VABCD*erGD-VABCC*GE_MUL_erGF-VAACD*GE_MUL_erGC+VAACC*GA_MUL_erGF)
+            Fmat[ei+0,ej+10] = L12*(VABDD*erGD-VABCD*GE_MUL_erGF-VAADD*GE_MUL_erGC+VAACD*GA_MUL_erGF)
+            Fmat[ei+10,ej+0] = L12*(VBBCD*erGD-VBBCC*GE_MUL_erGF-VABCD*GE_MUL_erGC+VABCC*GA_MUL_erGF)
+            Fmat[ei+10,ej+10] = L12*(VBBDD*erGD-VBBCD*GE_MUL_erGF-VABDD*GE_MUL_erGC+VABCD*GA_MUL_erGF)       
 
         for ej in range(4):
             ej1, ej2, fj = local_tri_map[:, ej]
@@ -292,29 +292,29 @@ def ned2_tet_stiff_mass(tet_vertices, edge_lengths, local_edge_map, local_tri_ma
             Lab2 = Ds[ej1, ej2]
             Lac2 = Ds[ej1, fj]
             
-            AB1 = cross_c(GA,GB)
-            AI1 = dot_c(AB1,matmul(Ms,cross_c(GC,GF)))
-            AJ1 = dot_c(AB1,matmul(Ms,cross_c(GD,GF)))
-            AK1 = dot_c(AB1,matmul(Ms,cross_c(GC,GD)))
-            BB1 = matmul(Mm,GF)
-            BC1 = matmul(Mm,GC)
-            BD1 = matmul(Mm,GD)
-            BE1 = dot_c(GA,BB1)
-            BF1 = dot_c(GA,BC1)
-            BG1 = dot_c(GB,BB1)
-            BH1 = dot_c(GB,BC1)
-            BI1 = dot_c(GA,BD1)
-            BJ1 = dot_c(GB,BD1)
+            CROSS_AE = cross_c(GA,GB)
+            CROSS_DF = dot_c(CROSS_AE,matmul(Ms,cross_c(GC,GF)))
+            CROSS_CD = dot_c(CROSS_AE,matmul(Ms,cross_c(GD,GF)))
+            AE_MUL_CF = dot_c(CROSS_AE,matmul(Ms,cross_c(GC,GD)))
+            erGF = matmul(Mm,GF)
+            erGC = matmul(Mm,GC)
+            erGD = matmul(Mm,GD)
+            GE_MUL_erGF = dot_c(GA,erGF)
+            GE_MUL_erGC = dot_c(GA,erGC)
+            GA_MUL_erGF = dot_c(GB,erGF)
+            GA_MUL_erGC = dot_c(GB,erGC)
+            GE_MUL_erGD = dot_c(GA,erGD)
+            GA_MUL_erGD = dot_c(GB,erGD)
             
-            Dmat[ei+0,ej+6] = L1*Lac2*(-6*VAD*AI1-3*VAC*AJ1-3*VAF*AK1)
-            Dmat[ei+0,ej+16] = L1*Lab2*(6*VAF*AK1+3*VAD*AI1-3*VAC*AJ1)
-            Dmat[ei+10,ej+6] = L1*Lac2*(-6*VBD*AI1-3*VBC*AJ1-3*VBF*AK1)
-            Dmat[ei+10,ej+16] = L1*Lab2*(6*VBF*AK1+3*VBD*AI1-3*VBC*AJ1)
+            Dmat[ei+0,ej+6] = L1*Lac2*(-6*VAD*CROSS_DF-3*VAC*CROSS_CD-3*VAF*AE_MUL_CF)
+            Dmat[ei+0,ej+16] = L1*Lab2*(6*VAF*AE_MUL_CF+3*VAD*CROSS_DF-3*VAC*CROSS_CD)
+            Dmat[ei+10,ej+6] = L1*Lac2*(-6*VBD*CROSS_DF-3*VBC*CROSS_CD-3*VBF*AE_MUL_CF)
+            Dmat[ei+10,ej+16] = L1*Lab2*(6*VBF*AE_MUL_CF+3*VBD*CROSS_DF-3*VBC*CROSS_CD)
 
-            Fmat[ei+0,ej+6] = L1*Lac2*(VABCD*BE1-VABDF*BF1-VAACD*BG1+VAADF*BH1)
-            Fmat[ei+0,ej+16] = L1*Lab2*(VABDF*BF1-VABCF*BI1-VAADF*BH1+VAACF*BJ1)
-            Fmat[ei+10,ej+6] = L1*Lac2*(VBBCD*BE1-VBBDF*BF1-VABCD*BG1+VABDF*BH1)
-            Fmat[ei+10,ej+16] = L1*Lab2*(VBBDF*BF1-VBBCF*BI1-VABDF*BH1+VABCF*BJ1)
+            Fmat[ei+0,ej+6] = L1*Lac2*(VABCD*GE_MUL_erGF-VABDF*GE_MUL_erGC-VAACD*GA_MUL_erGF+VAADF*GA_MUL_erGC)
+            Fmat[ei+0,ej+16] = L1*Lab2*(VABDF*GE_MUL_erGC-VABCF*GE_MUL_erGD-VAADF*GA_MUL_erGC+VAACF*GA_MUL_erGD)
+            Fmat[ei+10,ej+6] = L1*Lac2*(VBBCD*GE_MUL_erGF-VBBDF*GE_MUL_erGC-VABCD*GA_MUL_erGF+VABDF*GA_MUL_erGC)
+            Fmat[ei+10,ej+16] = L1*Lab2*(VBBDF*GE_MUL_erGC-VBBCF*GE_MUL_erGD-VABDF*GA_MUL_erGC+VABCF*GA_MUL_erGD)
     
     ## Mirror the transpose part of the previous iteration as its symmetrical
 
@@ -335,6 +335,7 @@ def ned2_tet_stiff_mass(tet_vertices, edge_lengths, local_edge_map, local_tri_ma
         GE = GLs[fi]
         Lac1 = Ds[ei1, fi]
         Lab1 = Ds[ei1, ei2]
+        
         for ej in range(4):
             ej1, ej2, fj = local_tri_map[:, ej]
             
@@ -366,44 +367,44 @@ def ned2_tet_stiff_mass(tet_vertices, edge_lengths, local_edge_map, local_tri_ma
             Lac2 = Ds[ej1, fj]
             Lab2 = Ds[ej1, ej2]
 
-            AB1 = cross_c(GA,GE)
-            AF1 = cross_c(GB,GE)
-            AG1 = cross_c(GA,GB)
-            AH1 = matmul(Ms,cross_c(GC,GF))
-            AI1 = matmul(Ms,cross_c(GD,GF))
-            AJ1 = matmul(Ms,cross_c(GC,GD))
-            AK1 = dot_c(AB1,AH1)
-            AL1 = dot_c(AB1,AI1)
-            AM1 = dot_c(AB1,AJ1)
-            AN1 = dot_c(AF1,AH1)
-            AO1 = dot_c(AF1,AI1)
-            AP1 = dot_c(AF1,AJ1)
-            AQ1 = dot_c(AG1,AH1)
-            AR1 = dot_c(AG1,AI1)
-            AS1 = dot_c(AG1,AJ1)
-            BB1 = matmul(Mm,GF)
-            BC1 = matmul(Mm,GC)
-            BD1 = matmul(Mm,GD)
-            BE1 = dot_c(GE,BB1)
-            BF1 = dot_c(GE,BC1)
-            BG1 = dot_c(GA,BB1)
-            BH1 = dot_c(GA,BC1)
-            BI1 = dot_c(GE,BD1)
-            BJ1 = dot_c(GA,BD1)
-            BK1 = dot_c(GB,BB1)
-            BL1 = dot_c(GB,BC1)
-            BM1 = dot_c(GB,BD1)
+            CROSS_AE = cross_c(GA,GE)
+            CROSS_BE = cross_c(GB,GE)
+            CROSS_AB = cross_c(GA,GB)
+            CROSS_CF = matmul(Ms,cross_c(GC,GF))
+            CROSS_DF = matmul(Ms,cross_c(GD,GF))
+            CROSS_CD = matmul(Ms,cross_c(GC,GD))
+            AE_MUL_CF = dot_c(CROSS_AE,CROSS_CF)
+            AE_MUL_DF = dot_c(CROSS_AE,CROSS_DF)
+            AE_MUL_CD = dot_c(CROSS_AE,CROSS_CD)
+            BE_MUL_CF = dot_c(CROSS_BE,CROSS_CF)
+            BE_MUL_DF = dot_c(CROSS_BE,CROSS_DF)
+            BE_MUL_CD = dot_c(CROSS_BE,CROSS_CD)
+            AB_MUL_CF = dot_c(CROSS_AB,CROSS_CF)
+            AB_MUL_DF = dot_c(CROSS_AB,CROSS_DF)
+            AB_MUL_CD = dot_c(CROSS_AB,CROSS_CD)
+            erGF = matmul(Mm,GF)
+            erGC = matmul(Mm,GC)
+            erGD = matmul(Mm,GD)
+            GE_MUL_erGF = dot_c(GE,erGF)
+            GE_MUL_erGC = dot_c(GE,erGC)
+            GA_MUL_erGF = dot_c(GA,erGF)
+            GA_MUL_erGC = dot_c(GA,erGC)
+            GE_MUL_erGD = dot_c(GE,erGD)
+            GA_MUL_erGD = dot_c(GA,erGD)
+            GB_MUL_erGF = dot_c(GB,erGF)
+            GB_MUL_erGC = dot_c(GB,erGC)
+            GB_MUL_erGD = dot_c(GB,erGD)
 
-            Q1 = 2*VAD*AN1+VAC*AO1+VAF*AP1
-            Q2 = -2*VAF*AP1-VAD*AN1+VAC*AO1
-            Dmat[ei+6,ej+6] = Lac1*Lac2*(4*VBD*AK1+2*VBC*AL1+2*VBF*AM1+Q1+2*VDE*AQ1+VCE*AR1+VEF*AS1)
-            Dmat[ei+6,ej+16] = Lac1*Lab2*(-4*VBF*AM1-2*VBD*AK1+2*VBC*AL1+Q2-2*VEF*AS1-VDE*AQ1+VCE*AR1)
-            Dmat[ei+16,ej+6] = Lab1*Lac2*(-4*VDE*AQ1-2*VCE*AR1-2*VEF*AS1-2*VBD*AK1-VBC*AL1-VBF*AM1+Q1)
-            Dmat[ei+16,ej+16] = Lab1*Lab2*(4*VEF*AS1+2*VDE*AQ1-2*VCE*AR1+2*VBF*AM1+VBD*AK1-VBC*AL1+Q2)
-            Fmat[ei+6,ej+6] = Lac1*Lac2*(VABCD*BE1-VABDF*BF1-VBCDE*BG1+VBDEF*BH1)
-            Fmat[ei+6,ej+16] = Lac1*Lab2*(VABDF*BF1-VABCF*BI1-VBDEF*BH1+VBCEF*BJ1)
-            Fmat[ei+16,ej+6] = Lab1*Lac2*(VBCDE*BG1-VBDEF*BH1-VACDE*BK1+VADEF*BL1)
-            Fmat[ei+16,ej+16] = Lab1*Lab2*(VBDEF*BH1-VBCEF*BJ1-VADEF*BL1+VACEF*BM1)
+            Q1 = 2*VAD*BE_MUL_CF+VAC*BE_MUL_DF+VAF*BE_MUL_CD
+            L12 = -2*VAF*BE_MUL_CD-VAD*BE_MUL_CF+VAC*BE_MUL_DF
+            Dmat[ei+6,ej+6] = Lac1*Lac2*(4*VBD*AE_MUL_CF+2*VBC*AE_MUL_DF+2*VBF*AE_MUL_CD+Q1+2*VDE*AB_MUL_CF+VCE*AB_MUL_DF+VEF*AB_MUL_CD)
+            Dmat[ei+6,ej+16] = Lac1*Lab2*(-4*VBF*AE_MUL_CD-2*VBD*AE_MUL_CF+2*VBC*AE_MUL_DF+L12-2*VEF*AB_MUL_CD-VDE*AB_MUL_CF+VCE*AB_MUL_DF)
+            Dmat[ei+16,ej+6] = Lab1*Lac2*(-4*VDE*AB_MUL_CF-2*VCE*AB_MUL_DF-2*VEF*AB_MUL_CD-2*VBD*AE_MUL_CF-VBC*AE_MUL_DF-VBF*AE_MUL_CD+Q1)
+            Dmat[ei+16,ej+16] = Lab1*Lab2*(4*VEF*AB_MUL_CD+2*VDE*AB_MUL_CF-2*VCE*AB_MUL_DF+2*VBF*AE_MUL_CD+VBD*AE_MUL_CF-VBC*AE_MUL_DF+L12)
+            Fmat[ei+6,ej+6] = Lac1*Lac2*(VABCD*GE_MUL_erGF-VABDF*GE_MUL_erGC-VBCDE*GA_MUL_erGF+VBDEF*GA_MUL_erGC)
+            Fmat[ei+6,ej+16] = Lac1*Lab2*(VABDF*GE_MUL_erGC-VABCF*GE_MUL_erGD-VBDEF*GA_MUL_erGC+VBCEF*GA_MUL_erGD)
+            Fmat[ei+16,ej+6] = Lab1*Lac2*(VBCDE*GA_MUL_erGF-VBDEF*GA_MUL_erGC-VACDE*GB_MUL_erGF+VADEF*GB_MUL_erGC)
+            Fmat[ei+16,ej+16] = Lab1*Lab2*(VBDEF*GA_MUL_erGC-VBCEF*GA_MUL_erGD-VADEF*GB_MUL_erGC+VACEF*GB_MUL_erGD)
 
     Dmat = Dmat*KA
     Fmat = Fmat*KB

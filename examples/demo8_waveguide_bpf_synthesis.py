@@ -94,8 +94,8 @@ with em.Simulation('IrisSim') as sim:
         sim.generate_mesh()
 
         # Port BCs on front/back faces for TE10 excitation
-        sim.mw.bc.RectangularWaveguide(wg1.face('front'), 1)
-        sim.mw.bc.RectangularWaveguide(wg2.face('back'), 2)
+        sim.mw.bc.RectangularWaveguide(wg1.front, 1)
+        sim.mw.bc.RectangularWaveguide(wg2.back, 2)
 
         data = sim.mw.run_sweep()
         # Compensate phase from feed line length
@@ -157,11 +157,11 @@ with em.Simulation('FullFilter') as mf:
     mf.generate_mesh()
 
     # Boundary conditions for feed ports
-    p1 = mf.mw.bc.RectangularWaveguide(feed1.face('front'), 1)
-    p2 = mf.mw.bc.RectangularWaveguide(feed2.face('back'), 2)
+    p1 = mf.mw.bc.RectangularWaveguide(feed1.front, 1)
+    p2 = mf.mw.bc.RectangularWaveguide(feed2.back, 2)
 
     # Run frequency-domain sweep and extract S-parameters
-    data = mf.mw.run_sweep(parallel=True, njobs=3, frequency_groups=9)
+    data = mf.mw.run_sweep(parallel=True, n_workers=3, frequency_groups=9)
     grid = data.scalar.grid
     freqs = grid.freq
     fdense = np.linspace(freqs[0], freqs[-1], 2001)

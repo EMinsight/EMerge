@@ -67,13 +67,13 @@ model.mw.set_frequency(10e9)                  # 10GHz frequency
 model.mw.set_resolution(0.24)                  # mesh resolution fraction
 
 model.generate_mesh()
-model.view(selections=[feed.face('front'),])
-model.view(selections=[horn_vol.boundary(),])
-model.view(selections=[air.boundary(exclude=('left',)),], plot_mesh=True)
+model.view(selections=[feed.front,])
+model.view(selections=[horn_vol.sides,])
+model.view(selections=[air.face(no='left')], plot_mesh=True)
 
 # --- Boundary conditions ------------------------------------------------
-port1 = model.mw.bc.ModalPort(feed.face('front'), 1)  # excite port at waveguide
-radiation_boundary = air.boundary(exclude=("left",)) # open faces
+port1 = model.mw.bc.ModalPort(feed.front, 1)  # excite port at waveguide
+radiation_boundary = air.boundary(exclude="left") # open faces
 abc = model.mw.bc.AbsorbingBoundary(radiation_boundary)
 
 # --- Run frequency-domain solver ----------------------------------------

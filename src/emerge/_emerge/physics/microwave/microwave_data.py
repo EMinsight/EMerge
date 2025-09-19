@@ -732,6 +732,15 @@ class MWField:
         self._z = zs
         return EHField(xs, ys, zs, self.Ex, self.Ey, self.Ez, self.Hx, self.Hy, self.Hz, self.freq, self.er, self.ur)
 
+    def boundary(self,
+                 selection: FaceSelection) -> EHField:
+        nodes = self.mesh.nodes
+        x = nodes[0,:]
+        y = nodes[1,:]
+        z = nodes[2,:]
+        field = self.interpolate(x, y, z, False)
+        return field
+    
     def cutplane(self, 
                      ds: float,
                      x: float | None = None,

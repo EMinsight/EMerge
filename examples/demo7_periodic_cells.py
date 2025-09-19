@@ -93,10 +93,10 @@ model.view()
 # Now lets define our boundary conditions
 # First the waveguide port
 
-wgbc = model.mw.bc.RectangularWaveguide(waveguide.face('bottom'), 1)
+wgbc = model.mw.bc.RectangularWaveguide(waveguide.bottom, 1)
 
 # And then the absorbing boundary at the top
-abc = model.mw.bc.AbsorbingBoundary(box.face('back'))
+abc = model.mw.bc.AbsorbingBoundary(box.back)
 
 # We can use the set_scanangle method to set the appropriate phases for the boundary. The scan angle is defined as following
 # kx = sin(θ)·cos(ϕ)

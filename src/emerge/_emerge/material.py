@@ -14,10 +14,11 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, see
 # <https://www.gnu.org/licenses/>.
-
+from __future__ import annotations
 import numpy as np
 from typing import Callable
 import inspect
+from .const import C0
 
 
 def num_args(func):
@@ -328,7 +329,7 @@ class Material:
         hex_str = self.color.lstrip('#')
         self._color_rgb = tuple(int(hex_str[i:i+2], 16)/255.0 for i in (0, 2, 4))
         self._metal: bool = _metal
-        
+    
     def __getstate__(self):
         state = self.__dict__.copy()
         for k in self._pickle_exclude:
@@ -401,6 +402,34 @@ class Material:
     def color_rgb(self) -> tuple[float,float,float]:
         return self._color_rgb
      
+    @staticmethod
+    def drude_model(conductivity: float, 
+                    colission_time: float, 
+                    er: float = 1.0,
+                    ur: float = 1.0, 
+                    color: str = "#aaaaaa", 
+                    opacity: float = 0.3,
+                    metal: bool = True) -> Material:
+        """Creates a Material using the Drume model for conductivity
+        Requires at least the DC bulk condutivity σ₀ [S/m] and the
+        collision time τ.
+
+        Args:
+            conductivity (float): The DC bulk conductivity σ₀ in S/m
+            colission_time (float): The collision time.
+            er (float, optional): The dielectric constant. Defaults to 1.0.
+            ur (float, optional): The relative permeability. Defaults to 1.0.
+            color (str, optional): The material rendering color. Defaults to "#aaaaaa".
+            opacity (float, optional): The material rendering opacity. Defaults to 0.3.
+            metal (bool, optional): If it should be rendered as a metal.. Defaults to True.
+
+        Returns:
+            Material: The resultant material.
+        """
+        colission_dist = colission_time/C0
+        fsigma = FreqDependent(scalar = lambda f: conductivity/(1 - 1j*2*np.pi*f*colission_dist))
+        return Material(er, ur, 0.0, fsigma, color=color, opacity=opacity, _metal=metal)
+    
 AIR = Material(color="#4496f3", opacity=0.05, name='Air')
 COPPER = Material(cond=5.8e7, color="#62290c", _metal=True, name='Copper')
 PEC = Material(color="#ff78aa", opacity=1.0, cond=1e30, _metal=True, name="PEC")

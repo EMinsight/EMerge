@@ -13,11 +13,11 @@ Notice that the results of this simulation are not supposed to be good. Its more
 mm = 0.001    # Define a millimeter
 th = 1.0      # mm
 
-model = em.Simulation('StriplineWithVias')
+model = em.Simulation('StriplineWithVias', loglevel='DEBUG')
 model.check_version("1.0.5") # Checks version compatibility.
 
 # As usual we start by creating our layouter
-ly = em.geo.PCB(th, mm, em.GCS, em.lib.DIEL_RO4350B, trace_material=em.lib.MET_COPPER)
+ly = em.geo.PCB(th, mm, em.GCS, material=em.lib.DIEL_RO4350B, trace_material=em.lib.MET_COPPER)
 
 # Here we define a simple stripline path that makes a knick turn and a via jump to a new layer.
 # None of the transmission lines are conciously matched in any way, this is just about the routing
@@ -75,7 +75,7 @@ p1 = model.mw.bc.LumpedPort(lp1, 1)
 p2 = model.mw.bc.LumpedPort(lp2, 2)
 
 # Finally we run the simulation!
-data = model.mw.run_sweep(True, 4, frequency_groups=8)
+data = model.mw.run_sweep(True, n_workers=4, frequency_groups=8)
 
 freq = data.scalar.grid.freq
 S11 = data.scalar.grid.S(1,1)
@@ -86,7 +86,7 @@ plot_sp(freq, [S11, S21], labels=['S11','S21'])
 model.display.add_object(diel, opacity=0.2)
 model.display.add_object(trace)
 model.display.add_object(vias)
-
+model.display.add_portmode(p1, data.field[3].k0)
 # You can use the cutplane method of the BaseDataset class
 # This is equivalent to the interpolate method except it automatically generates
 # the point cloud based on a plane x,y or z coordinate.
