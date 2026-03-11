@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10, <4.0"
 resolution-markers = [
     "python_full_version >= '3.11' and sys_platform == 'linux'",
@@ -452,7 +452,7 @@ wheels = [
 
 [[package]]
 name = "emerge"
-version = "2.4.0"
+version = "2.4.1"
 source = { editable = "." }
 dependencies = [
     { name = "emsutil" },
@@ -499,19 +499,17 @@ dev = [
     { name = "emerge-aasds", marker = "sys_platform == 'darwin'" },
     { name = "emerge-iron", marker = "sys_platform == 'darwin'" },
     { name = "ezdxf" },
-    { name = "pipdeptree" },
     { name = "psutil" },
     { name = "pygerber" },
     { name = "pytest" },
     { name = "scikit-umfpack" },
-    { name = "threadpoolctl" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "cupy-cuda12x", marker = "extra == 'cudss'" },
     { name = "cupy-cuda12x", marker = "extra == 'cudss12'" },
-    { name = "emsutil", editable = "../emsutil" },
+    { name = "emsutil", specifier = ">=0.5.0,<0.6.0" },
     { name = "ezdxf", marker = "extra == 'dxf'" },
     { name = "gmsh", specifier = ">=4.13.0,<4.14.0" },
     { name = "joblib", specifier = ">=1.5.1" },
@@ -541,12 +539,10 @@ dev = [
     { name = "emerge-aasds", marker = "sys_platform == 'darwin'", git = "https://github.com/FennisRobert/emerge-aasds" },
     { name = "emerge-iron", marker = "sys_platform == 'darwin'", git = "https://github.com/FennisRobert/EMerge-IRON" },
     { name = "ezdxf", specifier = ">=1.4.3" },
-    { name = "pipdeptree", specifier = ">=2.28.0" },
     { name = "psutil", specifier = ">=7.2.2" },
     { name = "pygerber" },
     { name = "pytest", specifier = ">=8.4.1" },
     { name = "scikit-umfpack", specifier = ">=0.4.2" },
-    { name = "threadpoolctl", specifier = ">=3.6.0" },
 ]
 
 [[package]]
@@ -567,7 +563,7 @@ source = { git = "https://github.com/FennisRobert/EMerge-IRON#240209d1a69f14f6eb
 [[package]]
 name = "emsutil"
 version = "0.5.0"
-source = { editable = "../emsutil" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "loguru" },
     { name = "matplotlib" },
@@ -579,16 +575,9 @@ dependencies = [
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "loguru", specifier = ">=0.7.3" },
-    { name = "matplotlib", specifier = ">=3.8.0" },
-    { name = "msgpack", specifier = ">=1.1.2" },
-    { name = "msgpack-numpy", specifier = ">=0.4.8" },
-    { name = "numpy", specifier = ">=1.24,<2.3" },
-    { name = "pyvista", specifier = ">=0.46.4" },
-    { name = "scipy", specifier = ">=1.14.0" },
+sdist = { url = "https://files.pythonhosted.org/packages/ec/18/b245e8a94bcad26f7a5c70cde843601f99dc4c0a30553ef873394a7e7fad/emsutil-0.5.0.tar.gz", hash = "sha256:f7df399b947975b043bdcf18fcf5c69d8d3138d21d380d779353987355d23e56", size = 7817104, upload-time = "2026-02-09T19:04:11.795Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e5/2b/cebd30d33def80f3966544dd204cdf4fb55d99f618ce40e4db6b406ba64b/emsutil-0.5.0-py3-none-any.whl", hash = "sha256:893e4770ff2d7627485bd9ea4d6c8cb7d0f02b91094bdbe8bfabc39de2492866", size = 7740209, upload-time = "2026-02-09T19:03:55.734Z" },
 ]
 
 [[package]]
@@ -1513,28 +1502,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pip"
-version = "26.0.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/48/83/0d7d4e9efe3344b8e2fe25d93be44f64b65364d3c8d7bc6dc90198d5422e/pip-26.0.1.tar.gz", hash = "sha256:c4037d8a277c89b320abe636d59f91e6d0922d08a05b60e85e53b296613346d8", size = 1812747, upload-time = "2026-02-05T02:20:18.702Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/de/f0/c81e05b613866b76d2d1066490adf1a3dbc4ee9d9c839961c3fc8a6997af/pip-26.0.1-py3-none-any.whl", hash = "sha256:bdb1b08f4274833d62c1aa29e20907365a2ceb950410df15fc9521bad440122b", size = 1787723, upload-time = "2026-02-05T02:20:16.416Z" },
-]
-
-[[package]]
-name = "pipdeptree"
-version = "2.31.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "packaging" },
-    { name = "pip" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/67/0d/84e80cb63ef95aac70f279a4fb98e1f29301613b709385f0bc00b5ef33e2/pipdeptree-2.31.0.tar.gz", hash = "sha256:b3863e889761be597cc68cc38b3845f670ceab8d690f7b6728aa396d1e1be458", size = 43790, upload-time = "2026-02-20T02:57:00.51Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/2a/01/a769099fcb2cc69480201b44f09a197c7f8f2403d486c9788a43868fa875/pipdeptree-2.31.0-py3-none-any.whl", hash = "sha256:8a85583ef755959bda23ff40f39b1f393d73e25d182cf9e9b21c818f3e3ece7d", size = 34626, upload-time = "2026-02-20T02:56:58.932Z" },
-]
-
-[[package]]
 name = "platformdirs"
 version = "4.9.2"
 source = { registry = "https://pypi.org/simple" }
@@ -2061,15 +2028,6 @@ source = { registry = "https://pypi.org/simple" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a1/a4/38e8b5a27b66ab286168ba6c449771ed71d71ec76524e7f12401474a5151/tcmlib-1.4.1-py2.py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:0d5bd98db48d31bec7fedba5c23599bf9ae43c7016d4c3946d25242d320cee89", size = 2731276, upload-time = "2025-10-22T17:57:02.392Z" },
     { url = "https://files.pythonhosted.org/packages/eb/4d/2b1d55dba475f602197e284b9a5e5460139a9c5ef2bfb63c8d2a1fafc163/tcmlib-1.4.1-py2.py3-none-win_amd64.whl", hash = "sha256:5202a1fd8541182fbd4ef72848784e4bf94340152d7ddff33d401d30930fa53c", size = 370347, upload-time = "2025-10-22T18:00:36.37Z" },
-]
-
-[[package]]
-name = "threadpoolctl"
-version = "3.6.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/b7/4d/08c89e34946fce2aec4fbb45c9016efd5f4d7f24af8e5d93296e935631d8/threadpoolctl-3.6.0.tar.gz", hash = "sha256:8ab8b4aa3491d812b623328249fab5302a68d2d71745c8a4c719a2fcaba9f44e", size = 21274, upload-time = "2025-03-13T13:49:23.031Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/32/d5/f9a850d79b0851d1d4ef6456097579a9005b31fea68726a4ae5f2d82ddd9/threadpoolctl-3.6.0-py3-none-any.whl", hash = "sha256:43a0b8fd5a2928500110039e43a5eed8480b918967083ea48dc3ab9f13c4a7fb", size = 18638, upload-time = "2025-03-13T13:49:21.846Z" },
 ]
 
 [[package]]

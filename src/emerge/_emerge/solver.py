@@ -279,7 +279,7 @@ def filter_unique_eigenpairs(eigen_values: list[complex],
         unique_values (np.ndarray): Filtered eigenvalues
         unique_vectors (np.ndarray): Corresponding orthogonal eigenvectors
     """
-    if len(eigen_values) == 1:
+    if len(eigen_values) <= 1:
         return eigen_values, eigen_vectors
     
     selected: list = [eigen_vectors[0]/np.linalg.norm(eigen_vectors[0]),]

@@ -129,17 +129,15 @@ def _format_freq(freq: float) -> str:
     return f"{scaled_freq:.2f} {units[i]}"
 
 def shortest_path(xyz1: np.ndarray, xyz2: np.ndarray, Npts: int) -> np.ndarray:
-    """
-    Finds the pair of points (one from xyz1, one from xyz2) that are closest in Euclidean distance,
-    and returns a (3, Npts) array of points linearly interpolating between them.
+    """Finds the shortest path between two sets of points
 
-    Parameters:
-    xyz1 : np.ndarray of shape (3, N1)
-    xyz2 : np.ndarray of shape (3, N2)
-    Npts : int, number of points in the output path
+    Args:
+        xyz1 (np.ndarray): _description_
+        xyz2 (np.ndarray): _description_
+        Npts (int): _description_
 
     Returns:
-    np.ndarray of shape (3, Npts)
+        np.ndarray: _description_
     """
     # Compute pairwise distances (N1 x N2)
     diffs = xyz1[:, :, np.newaxis] - xyz2[:, np.newaxis, :]
@@ -161,30 +159,17 @@ def construct_pec_contour(mesh: 'Mesh3D',
                           pec_vertices: set[int],
                           normal_vector: np.ndarray,
                           alpha: float = 0.2) -> np.ndarray:
-    """
-    Construct a closed contour loop around a PEC island.
+    """Constructs a closed contour around a pec island
 
-    Parameters
-    ----------
-    mesh : Mesh3D
-        The global 3D mesh. mesh.nodes is (3, N), mesh.tris is (3, M).
-    surface_tri_ids : ndarray of int
-        Indices into mesh.tris that define the 2D boundary surface.
-    pec_vertices : set of int
-        Vertex indices in the global mesh numbering.
-    normal_vector : ndarray, shape (3,)
-        Outward normal of the boundary surface.
-    alpha : float
-        Contour position within each boundary triangle.
-        0.0 = on the PEC vertices/edges (on the conductor).
-        1.0 = on the far edge of the triangle (maximum distance from PEC).
-        Values in between interpolate linearly.
-
-    Returns
-    -------
-    contour : ndarray, shape (3, K+1)
-        Ordered 3D coordinates forming a closed CCW contour loop.
-        Last point equals first point.
+    Args:
+        mesh (Mesh3D): The mesh data
+        surface_tri_ids (np.ndarray): A list of surface triangle indices for the port boundary
+        pec_vertices (set[int]): A list of vertices inside the PEC island
+        normal_vector (np.ndarray): A vector normal to the boundary
+        alpha (float, optional): The relative distance from PEC vertex to edge. Defaults to 0.2.
+    
+    Returns:
+        np.ndarray: _description_
     """
     normal_vector = np.asarray(normal_vector, dtype=float)
     normal_vector = normal_vector / np.linalg.norm(normal_vector)
@@ -192,7 +177,6 @@ def construct_pec_contour(mesh: 'Mesh3D',
     tris = mesh.tris
     nodes = mesh.nodes
 
-    # Step 1: Patch triangles (at least one PEC vertex)
     patch_tri_indices = []
     for j in surface_tri_ids:
         v0, v1, v2 = int(tris[0, j]), int(tris[1, j]), int(tris[2, j])
@@ -202,10 +186,7 @@ def construct_pec_contour(mesh: 'Mesh3D',
     if not patch_tri_indices:
         raise ValueError(f"No patch triangles found. {len(pec_vertices)} PEC vertices, "
                          f"{len(surface_tri_ids)} surface triangles.")
-
-    patch_tri_set = set(patch_tri_indices)
-
-    # Step 2: Patch edge adjacency
+    
     edge_to_tris = defaultdict(list)
     for j in patch_tri_indices:
         v0, v1, v2 = int(tris[0, j]), int(tris[1, j]), int(tris[2, j])
@@ -215,7 +196,6 @@ def construct_pec_contour(mesh: 'Mesh3D',
             edge_key = (min(va, vb), max(va, vb))
             edge_to_tris[edge_key].append(j)
 
-    # Step 3: Boundary edges
     boundary_edges = []
     edge_to_patch_tri = {}
     for edge_key, patch_tris_list in edge_to_tris.items():
@@ -225,8 +205,7 @@ def construct_pec_contour(mesh: 'Mesh3D',
 
     if not boundary_edges:
         raise ValueError(f"No boundary edges. Patch has {len(patch_tri_indices)} triangles.")
-
-    # Step 4: Stitch into loop
+    
     vert_to_edges = defaultdict(list)
     for edge_key in boundary_edges:
         vert_to_edges[edge_key[0]].append(edge_key)
@@ -259,18 +238,6 @@ def construct_pec_contour(mesh: 'Mesh3D',
     if len(ordered_edges) < 3:
         raise ValueError(f"Contour has only {len(ordered_edges)} edges.")
 
-    # Step 5: Build contour points with alpha interpolation.
-    #
-    # For each boundary triangle, classify its vertices as PEC or non-PEC.
-    # Three cases:
-    #   1 PEC vertex, 2 non-PEC:  PEC side is a point, far side is the opposite edge.
-    #   2 PEC vertices, 1 non-PEC: PEC side is an edge, far side is the opposite vertex.
-    #   3 PEC vertices:            fully PEC triangle — use centroid as fallback.
-    #
-    # alpha=0 → on the PEC side, alpha=1 → on the far side.
-    # The contour point is placed at the midpoint of the interpolated "slice"
-    # across the triangle at parameter alpha.
-
     contour_points = np.empty((3, len(ordered_edges)))
     for i, edge_key in enumerate(ordered_edges):
         tri_idx = edge_to_patch_tri[edge_key]
@@ -281,40 +248,25 @@ def construct_pec_contour(mesh: 'Mesh3D',
         n_pec = len(pec_verts)
 
         if n_pec == 1:
-            # PEC side is a single vertex, far side is the edge between the two non-PEC
             P = nodes[:, pec_verts[0]]
             A = nodes[:, non_pec_verts[0]]
             B = nodes[:, non_pec_verts[1]]
-            # At alpha=0: point P
-            # At alpha=1: midpoint of edge AB
-            # At alpha: lerp between P and midpoint(A,B),
-            # but also the "slice" widens from 0 to |AB|.
-            # Point on edge PA at alpha: P + alpha*(A - P)
-            # Point on edge PB at alpha: P + alpha*(B - P)
-            # Contour point = midpoint of those two
             pa = P + alpha * (A - P)
             pb = P + alpha * (B - P)
             contour_points[:, i] = 0.5 * (pa + pb)
 
         elif n_pec == 2:
-            # PEC side is an edge between the two PEC vertices,
-            # far side is the single non-PEC vertex
             A = nodes[:, pec_verts[0]]
             B = nodes[:, pec_verts[1]]
             Q = nodes[:, non_pec_verts[0]]
-            # At alpha=0: midpoint of edge AB
-            # At alpha=1: point Q
-            # At alpha: lerp from midpoint(AB) toward Q
             pec_mid = 0.5 * (A + B)
             contour_points[:, i] = pec_mid + alpha * (Q - pec_mid)
 
         else:
-            # All three vertices are PEC — fully PEC triangle, use centroid
             contour_points[:, i] = (nodes[:, tri_verts[0]] +
                                     nodes[:, tri_verts[1]] +
                                     nodes[:, tri_verts[2]]) / 3.0
-
-    # Step 6: Winding check
+        
     center = contour_points.mean(axis=1, keepdims=True)
     rel = contour_points - center
     n_pts = contour_points.shape[1]
@@ -327,9 +279,9 @@ def construct_pec_contour(mesh: 'Mesh3D',
     if signed_area < 0:
         contour_points = contour_points[:, ::-1]
 
-    # Close the loop
     contour_points = np.hstack([contour_points, contour_points[:, 0:1]])
     return contour_points
+
 ############################################################
 #                      MICROWAVE CLASS                     #
 ############################################################
