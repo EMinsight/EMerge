@@ -24,6 +24,7 @@ from pygerber.gerberx3.parser2.commands2.arc2 import Arc2, CCArc2
 from pygerber.gerberx3.parser2.apertures2.polygon2 import Polygon2
 from pygerber.gerberx3.parser2.apertures2.circle2 import Circle2
 from pygerber.gerberx3.parser2.apertures2.rectangle2 import Rectangle2
+from pygerber.gerberx3.parser2.apertures2.macro2 import Macro2
 
 from math import cos, sin, pi
 import numpy as np
@@ -321,6 +322,55 @@ def parse_flash_rect(cmd: Rectangle2) -> list[tuple[float, float]]:
 
     return points
 
+def parse_flash_macro(cmd: Flash2, 
+                      res_mm: float, 
+                      nseg: int, 
+                      seg_size: float | None) -> list[list[tuple[float, float]]]:
+    
+    fx = float(cmd.flash_point.x.as_millimeters())
+    fy = float(cmd.flash_point.y.as_millimeters())
+    
+    macro_ap: Macro2 = cmd.aperture
+    rings = []
+    
+    for sub_cmd in macro_ap.command_buffer:
+        pts = None
+        
+        if isinstance(sub_cmd, Region2):
+            pts = parse_region(sub_cmd)
+        elif isinstance(sub_cmd, CCArc2):
+            pts = parse_arc(sub_cmd, res_mm, False, nseg, seg_size)
+        elif isinstance(sub_cmd, Arc2):
+            pts = parse_arc(sub_cmd, res_mm, True, nseg, seg_size)
+        elif isinstance(sub_cmd, Line2):
+            pts = parse_line(sub_cmd, res_mm, nseg, seg_size)
+        elif isinstance(sub_cmd, Flash2):
+            if isinstance(sub_cmd.aperture, Circle2):
+                pts = parse_flash_circ(sub_cmd, nseg, seg_size)
+            elif isinstance(sub_cmd.aperture, Rectangle2):
+                pts = parse_flash_rect(sub_cmd)
+            elif isinstance(sub_cmd.aperture, Polygon2):
+                ap = sub_cmd.aperture
+                n = int(ap.vertices)
+                R = float(ap.diameter.as_millimeters()) / 2.0
+                cx = float(sub_cmd.flash_point.x.as_millimeters())
+                cy = float(sub_cmd.flash_point.y.as_millimeters())
+                rot = float(ap.rotation) * pi / 180.0
+                pts = [(cx + R * cos(2*pi*i/n + rot), 
+                        cy + R * sin(2*pi*i/n + rot)) for i in range(n)]
+            else:
+                logger.warning(f'Unhandled sub-aperture in macro: {type(sub_cmd.aperture)}')
+                continue
+        else:
+            logger.warning(f'Unhandled sub-command in macro: {type(sub_cmd)}')
+            continue
+        
+        if pts is not None and len(pts) >= 3:
+            # Translate from macro-local coords to flash point
+            translated = [(x + fx, y + fy) for x, y in pts]
+            rings.append(translated)
+    return rings
+
 ############################################################
 #                          CLASSES                         #
 ############################################################
@@ -570,7 +620,13 @@ class GerberLayer:
                 points = parse_flash_rect(cmd)
                 self._add_poly(points, clear, True)
                 continue
-            logger.error(f'Unparsable command found! {cmd}. Please contact the EMerge developers with this Gerber file to get this command supported.')
+
+            if isinstance(cmd.aperture, Macro2):
+                rings = parse_flash_macro(cmd, self.res_mm, self._nseg, self._seg_size_mm)
+                for ring in rings:
+                    self._add_poly(ring, clear, True)
+                continue
+            logger.error(f'Unparsable command found! {cmd}. Aperture type: {type(cmd.aperture)}. Please contact the EMerge developers with this Gerber file to get this command supported.')
      
     def simplify(self):
         for poly in self.polies:

@@ -17,13 +17,13 @@
 # <https://www.gnu.org/licenses/>.
 
 # Last Cleanup: 2025-01-01
-from ..._emerge.geo import PCB, extrude
+from ..._emerge.geo import PCBNew, extrude
 from ..._emerge.geometry import GeoSurface
 from .gerber import GerberLayer
 from .excellon import parse_excellon_file
 from collections import defaultdict
 
-class FileBasedPCB(PCB):
+class FileBasedPCB(PCBNew):
     """Adds PCB construction from Gerber and Excellon files.
 
     Args:

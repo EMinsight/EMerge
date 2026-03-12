@@ -202,17 +202,29 @@ def plot_polygon_debug(
 
 class Loop:
     def __init__(self, xs: np.ndarray, ys: np.ndarray):
-        self.x = np.asarray(xs, dtype=float)
-        self.y = np.asarray(ys, dtype=float)
+        xs, ys = self.cleanup_exact_copies(xs, ys)
+        self.x: np.ndarray = xs
+        self.y: np.ndarray = ys
 
         if self.x[0] == self.x[-1] and self.y[0] == self.y[-1]:
             self.x = self.x[:-1]
             self.y = self.y[:-1]
 
         self.N = len(self.x)
-        #plot_polygon_debug(self.x, self.y, show_arrows=False)
-        #self.cleanup_close_points()
         self.validate_polygon_loop()
+    
+    @staticmethod
+    def cleanup_exact_copies(xs: np.ndarray, ys: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        x = list(xs)
+        y = list(ys)
+        xn = [x[0],]
+        yn = [y[0],]
+        for x0, y0 in zip(x[1:], y[1:]):
+            if x0 == xn[-1] and y0==yn[-1]:
+                continue
+            xn.append(x0)
+            yn.append(y0)
+        return np.array(xn).astype(np.float64), np.array(yn).astype(np.float64)
     
     def cleanup_close_points(self, min_dist_um: float = 100.0, *, closed: bool = True) -> int:
         """
