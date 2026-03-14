@@ -91,41 +91,127 @@ def arc_on_plane(ref_dir, normal, angle_range_deg, num_points=100):
     phi = np.arctan2(uy, ux)      # phi = atan2(y, x)
 
     return theta, phi
-
+     
 def renormalise_s(S: np.ndarray,
-                  Zn: np.ndarray,
-                  Z0: complex | float = 50) -> np.ndarray:
-    S   = np.asarray(S,  dtype=complex)
-    Zn  = np.asarray(Zn, dtype=complex)
-    N   = S.shape[1]
+                  Zn: np.ndarray | float | complex,
+                  Z0: np.ndarray | float | complex = 50) -> np.ndarray:
+    """
+    Renormalise S-parameters to a new reference impedance.
+    
+    Implements the renormalisation formula based on power wave theory from:
+    K. Kurokawa, "Power Waves and the Scattering Matrix," 
+    IEEE MTT, vol. 13, no. 2, pp. 194-202, March 1965
+    
+    Parameters
+    ----------
+    S : np.ndarray
+        S-parameters with shape (M, N, N) where M is number of frequency points
+        and N is number of ports
+    Zn : np.ndarray | float | complex
+        Original reference impedance(s). Can be:
+        - scalar: same impedance for all ports and frequencies
+        - 1D array with shape (N,): different impedance per port (same for all frequencies)
+        - 1D array with shape (M,): different impedance per frequency (same for all ports)
+          Note: When M == N, 1D arrays are ambiguous and not allowed. Use 2D arrays instead.
+        - 2D array with shape (M, N): different impedance per frequency and port
+    Z0 : np.ndarray | float | complex
+        New reference impedance(s). Same shape options as Zn.
+        Default is 50.
+    
+    Returns
+    -------
+    np.ndarray
+        Renormalised S-parameters with same shape as input S
+    """
+    # Input validation
+    S = np.asarray(S, dtype=complex)
+    
+    N = S.shape[1]
     if S.shape[1:3] != (N, N):
         raise ValueError("S must have shape (M, N, N) with same N on both axes")
-    if Zn.shape[1] != N:
-        raise ValueError("Zn must be a length-N vector")
-
-    # Constant matrices that do not depend on frequency
     
-    W0_inv_sc = 1 / np.sqrt(Z0)               # scalar because Z0 is common
-    I_N       = np.eye(N, dtype=complex)
-
     M = S.shape[0]
+    
+    # Broadcast Zn to shape (M, N)
+    Zn = np.asarray(Zn, dtype=complex)
+    if Zn.ndim == 0:  # scalar
+        Zn = np.full((M, N), Zn)
+    elif Zn.ndim == 1:
+        if M == N:
+            raise ValueError(
+                f"When M == N ({M}), 1D Zn arrays are ambiguous. "
+                f"Use a 2D array with shape ({M}, {N}) instead."
+            )
+        elif len(Zn) == N:  # 1D array with shape (N,) - per port
+            Zn = np.tile(Zn, (M, 1))
+        elif len(Zn) == M:  # 1D array with shape (M,) - per frequency
+            Zn = np.tile(Zn.reshape(-1, 1), (1, N))
+        else:
+            raise ValueError(
+                f"1D Zn must have length {N} (ports) or {M} (frequencies), "
+                f"got length {len(Zn)}"
+            )
+    elif Zn.ndim == 2:
+        if Zn.shape != (M, N):
+            raise ValueError(f"2D Zn must have shape ({M}, {N}), got {Zn.shape}")
+    else:
+        raise ValueError(f"Zn must be scalar, 1D, or 2D array, got shape {Zn.shape}")
+    
+    # Broadcast Z0 to shape (M, N)
+    Z0 = np.asarray(Z0, dtype=complex)
+    if Z0.ndim == 0:  # scalar
+        Z0 = np.full((M, N), Z0)
+    elif Z0.ndim == 1:
+        if M == N:
+            raise ValueError(
+                f"When M == N ({M}), 1D Z0 arrays are ambiguous. "
+                f"Use a 2D array with shape ({M}, {N}) instead."
+            )
+        elif len(Z0) == N:  # 1D array with shape (N,) - per port
+            Z0 = np.tile(Z0, (M, 1))
+        elif len(Z0) == M:  # 1D array with shape (M,) - per frequency
+            Z0 = np.tile(Z0.reshape(-1, 1), (1, N))
+        else:
+            raise ValueError(
+                f"1D Z0 must have length {N} (ports) or {M} (frequencies), "
+                f"got length {len(Z0)}"
+            )
+    elif Z0.ndim == 2:
+        if Z0.shape != (M, N):
+            raise ValueError(f"2D Z0 must have shape ({M}, {N}), got {Z0.shape}")
+    else:
+        raise ValueError(f"Z0 must be scalar, 1D, or 2D array, got shape {Z0.shape}")
+    
+    # Constant matrices
+    I_N = np.eye(N, dtype=complex)
     S0 = np.empty_like(S)
-
+    
     for k in range(M):
-        Wref = np.diag(np.sqrt(Zn[k,:]))          # √Zn on the diagonal
+        # Extract data for this frequency point
+        Znk = Zn[k, :]
+        Z0k = Z0[k, :]
         Sk = S[k, :, :]
 
-        # Z  = Wref (I + S) (I – S)⁻¹ Wref
-        Zk = Wref @ (I_N + Sk) @ np.linalg.inv(I_N - Sk) @ Wref
-
-        # A  = W0⁻¹ Z W0⁻¹  → because W0 = √Z0·I → A = Z / Z0
-        Ak = Zk * (W0_inv_sc ** 2)            # same as Zk / Z0
-
-        # S0 = (A – I)(A + I)⁻¹
-        S0[k, :, :] = (Ak - I_N) @ np.linalg.inv(Ak + I_N)
-
+        # Diagonal matrices related to original reference impedance Zn
+        # Fᵢ = 1 / (2 √|Re Zᵢ|)
+        F = np.diag(0.5 / np.sqrt(np.abs(np.real(Znk))))
+        # Gᵢ = Zᵢ
+        G = np.diag(Znk)
+        # same for target Z₀ for F' and G'
+        Fp = np.diag(0.5 / np.sqrt(np.abs(np.real(Z0k))))
+        Gp = np.diag(Z0k)
+        
+        # Renormalise S-parameters
+        # Γ = (G' - G) (G' + G⁺)⁻¹
+        Gamma = (Gp - G) @ np.linalg.inv(Gp + G.conj().T)
+        # A = (F')⁻¹ F (I - Γ⁺)
+        A = np.linalg.inv(Fp) @ F @ (I_N - Gamma.conj().T)
+        # S' = A⁻¹ (S - Γ⁺) (I - Γ S)⁻¹ A⁺
+        S0[k, :, :] = np.linalg.inv(A) @ (Sk - Gamma.conj().T) @ \
+                      np.linalg.inv(I_N - Gamma @ Sk) @ A.conj().T
+    
     return S0
-
+    
 def generate_ndim(
     outer_data: dict[str, list[float]],
     inner_data: list[float],
