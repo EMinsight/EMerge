@@ -15,7 +15,7 @@
 # along with this program; if not, see
 # <https://www.gnu.org/licenses/>.
 
-# Last Cleanup: 2025-01-01
+# Last Cleanup: 2025-03-12
 from typing import TypeVar, overload
 from ..geometry import GeoSurface, GeoVolume, GeoObject, GeoPoint, GeoEdge, GeoPolygon
 from ..cs import CoordinateSystem, GCS, Anchor
@@ -24,14 +24,6 @@ import numpy as np
 
 T = TypeVar('T', GeoSurface, GeoVolume, GeoObject, GeoPoint, GeoEdge)
 
-def _gen_mapping(obj_in, obj_out) -> dict:
-    tag_mapping: dict[int, dict] = {0: dict(),
-                                        1: dict(),
-                                        2: dict(),
-                                        3: dict()}
-    for domain, mapping in zip(obj_in, obj_out):
-        tag_mapping[domain[0]][domain[1]] = [o[1] for o in mapping]
-    return tag_mapping
 
 def add(main: T, tool: T, 
              remove_object: bool = True,

@@ -409,9 +409,8 @@ class Assembler:
                             logger.debug('Implementing second order ABC correction.')
                             mat = abc_order_2_matrix(field, tri_ids, 1j*c2/(K0))
                             Bempty += mat
-                        
-            B_p = field.generate_csr(Bempty)
-            K = K + B_p
+            
+            K += field.generate_csr(Bempty)
         
         if len(periodic_bcs) > 0:
             logger.debug('Implementing Periodic Boundary Conditions.')
@@ -644,8 +643,9 @@ class Assembler:
                         logger.debug('Implementing second order ABC correction.')
                         mat = abc_order_2_matrix(field, tri_ids, 1j*c2/k0)
                         Bempty += mat
-            B_p = field.generate_csr(Bempty)
-            B = B + B_p
+
+            B += field.generate_csr(Bempty)
+            del Bempty
         
         if len(periodic) > 0:
             logger.debug('Implementing Periodic Boundary Conditions.')

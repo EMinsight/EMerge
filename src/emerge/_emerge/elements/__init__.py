@@ -15,6 +15,5 @@
 # along with this program; if not, see
 # <https://www.gnu.org/licenses/>.
 
-# Last Cleanup: 2025-01-01
 from .femdata import FEMBasis
 from .nedelec2 import Nedelec2

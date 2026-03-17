@@ -16,7 +16,7 @@
 # <https://www.gnu.org/licenses/>.
 
 
-# Last Cleanup: 2025-01-01
+# Last Cleanup: 2025-03-12
 from .pmlbox import pmlbox
 from .shapes import Box, GeoVolume
 from .operations import bounding_box
@@ -27,7 +27,6 @@ def open_region(xmargin: float | tuple[float, float],
                 ymargin: float | tuple[float, float],
                 zmargin: float | tuple[float, float],
                 material: Material = AIR) -> Box:
-    
     """Creates a simple open region air box with the given margins.
 
     Args:
@@ -39,6 +38,7 @@ def open_region(xmargin: float | tuple[float, float],
     Returns:
         Box: The airbox geoemtry object
     """
+    
     if isinstance(xmargin, Number):
         xmargin = (xmargin, xmargin)
     if isinstance(ymargin, Number):

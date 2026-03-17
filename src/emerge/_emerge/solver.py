@@ -1006,6 +1006,9 @@ class SmartARPACK_BMA(EigSolver):
         self.tot_eigen_modes = []
         self.tot_energies = []
 
+        # The Curl vs Total energy ratio should be in the order of k0**2 so keeping a safe margin:
+        ratio_limit = (0.1*target_k0)**2
+        
         for i, q in enumerate(qs):
             sigma = sign*((q*target_k0)**2)
             logger.trace(f' Searching around {q*target_k0:.2f} rad/m')
@@ -1018,7 +1021,7 @@ class SmartARPACK_BMA(EigSolver):
             ratio = abs(curl_energy/(total_energy+1e-15))
             logger.trace(f'Ratio = {ratio:.6f}, Energy = {energy:.4f}, value = {(sign*eigen_values[0])**0.5}, curl_energy = {curl_energy}, total_energy = {total_energy}')
 
-            if ratio > self.ratio_limit and energy > self.energy_limit:
+            if ratio > ratio_limit and energy > self.energy_limit:
                 self.add_mode(eigen_values[0], eigen_modes.flatten(), energy)
             
             if self.n_found_modes >= nmodes:
@@ -1037,7 +1040,7 @@ class SmartARPACK_BMA(EigSolver):
             ratio = abs(curl_energy/(total_energy+1e-15))
             logger.trace(f'Ratio = {ratio:.6f}, Energy = {energy:.4f}, value = {(sign*eigen_values[0])**0.5}, curl_energy = {curl_energy}, total_energy = {total_energy}')
 
-            if ratio > self.ratio_limit and energy > self.energy_limit:
+            if ratio > ratio_limit and energy > self.energy_limit:
                 self.add_mode(eigen_values[0], eigen_modes.flatten(), energy)
         
             if self.n_found_modes >= nmodes:

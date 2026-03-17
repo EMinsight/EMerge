@@ -1524,7 +1524,7 @@ class Microwave3D:
                     
                     
 
-        if not_conserved and conserve_margin > 0.001:
+        if not_conserved and conserve_margin > 0.01:
             DEBUG_COLLECTOR.add_report(f'S-parameters with an amplitude greater than 1.0 detected. ({20*np.log10(conserve_margin):.2f}dB error. This could be due to a ModalPort with the wrong mode type.\n' +
                                        'Specify the type of mode (TE/TM/TEM) in the constructor using ModalPort(..., modetype=\'TE\') for example.')
         # if not_conserved and conserve_margin < 0.001:

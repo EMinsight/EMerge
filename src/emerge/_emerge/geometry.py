@@ -27,44 +27,9 @@ from typing import Literal, Any, Iterable, Callable
 import numpy as np
 from .cs import Anchor
 from .file import Saveable
+from typing import TypeVar
 
 FaceNames = Literal['back','front','left','right','top','bottom']
-
-############################################################
-#                         FUNCTIONS                        #
-############################################################
-
-def _map_tags(tags: list[int], mapping: dict[int, list[int]]) -> list[int]:
-    """ Applies a tag mapping to a list of tags.
-
-    Args:
-        tags (list[int]): The input tags
-        mapping (dict[int, list[int]]): The mapping dictionary from tag to new tags
-
-    Returns:
-        list[int]: The new list of tags
-    """
-    new_tags = []
-    for tag in tags:
-        new_tags.extend(mapping.get(tag, [tag,]))
-    return new_tags
-
-
-def _bbcenter(x1: float, y1: float, z1: float, x2: float, y2: float, z2: float) -> np.ndarray:
-    """Returns the center point of a bounding box defined by two corner points.
-
-    Args:
-        x1 (float): The x-coordinate of the first corner.
-        y1 (float): The y-coordinate of the first corner.
-        z1 (float): The z-coordinate of the first corner.
-        x2 (float): The x-coordinate of the second corner.
-        y2 (float): The y-coordinate of the second corner.
-        z2 (float): The z-coordinate of the second corner.
-
-    Returns:
-        np.ndarray: The center point as a numpy array [x, y, z].
-    """
-    return np.array([(x1+x2)/2, (y1+y2)/2, (z1+z2)/2])
 
 ############################################################
 #                          CLASSES                         #
@@ -86,6 +51,9 @@ class _KEY_GENERATOR:
 class _GeometryManager:
     """The Geometry manager is a singleton class that keeps track of all geometries
     
+    The GeometryManager exists to make sure that EMerge geometry state is in sync with
+    GMSH's internal management of geometries.
+
     """
     def __init__(self):
         self.geometry_list: dict[str, dict[str, GeoObject]] = dict()
@@ -93,6 +61,11 @@ class _GeometryManager:
         self.geometry_names: dict[str, set[str]] = dict()
 
     def get_surfaces(self) -> list[GeoSurface]:
+        """Return a list of all GeoSurface objects
+
+        Returns:
+            list[GeoSurface]: _description_
+        """
         return [geo for geo in self.all_geometries() if geo.dim==2]
     
     def self_destruct(self):
@@ -543,7 +516,10 @@ class AnchorSet(Saveable):
                     
         self.initialized: bool = False
         return self
-        
+
+T = TypeVar('T', bound='GeoObject')
+
+
 class GeoObject(Saveable):
     """A generalization of any OpenCASCADE entity described by a dimension and a set of tags.
     """
@@ -762,7 +738,7 @@ class GeoObject(Saveable):
         self._face_pointers[name] = fp
         
         
-    def make_copy(self) -> GeoObject:
+    def make_copy(self: T) -> T:
         """ Copies this object and returns a new object (also in GMSH)"""
         new_dimtags = gmsh.model.occ.copy(self.dimtags)
         new_obj = GeoObject.from_dimtags(new_dimtags)
@@ -795,12 +771,12 @@ class GeoObject(Saveable):
         self.tags = newtags
         logger.debug(f'{self} Replaced {self.old_tags} -> {self.tags}')
     
-    def update_tags(self, tag_mapping: dict[int,dict]) -> GeoObject:
+    def update_tags(self: T, tag_mapping: dict[int,dict]) -> T:
         ''' Update the tag definition of a GeoObject after fragementation.'''
         self.replace_tags(tag_mapping[self.dim])
         return self
     
-    def _take_pointers(self, *others: GeoObject) -> GeoObject:
+    def _take_pointers(self: T, *others: GeoObject) -> T:
         for other in others:
             self._face_pointers.update(other._face_pointers)
             self._tools.update(other._tools)
@@ -832,7 +808,7 @@ class GeoObject(Saveable):
             keys = keys.union(set(dct.keys()))
         return keys
     
-    def _take_tools(self, *objects: GeoObject) -> GeoObject:
+    def _take_tools(self: T, *objects: GeoObject) -> T:
         for obj in objects:
             self._tools[obj._key] = obj._face_pointers
             self._tools.update(obj._tools)
@@ -854,11 +830,11 @@ class GeoObject(Saveable):
             tags = self._tools[tool._key][name].find(dimtags, origins, normals)
         else:
             tags = self._face_pointers[name].find(dimtags, origins, normals)
-        logger.info(f'Selected face {tags}.')
+        logger.trace(f'Selected face {tags}.')
         return tags
 
     
-    def set_material(self, material: Material) -> GeoObject:
+    def set_material(self: T, material: Material) -> T:
         """Assign a material to this geometry object.
 
         Args:
@@ -871,7 +847,7 @@ class GeoObject(Saveable):
         self._prio_half_up()
         return self
     
-    def prio_set(self, level: int) -> GeoObject:
+    def prio_set(self: T, level: int) -> T:
         """Defines the material assignment priority level of this geometry.
         By default all objects have priority level 10. If you assign a lower number,
         in cases where multiple geometries occupy the same volume, the highest priority
@@ -886,14 +862,14 @@ class GeoObject(Saveable):
         self._base_priority = int(level)
         return self
     
-    def _prio_half_up(self) -> GeoObject:
+    def _prio_half_up(self: T) -> T:
         """Adds one half to the priority
 
         """
         
         self._sub_priority = 1
         
-    def above(self, other: GeoObject) -> GeoObject:
+    def above(self: T, other: GeoObject) -> T:
         """Puts the priority of this object one higher than the other, then returns this object
 
         Args:
@@ -905,7 +881,7 @@ class GeoObject(Saveable):
         self._base_priority = other._base_priority + 1.0
         return self
     
-    def below(self, other: GeoObject) -> GeoObject:
+    def below(self: T, other: GeoObject) -> T:
         """Puts the priority of this object one lower than the other, then returns this object
 
         Args:
@@ -917,7 +893,7 @@ class GeoObject(Saveable):
         self._base_priority = other._base_priority - 1
         return self
         
-    def prio_up(self) -> GeoObject:
+    def prio_up(self: T) -> T:
         """Increases the material selection priority by 1
 
 
@@ -925,21 +901,21 @@ class GeoObject(Saveable):
         self._base_priority += 1
         return self
     
-    def prio_down(self) -> GeoObject:
+    def prio_down(self: T) -> T:
         """Decreases the material selection priority by 1
         
         """
         self._base_priority -= 1
         return self
 
-    def background(self) -> GeoObject:
+    def background(self: T) -> T:
         """Set the material selection priority to be on the background.
         
         """
         self._base_priority = _GEOMANAGER.lowest_priority()-10
         return self
 
-    def foreground(self) -> GeoObject:
+    def foreground(self: T) -> T:
         """Set the material selection priority to be on top.
         
         """
@@ -947,7 +923,7 @@ class GeoObject(Saveable):
         return self
     
     def boundary(self, 
-                 exclude: Iterable[FaceNames,...] | str | None = None, 
+                 exclude: Iterable[FaceNames, ...] | str | None = None, 
                  tags: list[int] | None = None,
                  tool: GeoObject | None = None) -> FaceSelection:
         """Returns the complete set of boundary faces.
@@ -1030,14 +1006,14 @@ class GeoObject(Saveable):
             tags.extend(self._face_tags(name, tool))
         return FaceSelection(tags)._named('Faces[' + ','.join(names) + ']')
     
-    def hide(self) -> GeoObject:
+    def hide(self: T) -> T:
         """Hides the object from views
         
         """
         self._hidden = True
         return self
     
-    def unhide(self) -> GeoObject:
+    def unhide(self: T) -> T:
         """Unhides the object from views
         
         """
@@ -1077,7 +1053,7 @@ class GeoObject(Saveable):
         """
         self._exists = False
         
-    def extract(self, tags: int | list[int]) -> GeoObject:
+    def extract(self: T, tags: int | list[int]) -> T:
         """Returns a new GeoObject of the same dimensional type that isolates a set of given tags
 
         Args:

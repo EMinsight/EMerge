@@ -19,7 +19,7 @@
 # Last Cleanup: 2025-01-01
 import re
 from typing import Any
-from ..pcb import PCB, RouteException
+from ..pcb import PCBNew, RouteException
 from ...selection import Selection
 from ...geometry import GeoObject
 from emsutil import Material, PEC
@@ -317,7 +317,7 @@ def extract_polygons_with_meta(
             subs = p.sub_paths() if p.has_sub_paths else [p]
             for sp in subs:
                 
-                verts = list(sp.flattening(distance=distance))  # Vec3 in WCS
+                verts = list(sp.flattening(distance=distance))
                 if len(verts) < 2:
                     continue
 
@@ -325,7 +325,6 @@ def extract_polygons_with_meta(
                 if (verts[0].x, verts[0].y) == (verts[-1].x, verts[-1].y):
                     verts = verts[:-1]
 
-                # ring in XY (your original target), but also compute a Z for reference
                 ring_xy = [(v.x, v.y) for v in verts]
                 zs = sorted(v.z for v in verts)
                 z = zs[len(zs)//2] if zs else float(getattr(e.dxf, "elevation", 0.0))  # median Z
@@ -346,21 +345,38 @@ def import_dxf(filename: str,
                unit: float | None = None,
                cs: CoordinateSystem | None = GCS,
                trace_material: Material = PEC,
-               split: bool = True) -> PCB:
-    
+               split: bool = True) -> PCBNew:
+    """Imports a DXF file as PCBNew object
+
+    Args:
+        filename (str): The DXF Filename
+        material (Material): The material to use for the PCB
+        thickness (float | None, optional): The thickness to use for the PCB. Defaults to None.
+        unit (float | None, optional): The pcb unit. Defaults to None.
+        cs (CoordinateSystem | None, optional): The coordinate system. Defaults to GCS.
+        trace_material (Material, optional): The material for traces. Defaults to PEC.
+        split (bool, optional): If a loop splitting algorithm is to be used. Defaults to True.
+
+    Raises:
+        RouteException: _description_
+        RouteException: _description_
+
+    Returns:
+        PCB: _description_
+    """
     polies = extract_polygons_with_meta(filename)
     prop = inspect_pcb_from_dxf(filename)
     
     if prop['units']['name'] == 'unitless':
         if unit is None:
-            raise RouteException(f'Cannot generate PCB because the unit is not found in the DXF file or provided in the import_dxf function.')
+            raise RouteException('Cannot generate PCB because the unit is not found in the DXF file or provided in the import_dxf function.')
         pcb_unit = unit
     else:
         pcb_unit = 0.001 * prop['units']['to_mm']
     
     if prop['thickness'] == 0.0:
         if thickness is None:
-            raise RouteException(f'Cannot generate PCB because no thickness is found int he DXF file and none is provided in the import_dxf function.')
+            raise RouteException('Cannot generate PCB because no thickness is found int he DXF file and none is provided in the import_dxf function.')
         pcb_thickness = thickness
     else:
         pcb_thickness = 0.001 * prop['thickness_mm'] / pcb_unit
@@ -369,7 +385,7 @@ def import_dxf(filename: str,
         cs = GCS
     
     zs = sorted(list(set([pol['z'] for pol in polies])))
-    pcb = PCB(pcb_thickness, pcb_unit, cs, material=material, trace_material=trace_material)
+    pcb = PCBNew(pcb_thickness, pcb_unit, cs, material=material, trace_material=trace_material)
     
     for poly in polies:
         xs, ys = zip(*poly['ring'])
@@ -405,17 +421,11 @@ def _extract_polygons(nodes: np.ndarray, tris: np.ndarray, tri_ids: np.ndarray) 
 
     edges: list[tuple[int, int]] = [edge for edge, counter in edge_counter.items() if counter == 1]
     
-    # stitch edges
-    
     node_sequence = defaultdict(list)
     
     for i1, i2 in edges:
         node_sequence[i1].append(i2)
         node_sequence[i2].append(i1)
-    
-    # Extract sequence loops
-    # Node sequence maps node -> [node1, node2] but its unknon if node1 or node2 comes first:
-    
     
     islands = []
     
@@ -441,8 +451,6 @@ def _extract_polygons(nodes: np.ndarray, tris: np.ndarray, tri_ids: np.ndarray) 
         for node in loop:
             del node_sequence[node]
     
-    
-    # Create Polygons
     polygons = []
     
     for loop in islands:
@@ -549,8 +557,8 @@ def _export_dxf_single(simulation: Simulation, filename: str, z_height: float, s
     doc.saveas(filename)
     return
 
-def pcb_to_dxf(pcb: PCB, filename: str) -> None:
-    """Exports all PCB traces to a DXF file.
+def pcb_to_dxf(pcb: PCBNew, filename: str) -> None:
+    """Exports all PCBNew traces to a DXF file.
 
     Args:
         PCB (PCB): Your PCB object.
@@ -579,7 +587,7 @@ def pcb_to_dxf(pcb: PCB, filename: str) -> None:
         
         for poly in layers[z]:
             msp.add_lwpolyline(poly, close=True, dxfattribs={'layer': f'Z{z:.3f}'})
-        # add .dxf if it is not thetere
+        # add .dxf if it is not there
         fname_parts = filename.rsplit('.', maxsplit=1)
         if len(fname_parts) == 2:
             fname = f'{fname_parts[0]}_z{z:.3f}.{fname_parts[1]}'

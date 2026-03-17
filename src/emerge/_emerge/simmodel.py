@@ -1150,7 +1150,10 @@ class Simulation:
             logger.debug('Selecting refinement indices.')
             refine_tet_ids = select_refinement_indices(error, error_field_inclusion_percentage/100)
             refine_tet_ids = refine_tet_ids[::-1]
-            refinement_ratio = 0.9*original_ratio + 0.1*refinement_ratio
+            
+            # F1 = (arctan(5*(x-0.5))+pi/2)/pi from 0 to 1
+            refinement_ratio = (np.arctan(5*(refinement_ratio-0.5))+np.pi/2)/np.pi
+            #refinement_ratio = 0.5*original_ratio + 0.5*refinement_ratio
             
             included = np.zeros((self.mesh.n_tets, ), dtype=np.bool_)
             included[refine_tet_ids] = True

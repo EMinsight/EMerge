@@ -503,6 +503,16 @@ def _subsample_coordinates(xs: np.ndarray, ys: np.ndarray, tolerance: float, xmi
 
 @njit(f8(f8[:], f8[:], f8[:]), cache=True, nogil=True)
 def area(x1: np.ndarray, x2: np.ndarray, x3: np.ndarray):
+    """ Computes the area given three coordinates:
+    
+    Args:
+        x1 (np.ndarray): (3,) vector
+        x2 (np.ndarray): (3,) vector
+        x3 (np.ndarray): (3,) vector
+        
+    Returns:
+        area (float)    
+    """
     e1 = x2 - x1
     e2 = x3 - x1
     av = np.array([e1[1]*e2[2] - e1[2]*e2[1], e1[2]*e2[0] - e1[0]*e2[2], e1[0]*e2[1] - e1[1]*e2[0]])
@@ -513,7 +523,16 @@ def area(x1: np.ndarray, x2: np.ndarray, x3: np.ndarray):
 def generate_int_data_tet(nodes: np.ndarray,
                           tetrahedra: np.ndarray,
                           PTS: np.ndarray):
+    """Generate volumetric integration points
 
+    Args:
+        nodes (np.ndarray): _description_
+        tetrahedra (np.ndarray): _description_
+        PTS (np.ndarray): _description_
+
+    Returns:
+        _type_: _description_
+    """
     nDPTs = PTS.shape[1]
     xall = np.zeros((nDPTs, tetrahedra.shape[1]))
     yall = np.zeros((nDPTs, tetrahedra.shape[1]))

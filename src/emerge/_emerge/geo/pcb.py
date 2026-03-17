@@ -51,7 +51,7 @@ _SMD_SIZE_DICT = {x: (float(x[:2])*0.05, float(x[2:])*0.1) for x in ['0402','060
 
 
 class _PCB_NAME_MANAGER:
-    
+    """This manager class ensures that unique names are provided to instances of PCB objects."""
     def __init__(self):
         self.names: set[str] = set()
      
@@ -79,10 +79,27 @@ _NAME_MANAGER = _PCB_NAME_MANAGER()
 ############################################################
 
 
-def approx(a,b):
-    return abs(a-b) < 1e-8
+def approx(a: float, b: float) -> bool:
+    """Tests if a and b are approximately equal/close (10e-8 margin)
+
+    Args:
+        a (float): num 1
+        b (float): num 2
+
+    Returns:
+        bool: if they are equal
+    """
+    return abs(a-b) < 1e-12
 
 def normalize(vector: np.ndarray) -> np.ndarray:
+    """Convenience function for normalizing vectors by L2 norm
+
+    Args:
+        vector (np.ndarray): _description_
+
+    Returns:
+        np.ndarray: _description_
+    """
     norm = np.linalg.norm(vector)
     if norm == 0:
         return vector
@@ -162,7 +179,7 @@ class RouteElement:
         raise NotImplementedError()
     
     def __eq__(self, other: RouteElement) -> bool:
-        return approx(self.x, other.x) and approx(self.y, other.y) and (1-abs(np.sum(self.direction*other.direction)))<1e-8
+        return approx(self.x, other.x) and approx(self.y, other.y) and (1-abs(np.sum(self.direction*other.direction)))<1e-12
     
 class StripLine(RouteElement):
     _DEFNAME: str = 'StripLine'
@@ -226,7 +243,6 @@ class StripTurn(RouteElement):
                     self.lcutprev = True
                 else:
                     self.rcutprev = True
-            #self.champher_distance: float = 0.75 * self.width*np.tan(np.abs(angle)/2*np.pi/180)
         else:
             self.champher_distance: float = champher_distance
 
@@ -253,7 +269,6 @@ class StripTurn(RouteElement):
         xr = self.xold + self.width/2 * self.dirright[0]
         yr = self.yold + self.width/2 * self.dirright[1]
 
-        #dist = min(self.width*np.sqrt(2), self.width * np.tan(np.abs(self.angle)/2*np.pi/180))
         dist = self.width * np.tan(np.abs(self.angle)/2*np.pi/180)
 
         dcorner = self.width*(_rot_mat(self.angle) @ self.dirright)
@@ -293,8 +308,7 @@ class StripTurn(RouteElement):
         yl = self.yold - self.width/2 * self.dirright[1]
         xr = self.xold + self.width/2 * self.dirright[0]
         yr = self.yold + self.width/2 * self.dirright[1]
-        
-        #dist = min(self.width*np.sqrt(2), self.width * np.tan(np.abs(self.angle)/2*np.pi/180))        
+          
         dist = self.width * np.tan(np.abs(self.angle)/2*np.pi/180)
         
         dcorner = self.width*(_rot_mat(self.angle) @ -self.dirright)
@@ -314,13 +328,13 @@ class StripTurn(RouteElement):
         y1 = yl + dist * self.old_direction[1]
 
         if self.corner_type == 'square':
-            return [(x1, y1),(xend, yend)]#[(xend, yend), (x1, y1)]
+            return [(x1, y1),(xend, yend)]
         if self.corner_type == 'champher':
             x2 = xend - dist * self.direction[0]
             y2 = yend - dist * self.direction[1]
             if self.lcutprev:
                 return [(x1, y1), (x2, y2)]
-            return [(x1, y1), (x2,y2), (xend, yend)]#[(xend, yend), (x2, y2), (x1, y1)]
+            return [(x1, y1), (x2,y2), (xend, yend)]
         else:
             raise RouteException(f'Trying to route a StripTurn with an unknown corner type: {self.corner_type}')
  
@@ -400,7 +414,6 @@ class PCBPoly:
         self.z: float = z
         self.material: Material = material
         self.name: str = _NAME_MANAGER(name, self._DEFNAME)
-        #self.cleanup_close_points()
     
     @property
     def xys(self) -> list[tuple[float, float]]:
@@ -1938,7 +1951,7 @@ class PCBNew:
             xys2 = [(xm,ym),]
             
             for x,y in xys[1:]:
-                if ((x-xm)**2 + (y-ym)**2)>1e-6:
+                if (((x-xm)**2 + (y-ym)**2)**0.5 * self.unit) > (1e-9):
                     xys2.append((x,y))
                     xm, ym = x, y
                     allx.append(x)

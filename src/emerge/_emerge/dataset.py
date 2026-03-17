@@ -15,7 +15,7 @@
 # along with this program; if not, see
 # <https://www.gnu.org/licenses/>.
 
-# Last Cleanup: 2026-01-04
+# Last Cleanup: 2026-03-12
 from __future__ import annotations
 from typing import TypeVar, Generic, Any
 from .physics.microwave.microwave_data import MWData
@@ -33,8 +33,11 @@ class SimulationDataset(Saveable):
     
     def __init__(self):
         self.mw: MWData = MWData()
+        # .mw contains all Microwave Physics related data
         self.globals: dict[str, Any] = dict()
+        # .globals contains all global variables. Simple dict
         self.sim: DataContainer = DataContainer()
+        # .sim contains all generic data per variable parameter permutation
     
     @staticmethod
     def combine_sets(datasets: list[SimulationDataset]) -> SimulationDataset:
@@ -73,15 +76,21 @@ class SimulationDataset(Saveable):
       self.sim.remove_empty_datasets()
     
     def initialize(self, **params) -> None:
+      """Initialize new datasets for the parameters **params: dict[str, float]
+      """
       self.sim.new(**params)
 
     def reset(self):
+      """Resets all SimulationDataset data
+      """
       self.mw: MWData = MWData()
       self.globals: dict[str, Any] = dict()
       self.sim: DataContainer = DataContainer() 
       self.initialize()
     
     def clean(self) -> None:
+      """Clean the SimulationDataset object data
+      """
       del self.mw
       del self.globals
       del self.sim

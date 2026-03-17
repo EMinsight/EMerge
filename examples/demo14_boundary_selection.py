@@ -1,5 +1,4 @@
 import emerge as em
-import numpy as np
 from emerge.plot import plot_ff_polar, plot_sp
 
 """

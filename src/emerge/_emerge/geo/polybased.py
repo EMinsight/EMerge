@@ -30,8 +30,12 @@ from functools import reduce
 from loguru import logger
 
 
-def _discretize_curve(xfunc: Callable, yfunc: Callable, 
-                      t0: float, t1: float, xmin: float, tol: float=1e-4) -> tuple[np.ndarray, np.ndarray]:
+def _discretize_curve(xfunc: Callable, 
+                      yfunc: Callable, 
+                      t0: float, 
+                      t1: float, 
+                      xmin: float, 
+                      tol: float=1e-4) -> tuple[np.ndarray, np.ndarray]:
     """Computes a discreteized curve in X/Y coordinates based on the input parametric coordinates.
 
     Args:
@@ -61,37 +65,31 @@ def rotate_point(point: tuple[float, float, float],
     """
     Rotate a 3‑D point around an arbitrary axis that passes through `origin`.
 
-    Parameters
-    ----------
-    point   : (x, y, z) coordinate of the point to rotate.
-    axis    : (ux, uy, uz) direction vector of the rotation axis (need not be unit length).
-    ang     : rotation angle.  Positive values follow the right‑hand rule.
-    origin  : (ox, oy, oz) point through which the axis passes.  Defaults to global origin.
-    degrees : If True, `ang` is interpreted in degrees; otherwise in radians.
+    Args:
+        point (tuple[float, float, float]): (x, y, z) coordinate of the point to rotate.
+        axis (tuple[float, float, float]): (ux, uy, uz) direction vector of the rotation axis (need not be unit length).
+        ang (float): rotation angle.  Positive values follow the right‑hand rule.
+        origin (tuple[float, float, float]): (ox, oy, oz) point through which the axis passes.  Defaults to global origin.
+        degrees (bool): If True, `ang` is interpreted in degrees; otherwise in radians.
 
-    Returns
-    -------
-    (x,y,z) : tuple with the rotated coordinates.
+    Returns:
+        (x,y,z) : tuple with the rotated coordinates.
     """
-    # Convert inputs to numpy arrays
+
     p = np.asarray(point, dtype=float)
     o = np.asarray(origin, dtype=float)
     u = np.asarray(axis, dtype=float)
 
-    # Shift so the axis passes through the global origin
     p_shifted = p - o
 
-    # Normalise the axis direction
     norm = np.linalg.norm(u)
     if norm == 0:
         raise ValueError("Axis direction vector must be non‑zero.")
     u = u / norm
 
-    # Convert angle to radians if necessary
     if degrees:
         ang = np.radians(ang)
 
-    # Rodrigues’ rotation formula components
     cos_a = np.cos(ang)
     sin_a = np.sin(ang)
     cross = np.cross(u, p_shifted)
@@ -100,39 +98,8 @@ def rotate_point(point: tuple[float, float, float],
     rotated = (p_shifted * cos_a
                + cross * sin_a
                + u * dot * (1 - cos_a))
-
-    # Shift back to original reference frame
     rotated += o
     return tuple(rotated)
-
-def _dist(p1: tuple[float, float], p2: tuple[float, float]) -> float:
-    return ((p2[0]-p1[0])**2 + (p2[1]-p1[1])**2)**(0.5)
-
-def _pair_points(x1: np.ndarray,
-                 y1: np.ndarray,
-                 x2: np.ndarray,
-                 y2: np.ndarray) -> list[tuple[int,int]]:
-    if x1.shape[0]==x2.shape[0]:
-        return [(i,i) for i in range(x1.shape[0])]
-
-    #create point tuples
-    p1s = [(x,y) for x,y in zip(x1, y1)]
-    p2s = [(x,y) for x,y in zip(x2, y2)]
-    
-    pairs = []
-    for i, p1 in enumerate(p1s):
-        d1 = _dist(p1, p2s[i-1])
-        d2 = _dist(p1, p2s[i])
-        d3 = _dist(p1, p2s[i+1])
-        mind = min([d1, d2, d3])
-        if mind==d1:
-            pairs.append((i,i-1))
-            continue
-        elif mind==d2:
-            pairs.append((i,i))
-        else:
-            pairs.append((i,i+1))
-    return pairs
             
 def orthonormalize(axis: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Generates a set of orthonormal vectors given an input vector X
@@ -252,7 +219,10 @@ class GeoPrism(GeoVolume):
         return self.boundary(exclude=('front','back'))
 
 class XYPolygon:
-    """This class generalizes a polygon in an un-embedded XY space that can be embedded in 3D space.
+    """This class generalizes a polygon in an un-embedded local 2D XY-space that can be embedded in 3D space.
+    This class is not necessarily restricted to the 3D XY plane. Any function like .geo() can accept coordinate systems
+    that may be rotate or otherwise oriented so as to put the XYPolygon in any arbitrary orientation.
+
     """
     def __init__(self, 
                  xs: np.ndarray | list[float] | tuple[float,...] | None = None,
@@ -261,9 +231,12 @@ class XYPolygon:
                  resolution: float = 1e-6):
         """Constructs an XY-plane placed polygon.
 
+        The resolution parameter will define if points are removed if they are too close. Default limit is 1 um.
         Args:
-            xs (np.ndarray): The X-points
-            ys (np.ndarray): The Y-points
+            xs (np.ndarray, optional): The starting stet of X-points
+            ys (np.ndarray, optional): The starting stet of Y-points
+            cs (CoordinateSystem, optional): The coordinate system to put the XYPolygon in. Optional can be provided later.
+            resolution (float, optional): The numerical resolution to use for polygon simplification. 1e-6 is the default.
         """
         if xs is None:
             xs = []
@@ -280,10 +253,12 @@ class XYPolygon:
 
     @property
     def center(self) -> tuple[float, float]:
+        """ Center point of the vertices. """
         return np.mean(self.x), np.mean(self.y)
     
     @property
     def length(self):
+        """ Total length of the polygon path"""
         return sum([((self.x[i2]-self.x[i1])**2 + (self.y[i2]-self.y[i1])**2)**0.5 for i1, i2 in zip(range(self.N-1),range(1, self.N))])
         
     @property
@@ -314,6 +289,7 @@ class XYPolygon:
         return 0.5*np.abs(np.dot(self.x,np.roll(self.y,1))-np.dot(self.y,np.roll(self.x,1)))
 
     def incs(self, cs: CoordinateSystem) -> XYPolygon:
+        """ Sets a coordinate system and returns the same XYPolygon object. """
         self._cs = cs
         return self
 
@@ -351,19 +327,13 @@ class XYPolygon:
         return self
 
     def _cleanup(self, resolution: float | None = None) -> None:
-        # Compute differences between consecutive points
+        """ Cleanup routine to simplify the polygon. Removes points that are closer than the polygon resolution. """
         if resolution is None:
             resolution = self.resolution
         dx = np.diff(self.x)
         dy = np.diff(self.y)
-
-        # Distances between consecutive points
         dist = np.sqrt(dx**2 + dy**2)
-
-        # Keep the first point, then points where distance >= threshold
         keep = np.insert(dist >= resolution, 1, True)
-
-        # Apply mask
         self.x = self.x[keep]
         self.y = self.y[keep]
         
@@ -756,16 +726,13 @@ class Curve(GeoEdge):
         Z, X, Y = orthonormalize(dp)
         
         Q = L/np.tan(pitch)
-        #a1 = Q/R1
-        #a2 = Q*((1 - 1/R1 *(R2 + DR))/(2*R2 + DR))
-        C = 0#Q/R1
+        C = 0
 
         wtot = C/R2 + Q/R2
         nt = int(np.ceil(wtot/(2*np.pi)*_narc))
         
         t = np.linspace(0, 1, nt)
         Rt = R1 + DR*t
-        #wt = (a1*t + a2*t**2)
         wt = C/Rt + (Q*t)/Rt
         
         xs = (R1 + DR*t)*np.cos(wt)
@@ -838,16 +805,13 @@ class Curve(GeoEdge):
         Z, X, Y = orthonormalize(dp)
         
         Q = L/np.tan(pitch)
-        #a1 = Q/R1
-        #a2 = Q*((1 - 1/R1 *(R2 + DR))/(2*R2 + DR))
-        C = 0#Q/R1
+        C = 0
 
         wtot = C/R2 + Q/R2
         nt = int(np.ceil(wtot/(2*np.pi)*_narc))
         
         t = np.linspace(0, 1, nt)
         Rt = R1 + DR*t
-        #wt = (a1*t + a2*t**2)
         wt = C/Rt + (Q*t)/Rt
         
         xs = (R1 + DR*t)*np.cos(-wt)

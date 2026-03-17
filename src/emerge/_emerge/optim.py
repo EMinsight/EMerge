@@ -43,6 +43,7 @@ class Optimizer:
         self.callback: Callable = _null_callback
         self._updated: bool = False
         self._maximize: bool = False
+        self.tolerance: float = 0.0001
         
     @property
     def bounds(self) -> list[tuple[float, float]]:
@@ -126,7 +127,7 @@ class Optimizer:
                 if not self._updated:
                     raise OptimizationError('You must call .update() after each optimization step with the new optimization value.')
                 self._updated = False
-            options = {'maxiter': max_iter}
+            options = {'maxiter': max_iter,}
             
             success = True
             def f(x):
@@ -143,6 +144,7 @@ class Optimizer:
                     method=self.method,
                     bounds=self.bounds,
                     options=options,
+                    tol=self.tolerance,
                 )
             except _StopMinimize:
                 success = False

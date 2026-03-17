@@ -8,17 +8,12 @@ description = "An open source EM FEM simulator in Python"
 readme = "README.md"
 requires-python = ">=3.10, <4.0"
 dependencies = [
-    "gmsh>=4.13.0, <4.14.0",
+    "gmsh>=4.13.0",
     "joblib>=1.5.1",
     "loguru>=0.7.3",
     "matplotlib>=3.8.0",
-    # Linux specific
-    "numpy>=2.0, <2.3; platform_system==\"Linux\"",
-    "numba>=0.61; platform_system != \"Linux\"",
-    # Other OS
-    "numpy>=2.2, <2.3; platform_system != \"Linux\"",
-    "numba>=0.60.0, <0.61.0; platform_system==\"Linux\"",
-    # Others
+    "numpy>=2.2, <2.5",
+    "numba>=0.60.0",
     "pyvista>=0.45.2",
     "scipy>=1.14.0",
     "mkl!=2024.0; platform_machine == \"x86_64\" or platform_machine == \"AMD64\"",
@@ -63,14 +58,10 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
-    "pytest>=8.4.1",
+    "pytest>=9.0.2",
     "scikit-umfpack>=0.4.2",
-    "pygerber",
-    "ezdxf>=1.4.3",
-    "psutil>=7.2.2",
-    "emerge-aasds; sys_platform == 'darwin'",
-    "emerge-iron; sys_platform == 'darwin'",
 ]
+
 
 [tool.uv]
 no-build-isolation-package = ["cchardet"]

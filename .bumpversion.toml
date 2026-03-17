@@ -85,3 +85,9 @@ filename = "examples/demo18_plotting_and_visualization.py"
 
 [[tool.bumpversion.files]]
 filename = "examples/demo19_vivaldi_antenna.py"
+
+[[tool.bumpversion.files]]
+filename = "examples/demo20_optimization.py"
+
+[[tool.bumpversion.files]]
+filename = "examples/demo21_inverted_F_antenna.py"

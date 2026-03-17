@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, see
 # <https://www.gnu.org/licenses/>.
-# Last Cleanup: 2025-01-01
+# Last Cleanup: 2025-03-12
 from numba import njit, f8, c16, i8, types, prange # type: ignore
 from numba import get_thread_id as get_thread_id
 
@@ -211,13 +211,10 @@ def ned2_tet_interp(coords: np.ndarray,
 
     for i_iter in prange(nTetIds):
         itet = tetids[i_iter]
-
-        # 1. Direct access - avoid slicing where possible
         iv1, iv2, iv3, iv4 = tets[0, itet], tets[1, itet], tets[2, itet], tets[3, itet]
         
         v1x, v1y, v1z = nodes[0, iv1], nodes[1, iv1], nodes[2, iv1]
-        
-        # 2. Manual 3x3 Jacobian (b-local)
+
         m00 = nodes[0, iv2] - v1x
         m10 = nodes[1, iv2] - v1y
         m20 = nodes[2, iv2] - v1z
@@ -230,11 +227,9 @@ def ned2_tet_interp(coords: np.ndarray,
         m12 = nodes[1, iv4] - v1y
         m22 = nodes[2, iv4] - v1z
 
-        # 3. Determinant for manual inversion
         det = m00*(m11*m22 - m12*m21) - m01*(m10*m22 - m12*m20) + m02*(m10*m21 - m11*m20)
         inv_det = 1.0 / det
 
-        # 4. Manual Inverse Basis (Cramer's Rule)
         b00 = (m11*m22 - m12*m21) * inv_det
         b01 = (m02*m21 - m01*m22) * inv_det
         b02 = (m01*m12 - m02*m11) * inv_det
@@ -247,19 +242,17 @@ def ned2_tet_interp(coords: np.ndarray,
         b21 = (m20*m01 - m00*m21) * inv_det
         b22 = (m00*m11 - m10*m01) * inv_det
         tid = get_thread_id()
-        # 5. Point-check loop (Avoids all temporary arrays!)
+
         for j in range(nNodes):
-            # Translate point
+
             dx = coords[0, j] - v1x
             dy = coords[1, j] - v1y
             dz = coords[2, j] - v1z
-            
-            # Matmul: basis @ dx
+
             u = b00*dx + b01*dy + b02*dz
             v = b10*dx + b11*dy + b12*dz
             w = b20*dx + b21*dy + b22*dz
             
-            # Barycentric coordinate check
             if (u >= -EPS) and (v >= -EPS) and (w >= -EPS) and (u + v + w <= 1.0 + EPS):
                 assigned[j,tid] = itet
     
@@ -310,9 +303,6 @@ def ned2_tet_interp(coords: np.ndarray,
             b1, b2 = b_s[edgeids]
             c1, c2 = c_s[edgeids]
             d1, d2 = d_s[edgeids]
-            x1, x2 = xvs[edgeids]
-            y1, y2 = yvs[edgeids]
-            z1, z2 = zvs[edgeids]
 
             LV = Ds[edgeids[0], edgeids[1]]*V1
 
@@ -336,12 +326,8 @@ def ned2_tet_interp(coords: np.ndarray,
             c1, c2, c3 = c_s[triids]
             d1, d2, d3 = d_s[triids]
 
-            x1, x2, x3 = xvs[l_tri_ids[:, ie]]
-            y1, y2, y3 = yvs[l_tri_ids[:, ie]]
-            z1, z2, z3 = zvs[l_tri_ids[:, ie]]
-
-            L1 = Ds[l_tri_ids[2, ie], l_tri_ids[0,ie]]#np.sqrt((x1-x3)**2 + (y1-y3)**2 + (z1-z3)**2)
-            L2 = Ds[l_tri_ids[1, ie], l_tri_ids[0,ie]]#np.sqrt((x1-x2)**2 + (y1-y2)**2 + (z1-z2)**2)
+            L1 = Ds[l_tri_ids[2, ie], l_tri_ids[0,ie]]
+            L2 = Ds[l_tri_ids[1, ie], l_tri_ids[0,ie]]
 
             for i in range(start,end):
                 x = xs_s[i]
@@ -398,12 +384,10 @@ def ned2_tet_interp_curl(coords: np.ndarray,
     for i_iter in prange(nTetIds):
         itet = tetids[i_iter]
 
-        # 1. Direct access - avoid slicing where possible
         iv1, iv2, iv3, iv4 = tets[0, itet], tets[1, itet], tets[2, itet], tets[3, itet]
         
         v1x, v1y, v1z = nodes[0, iv1], nodes[1, iv1], nodes[2, iv1]
         
-        # 2. Manual 3x3 Jacobian (b-local)
         m00 = nodes[0, iv2] - v1x
         m10 = nodes[1, iv2] - v1y
         m20 = nodes[2, iv2] - v1z
@@ -416,11 +400,9 @@ def ned2_tet_interp_curl(coords: np.ndarray,
         m12 = nodes[1, iv4] - v1y
         m22 = nodes[2, iv4] - v1z
 
-        # 3. Determinant for manual inversion
         det = m00*(m11*m22 - m12*m21) - m01*(m10*m22 - m12*m20) + m02*(m10*m21 - m11*m20)
         inv_det = 1.0 / det
 
-        # 4. Manual Inverse Basis (Cramer's Rule)
         b00 = (m11*m22 - m12*m21) * inv_det
         b01 = (m02*m21 - m01*m22) * inv_det
         b02 = (m01*m12 - m02*m11) * inv_det
@@ -434,19 +416,16 @@ def ned2_tet_interp_curl(coords: np.ndarray,
         b22 = (m00*m11 - m10*m01) * inv_det
 
         tid = get_thread_id()
-        # 5. Point-check loop (Avoids all temporary arrays!)
+
         for j in range(nNodes):
-            # Translate point
             dx = coords[0, j] - v1x
             dy = coords[1, j] - v1y
             dz = coords[2, j] - v1z
             
-            # Matmul: basis @ dx
             u = b00*dx + b01*dy + b02*dz
             v = b10*dx + b11*dy + b12*dz
             w = b20*dx + b21*dy + b22*dz
             
-            # Barycentric coordinate check
             if (u >= -EPS) and (v >= -EPS) and (w >= -EPS) and (u + v + w <= 1.0 + EPS):
                 assigned[j, tid] = itet
 
@@ -791,8 +770,6 @@ def ned2_tri_interp_curl(coords: np.ndarray,
                     diadic: np.ndarray,
                     beta: float):
     ''' Nedelec 2 tetrahedral interpolation'''
-    ### THIS IS VERIFIED TO WORK
-    # Solution has shape (nEdges, nsols)
     ### THIS IS VERIFIED TO WORK
     # Solution has shape (nEdges, nsols)
     nNodes = coords.shape[1]
