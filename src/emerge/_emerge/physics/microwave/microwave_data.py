@@ -431,6 +431,7 @@ class MWField(Saveable):
         self._dur: np.ndarray = None
         self._dsig: np.ndarray = None
         self.freq: float = None
+        self.Q: float = None
         self.basis: FEMBasis = None
         self._fields: dict[int | int, np.ndarray] = dict()
         self._mode_field: np.ndarray = None
@@ -1067,6 +1068,7 @@ class MWScalar(Saveable):
     def __init__(self):
         self.freq: float = None
         self.k0: float = None
+        self.Q: float = None
         self.Sp: np.ndarray = None
         self.beta: np.ndarray = None
         self.Z0: np.ndarray = None
@@ -1127,6 +1129,7 @@ class MWScalarNdim(Saveable):
         self.freq: np.ndarray = None
         self.k0: np.ndarray = None
         self.Sp: np.ndarray = None
+        self.Q: np.ndarray = None
         self.beta: np.ndarray = None
         self.Z0: np.ndarray = None
         self.Pout: np.ndarray = None

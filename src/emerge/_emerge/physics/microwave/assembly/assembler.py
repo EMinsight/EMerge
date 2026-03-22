@@ -461,47 +461,6 @@ class Assembler:
         else:
             Pmat = None
         
-
-
-        ############################################################
-        #                             RESORTER                     #
-        ############################################################
-        
-        ### ids = np.array([[0, 0, 1, 1, 2, 2],[1, 2, 0, 2, 0, 1]], dtype=np.int64)
-        # EDGES
-        # 0 1 2 3 5 6
-        # 0 0 0 1 1 2
-        # 1 2 3 2 3 3
-        #
-        # TRIS
-        # 0 1 2 3
-        # _______
-        # 0 0 0 1
-        # 1 2 1 2
-        # 2 3 3 3
-        # | | | |
-        # v v v v
-        # 0 1 0 3 
-        # 3 5 4 5
-        # 1 2 2 4
-        
-        # ne = mesh.n_edges
-        # nt = mesh.n_tris
-        # sorter = np.zeros((2*ne + 2*nt,), dtype=np.int64)-1
-        # Ictr = 0
-        # past = set()
-        # select = np.array([0,6,12,16,1,7,13,17,2,8,14,18,3,9,4,10,5,11,15,19]) # best score = 2588
-        # if self.SELECT_INDEX is not None:
-        #     select = get_select_from_index(self.SELECT_INDEX)
-        # for i in range(mesh.n_tets):
-        #     fieldids = field.tet_to_field[select,i]
-        #     for j in fieldids:
-        #         if j in past:
-        #             continue
-        #         sorter[Ictr] = j
-        #         Ictr += 1
-        #         past.add(j)
-        
         ############################################################
         #                             FINALIZE                     #
         ############################################################
@@ -584,7 +543,7 @@ class Assembler:
         NF = E.shape[0]
 
         pecs: list[PEC] = [bc for bc in bcs if isinstance(bc,PEC)]
-        robin_bcs: list[RectangularWaveguide] = [bc for bc in bcs if isinstance(bc,RobinBC)] # type: ignore
+        robin_bcs: list[RobinBC] = [bc for bc in bcs if isinstance(bc, RobinBC)] # type: ignore
         periodic: list[Periodic] = [bc for bc in bcs if isinstance(bc, Periodic)]
 
         # Process all PEC Boundary Conditions
@@ -644,7 +603,7 @@ class Assembler:
                         mat = abc_order_2_matrix(field, tri_ids, 1j*c2/k0)
                         Bempty += mat
 
-            B += field.generate_csr(Bempty)
+            B -= field.generate_csr(Bempty) / (k0**2)
             del Bempty
         
         if len(periodic) > 0:

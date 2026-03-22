@@ -32,7 +32,7 @@ mat_resonator = em.lib.Material(er=34, color="#ededed", opacity=0.2)
 Nmodes = 5
 
 # --- Create simulation ---------------------------------------------------
-model = em.Simulation('DielectricResonatorFilter')
+model = em.Simulation('DielectricResonatorFilter', loglevel='DEBUG')
 model.check_version("2.4.2") # Checks version compatibility.
 
 # --- Build geometry ------------------------------------------------------
@@ -62,7 +62,7 @@ model.commit_geometry()
 
 # --- Solver settings -----------------------------------------------------
 # Only eigenmode solver needed; set center frequency estimate
-model.mw.set_frequency(3e9)
+model.mw.set_frequency(2e9)
 
 # --- Mesh generation -----------------------------------------------------
 model.generate_mesh()

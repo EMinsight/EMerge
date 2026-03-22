@@ -1615,6 +1615,7 @@ class SurfaceImpedance(RobinBC, Saveable):
         d_skin = (2*rho/(w0*mu) * ((1+(w0*eps*rho)**2)**0.5 + rho*w0*eps))**0.5
         logger.debug(f'Computed skin depth δ={d_skin*1e6:.2}μm')
         R = (1+1j)*rho/d_skin
+        #R = (w0*mu/(2*sigma))**0.5
         if self.thickness is not None:
             eps_c = eps - 1j * sigma / w0
             gamma_m = 1j * w0 * np.sqrt(mu*eps_c)

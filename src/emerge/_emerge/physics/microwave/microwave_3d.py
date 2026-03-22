@@ -1371,16 +1371,18 @@ class Microwave3D:
                 logger.debug(f'Ignoring mode due to low k0: {eig_k0} < {k0_limit}')
                 continue
             eig_freq = eig_k0*299792458/(2*np.pi)
-
-            logger.debug(f'Found k0={eig_k0:.2f}, f0={eig_freq/1e9:.2f} GHz')
+            Q = 0.5*eig_freq.real/eig_freq.imag
+            logger.debug(f'Found k0={eig_k0:.2f}, f0={eig_freq/1e9:.2f} GHz (Q = {Q:.1f})')
             Emode = eigen_modes[:,i]
 
             scalardata = self.data.scalar.new(**self._params)
             scalardata.k0 = eig_k0
+            scalardata.Q = Q
             scalardata.freq = eig_freq
 
             fielddata = self.data.field.new(**self._params)
             fielddata.freq = eig_freq
+            fielddata.Q = Q
             fielddata._der = np.squeeze(er[0,0,:])
             fielddata._dur = np.squeeze(ur[0,0,:])
             fielddata._dsig = np.squeeze(cond[0,0,:])

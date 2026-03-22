@@ -630,7 +630,6 @@ class SolverSuperLU(Solver):
     
     def solve(self, A, b, precon, reuse_factorization: bool = False, id: int = -1) -> tuple[np.ndarray, SolveReport]:
         logger.info(f'{_pfx(self.pre,id)} Calling SuperLU Solver.')
-
         self.single = True
         if not reuse_factorization:
             logger.trace(self.pre + 'Computing LU-Decomposition')
@@ -1070,6 +1069,23 @@ class SmartARPACK(EigSolver):
         self.search_range: float = 2.0
         self.energy_limit: float = 1e-4
 
+
+    def reduct_solutions(self, A: csr_matrix, B: csr_matrix, eigen_values: np.ndarray, eigen_modes: np.ndarray, limit: float) -> tuple[np.ndarray, np.ndarray]:
+        N = eigen_values.shape[0]
+        eigen_values_out = []
+        eigen_modes_out = []
+        for i in range(N):
+            value = eigen_values[i]
+            mode = eigen_modes[:,i]
+            energy = np.mean(np.abs(mode)**2)
+            curl_energy = np.real(mode.conj() @ (A @ mode))
+            total_energy = np.real(mode @ (B @ mode))
+            ratio = abs(curl_energy/(total_energy + 1e-15))
+            if ratio > limit and energy > self.energy_limit:
+                eigen_values_out.append(value)
+                eigen_modes_out.append(mode)
+        return eigen_values_out, eigen_modes_out
+
     def eig(self, 
             A: csr_matrix | csr_matrix, 
             B: csr_matrix | csr_matrix,
@@ -1078,32 +1094,26 @@ class SmartARPACK(EigSolver):
             which: str = 'LM',
             sign: float = 1.) -> tuple[np.ndarray, np.ndarray]:
         logger.info(f'{_pfx(self.pre)} Searching around 	β = {target_k0:.2f} rad/m with SmartARPACK')
-        qs = np.geomspace(1, self.search_range, self.symmetric_steps)
+        qs = [1.0, 0.99, 1.01, 0.95, 1.05, 0.9, 1.1, 0.8, 1.2, 0.7, 1.3]
         tot_eigen_values = []
         tot_eigen_modes = []
+
+        ratio_limit = 0.1*target_k0**2
+
         for i, q in enumerate(qs):
             # Above target k0
+            logger.trace(f'{_pfx(self.pre)} Modes Found = {len(tot_eigen_values)}, Search ratio: {q}')
             sigma = sign*((q*target_k0)**2)
-            eigen_values, eigen_modes = eigs(A, k=6, M=B, sigma=sigma, which=which)
-            for j in range(eigen_values.shape[0]):
-                if eigen_values[j]<(sigma/self.search_range):
-                    continue
-                tot_eigen_values.append(eigen_values[j])
-                tot_eigen_modes.append(eigen_modes[:,j])
-            if i!=0:
-                # Below target k0
-                sigma = sign*((target_k0/q)**2)
-                eigen_values, eigen_modes = eigs(A, k=6, M=B, sigma=sigma, which=which)
-                for j in range(eigen_values.shape[0]):
-                    if eigen_values[j]<(sigma/self.search_range):
-                        continue
-                    tot_eigen_values.append(eigen_values[j])
-                    tot_eigen_modes.append(eigen_modes[:,j])
+            eigen_values, eigen_modes = eigs(A, k=nmodes, M=B, sigma=sigma, which=which)
+            eigen_values, eigen_modes = self.reduct_solutions(A, B, eigen_values, eigen_modes, ratio_limit)
+            tot_eigen_values.extend(eigen_values)
+            tot_eigen_modes.extend(eigen_modes)
             tot_eigen_values, tot_eigen_modes = filter_unique_eigenpairs(tot_eigen_values, tot_eigen_modes)
-            if len(tot_eigen_values)>nmodes:
+            if len(tot_eigen_values)>=nmodes:
                 break
+
         #Sort solutions on mode energy
-        val, mode = filter_unique_eigenpairs(tot_eigen_values, tot_eigen_modes)
+        val, mode = tot_eigen_values, tot_eigen_modes
         val, mode = zip(*sorted(zip(val,mode), key=lambda x: x[0], reverse=False)) # type: ignore
         eigen_values = np.array(val[:nmodes])
         eigen_modes = np.array(mode[:nmodes]).T
