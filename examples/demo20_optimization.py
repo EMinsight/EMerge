@@ -22,7 +22,7 @@ rout = em.coax_rout(rin, Z0=50)
 Lcoax_outside = 10*mm
 
 sim = em.Simulation('Optimization')
-sim.check_version("2.4.2")
+sim.check_version("2.4.3")
 # Here will will set out optimization. We will tune two parameters
 # Offset is the distance from the back wall
 # Lin is the distance the centre pin protrudes into the waveguide
