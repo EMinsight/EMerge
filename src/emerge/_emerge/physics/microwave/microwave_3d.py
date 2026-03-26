@@ -94,10 +94,10 @@ def _check_ram(ntets: int, njobs: int, parallel: bool) -> None:
     logger.debug(f'Required RAM: (low: {req_low:.2f}GB, nom: {req_mid:.2f}GB, high: {req_high:.2f}GB)')
     
     if available < req_low:
-        raise RuntimeError(f'Not enough free RAM available ({available:.1f}GB), at least {req_low:.1f}GB Required.')
-    if available < req_low:
-        raise RuntimeError(f'Not enough free RAM available ({available:.1f}GB),  around {req_mid:.1f}GB Required.')
-    if available < req_low:
+        raise RuntimeError(f'Not enough free RAM detected ({available:.1f}GB), at least {req_low:.1f}GB Required. Potential swap memory not included. You can disable this check by changing model.settings.check_ram=False.')
+    if available < req_mid:
+        raise RuntimeError(f'Not enough free RAM detected ({available:.1f}GB),  around {req_mid:.1f}GB Required. Potential swap memory not included. You can disable this check by changing model.settings.check_ram=False.')
+    if available < req_high:
         logger.warning(f'Low free RAM detected ({available:.1f}GB), up to {req_high:.1f}GB could be Required.')
 
 def _dimstring(data: list[float] | np.ndarray) -> str:

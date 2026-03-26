@@ -37,7 +37,7 @@ f1 = 2e9             # start frequency
 f2 = 3e9             # stop frequency
 
 # --- Create simulation object -------------------------------------------
-model = em.Simulation('IFA', loglevel='INFO')
+model = em.Simulation('IFA')
 
 model.check_version("2.4.3") # Checks version compatibility.
 
