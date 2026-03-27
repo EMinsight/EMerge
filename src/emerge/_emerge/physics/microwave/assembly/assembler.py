@@ -20,6 +20,7 @@ import numpy as np
 from ..microwave_bc import PEC, BoundaryCondition, RectangularWaveguide, RobinBC, PortBC, Periodic, MWBoundaryConditionSet
 from ....elements.nedelec2 import Nedelec2
 from ....elements.nedleg2 import NedelecLegrange2
+from ....mth.csr_cast import CSRMapping
 from emsutil import Material
 from ....settings import Settings
 from scipy.sparse import csr_matrix
@@ -165,6 +166,7 @@ class Assembler:
     def __init__(self, settings: Settings):
         
         self.cached_matrices = None
+        self.cached_csrmap: CSRMapping | None = None
         self.settings: Settings = settings
         self.SELECT_INDEX: int = None
         
@@ -307,23 +309,19 @@ class Assembler:
         if cache_matrices and not is_frequency_dependent and self.cached_matrices is not None:
             # IF CACHED AND AVAILABLE PULL E AND B FROM CACHE
             logger.debug('Using cached matricies.')
-            E, B = self.cached_matrices
+            Evec, Bvec = self.cached_matrices
         else:
             # OTHERWISE, COMPUTE
             logger.debug('Assembling matrices')
-            #from time import time
-
-            #t0 = time()
-            E, B = tet_mass_stiffness_matrices(field, er, ur)
-            #t1 = time()
-            #print(f'Assembly time = {t1-t0}s')
-            #print(f'Speed = {mesh.n_tets/(t1-t0):.1f} tets/s')
-            self.cached_matrices = (E, B)
+            Evec, Bvec, csrmap = tet_mass_stiffness_matrices(field, er, ur, self.cached_csrmap)
+            self.cached_csrmap = csrmap
+            self.cached_matrices = (Evec, Bvec)
+            
         
         # COMBINE THE MASS AND STIFFNESS MATRIX
-        K: csr_matrix = (E - B*(K0**2)).tocsr()
+        K: csr_matrix = self.cached_csrmap.to_csr(Evec - Bvec*(K0**2))
 
-        NF = E.shape[0]
+        NF = field.n_field
 
         # ISOLATE BOUNDARY CONDITIONS TO ASSEMBLE
         pec_bcs: list[PEC] = [bc for bc in bcs if isinstance(bc,PEC)]
@@ -332,11 +330,11 @@ class Assembler:
         periodic_bcs: list[Periodic] = [bc for bc in bcs if isinstance(bc, Periodic)]
 
         # PREDEFINE THE FORCING VECTOR CONTAINER
-        b = np.zeros((E.shape[0],), dtype=np.complex128)
+        b = np.zeros((NF,), dtype=np.complex128)
         port_vectors: dict[int|float, np.ndarray] = {}
         for port in sorted(port_bcs, key=lambda x: x.port_number):
             for mat_index, mode_nr in port._iter_port_numbers():
-                port_vectors[mat_index] = np.zeros((E.shape[0],), dtype=np.complex128)
+                port_vectors[mat_index] = np.zeros((NF,), dtype=np.complex128)
         
 
         ############################################################
@@ -472,7 +470,251 @@ class Assembler:
         ############################################################
 
         pec_ids_set = set(pec_ids)
-        solve_ids = np.array([i for i in range(E.shape[0]) if i not in pec_ids_set])
+        solve_ids = np.array([i for i in range(NF) if i not in pec_ids_set])
+        
+        if has_periodic:
+            mask = np.zeros((NF,))
+            mask[solve_ids] = 1
+            mask = mask[keep_indices]
+            solve_ids = np.argwhere(mask==1).flatten()
+
+        logger.debug(f'Number of tets: {mesh.n_tets:,}')
+        logger.debug(f'Number of DoF: {K.shape[0]:,}')
+        logger.debug(f'Number of non-zero: {K.nnz:,}')
+        
+        simjob = SimJob(K, b, K0*299792458/(2*np.pi), True)
+        
+        simjob.port_vectors = port_vectors
+        simjob.solve_ids = solve_ids
+        simjob._pec_tris = pec_tris
+
+        if has_periodic:
+            simjob.P = Pmat
+            simjob.Pd = Pmat.getH()
+            simjob.has_periodic = has_periodic
+
+        return simjob, (er, ur, cond)
+    
+    def assemble_scattering_matrix(self, 
+                                   field: Nedelec2, 
+                                   materials: list[Material],
+                                   bcs: list[BoundaryCondition],
+                                   frequency: float,
+                                   cache_matrices: bool = False) -> SimJob:
+        """Assembles the frequency domain FEM matrix
+
+        Args:
+            field (Nedelec2): The Nedelec2 object of the problems
+            er (np.ndarray): The relative dielectric permitivity tensor of shape (3,3,N)
+            ur (np.ndarray): The relative magnetic permeability tensor of shape (3,3,N)
+            sig (np.ndarray): The conductivity array of shape (N,)
+            bcs (list[BoundaryCondition]): The boundary conditions
+            frequency (float): The simulation frequency
+            cache_matrices (bool, optional): Whether to use and cache matrices. Defaults to False.
+
+        Returns:
+            SimJob: The resultant SimJob object
+        """
+
+        from .curlcurl import tet_mass_stiffness_matrices
+        from .robinbc import assemble_robin_bc, assemble_robin_bc_bvec
+        from ....mth.optimized import gaus_quad_tri
+        from ....mth.pairing import pair_coordinates
+        from .periodicbc import gen_periodic_matrix
+        from .robin_abc_order2 import abc_order_2_matrix
+        
+        # PREDEFINE CONSTANTS
+        W0 = 2*np.pi*frequency
+        K0 = W0/C0
+        
+        is_frequency_dependent = False
+        mesh = field.mesh
+
+        for mat in materials:
+            if mat.frequency_dependent:
+                is_frequency_dependent = True
+                break
+
+        er = np.zeros((3,3,field.mesh.n_tets), dtype=np.complex128)
+        tand = np.zeros((3,3,field.mesh.n_tets), dtype=np.complex128)
+        cond = np.zeros((3,3,field.mesh.n_tets), dtype=np.complex128)
+        ur = np.zeros((3,3,field.mesh.n_tets), dtype=np.complex128)
+        
+        for mat in materials:
+            er = mat.er(frequency, er)
+            ur = mat.ur(frequency, ur)
+            tand = mat.tand(frequency, tand)
+            cond = mat.cond(frequency, cond)
+        
+        er = er*(1-1j*tand) - 1j*cond/(W0*EPS0)
+        
+        is_frequency_dependent = is_frequency_dependent or np.any((cond > 0) & (cond < self.settings.mw_3d_peclim)) # type: ignore
+
+        if cache_matrices and not is_frequency_dependent and self.cached_matrices is not None:
+            # IF CACHED AND AVAILABLE PULL E AND B FROM CACHE
+            logger.debug('Using cached matricies.')
+            Evec, Bvec = self.cached_matrices
+        else:
+            # OTHERWISE, COMPUTE
+            logger.debug('Assembling matrices')
+            Evec, Bvec, csrmap = tet_mass_stiffness_matrices(field, er, ur, self.cached_csrmap)
+            self.cached_csrmap = csrmap
+            self.cached_matrices = (Evec, Bvec)
+            
+        
+        # COMBINE THE MASS AND STIFFNESS MATRIX
+        K: csr_matrix = self.cached_csrmap.to_csr(Evec - Bvec*(K0**2))
+
+        NF = field.n_field
+
+        # ISOLATE BOUNDARY CONDITIONS TO ASSEMBLE
+        pec_bcs: list[PEC] = [bc for bc in bcs if isinstance(bc,PEC)]
+        robin_bcs: list[RobinBC] = [bc for bc in bcs if isinstance(bc,RobinBC)]
+        port_bcs: list[PortBC] = [bc for bc in bcs if isinstance(bc, PortBC)]
+        periodic_bcs: list[Periodic] = [bc for bc in bcs if isinstance(bc, Periodic)]
+
+        # PREDEFINE THE FORCING VECTOR CONTAINER
+        b = np.zeros((NF,), dtype=np.complex128)
+        port_vectors: dict[int|float, np.ndarray] = {}
+        for port in sorted(port_bcs, key=lambda x: x.port_number):
+            for mat_index, mode_nr in port._iter_port_numbers():
+                port_vectors[mat_index] = np.zeros((NF,), dtype=np.complex128)
+        
+
+        ############################################################
+        #                      PEC BOUNDARY CONDITIONS             #
+        ############################################################
+
+        logger.debug('Implementing PEC Boundary Conditions.')
+        pec_ids: list[int] = []
+        pec_tris: list[int] = []
+        
+        # Conductivity above al imit, consider it all PEC
+        ipec = 0
+        
+        for itet in range(field.n_tets):
+            if cond[0,0,itet] > self.settings.mw_3d_peclim:
+                ipec+=1
+                pec_ids.extend(field.tet_to_field[:,itet])
+                for tri in field.mesh.tet_to_tri[:,itet]:
+                    pec_tris.append(tri)
+        if ipec>0:
+            logger.trace(f'Extended PEC with {ipec} tets with a conductivity > {self.settings.mw_3d_peclim}.')
+
+        for pec in pec_bcs:
+            logger.trace(f'Implementing: {pec}')
+            if len(pec.tags)==0:
+                continue
+            face_tags = pec.tags
+            tri_ids = mesh.get_triangles(face_tags)
+            edge_ids = list(mesh.tri_to_edge[:,tri_ids].flatten())
+
+            for ii in edge_ids:
+                eids = field.edge_to_field[:, ii]
+                pec_ids.extend(list(eids))
+
+            
+            for ii in tri_ids:
+                tids = field.tri_to_field[:, ii]
+                pec_ids.extend(list(tids))
+                
+            pec_tris.extend(tri_ids)
+
+
+        ############################################################
+        #                 ROBIN BOUNDARY CONDITIONS                #
+        ############################################################
+
+        if len(robin_bcs) > 0:
+            logger.debug('Implementing Robin Boundary Conditions.')
+        
+            gauss_points = gaus_quad_tri(4)
+            Bempty = field.empty_tri_matrix()
+            for bc in robin_bcs:
+                logger.trace(f'.Implementing {bc}')
+                for tag in bc.tags:
+                    face_tags = [tag,]
+
+                    tri_ids = mesh.get_triangles(face_tags)
+                    edge_ids = list(mesh.tri_to_edge[:,tri_ids].flatten())
+
+                    gamma = bc.get_gamma(K0)
+                    logger.trace(f'..robin bc γ={gamma:.3f}')
+                    
+                    Bempty = assemble_robin_bc(field, Bempty, tri_ids, gamma) # type: ignore
+                    
+                    if bc._include_force and bc.driven:
+                        for number, Ufunc in bc._iter_modes(K0):
+                            b_p = assemble_robin_bc_bvec(field, tri_ids, Ufunc, gauss_points) # type: ignore
+                            port_vectors[number] += b_p # type: ignore
+                            logger.trace(f'..included force vector term with norm {np.linalg.norm(b_p):.3f}')
+                    
+                    
+                    ## Second order absorbing boundary correction
+                    if bc._isabc:
+                        if bc.order==2:
+                            c2 = bc.o2coeffs[bc.abctype][1]
+                            logger.debug('Implementing second order ABC correction.')
+                            mat = abc_order_2_matrix(field, tri_ids, 1j*c2/(K0))
+                            Bempty += mat
+            
+            K += field.generate_csr(Bempty)
+        
+        if len(periodic_bcs) > 0:
+            logger.debug('Implementing Periodic Boundary Conditions.')
+
+
+        ############################################################
+        #                   PERIODIC BOUNDARY CONDITIONS          #
+        ############################################################
+
+        Pmats = []
+        remove: set[int] = set()
+        has_periodic = False
+
+        for pbc in periodic_bcs:
+            logger.trace(f'.Implementing {pbc}')
+            has_periodic = True
+            tri_ids_1 = mesh.get_triangles(pbc.face1.tags)
+            edge_ids_1 = mesh.get_edges(pbc.face1.tags)
+            tri_ids_2 = mesh.get_triangles(pbc.face2.tags)
+            edge_ids_2 = mesh.get_edges(pbc.face2.tags)
+            dv = np.array(pbc.dv)
+            logger.trace(f'..displacement vector {dv}')
+            linked_tris = pair_coordinates(mesh.tri_centers, tri_ids_1, tri_ids_2, dv, _PBC_DSMAX)
+            linked_edges = pair_coordinates(mesh.edge_centers, edge_ids_1, edge_ids_2, dv, _PBC_DSMAX)
+            dv = np.array(pbc.dv)
+            phi = pbc.phi(K0)
+            logger.trace(f'..ϕ={phi} rad/m')
+            Pmat, rows = gen_periodic_matrix(tri_ids_1,
+                                       edge_ids_1,
+                                       field.tri_to_field,
+                                       field.edge_to_field,
+                                       linked_tris,
+                                       linked_edges,
+                                       field.n_field,
+                                       phi)
+            remove.update(rows)
+            Pmats.append(Pmat)
+
+        if Pmats:
+            logger.trace(f'.periodic bc removes {len(remove)} boundary DoF')
+            Pmat = Pmats[0]
+            for P2 in Pmats[1:]:
+                Pmat = Pmat @ P2
+            remove_array = np.sort(np.unique(list(remove)))
+            all_indices = np.arange(NF)
+            keep_indices = np.setdiff1d(all_indices, remove_array)
+            Pmat = Pmat[:,keep_indices]
+        else:
+            Pmat = None
+        
+        ############################################################
+        #                             FINALIZE                     #
+        ############################################################
+
+        pec_ids_set = set(pec_ids)
+        solve_ids = np.array([i for i in range(NF) if i not in pec_ids_set])
         
         if has_periodic:
             mask = np.zeros((NF,))

@@ -16,11 +16,13 @@
 # <https://www.gnu.org/licenses/>.
 
 # Last Cleanup: 2025-01-01
+from __future__ import annotations
 import numpy as np
 from ....elements import Nedelec2
-from scipy.sparse import csr_matrix, coo_matrix
 from ....mth.optimized import local_mapping, matinv, dot_c, cross_c, compute_distances
+from ....mth.csr_cast import CSRMapping
 from numba import c16, types, f8, i8, njit, prange, void
+
 
 ############################################################
 #                  CACHED FACTORIAL VALUES                 #
@@ -247,8 +249,9 @@ def tet_coefficients_bcd_opt(xs: np.ndarray, ys: np.ndarray, zs: np.ndarray) -> 
 ############################################################
 
 def tet_mass_stiffness_matrices(field: Nedelec2,
-                           er: np.ndarray, 
-                           ur: np.ndarray) -> tuple[csr_matrix, csr_matrix]:
+                                er: np.ndarray, 
+                                ur: np.ndarray, 
+                                csrmap: CSRMapping | None = None) -> tuple[np.ndarray, np.ndarray, CSRMapping]:
     """Computes the curl-curl Nedelec-2 mass and stiffness matrices
 
     Args:
@@ -266,15 +269,12 @@ def tet_mass_stiffness_matrices(field: Nedelec2,
 
     tet_to_field = field.tet_to_field
     tet_to_edge = field.mesh.tet_to_edge
-    nE = edges.shape[1]
-    nTri = tris.shape[1]
+
 
     dataE, dataB, rows, cols = _matrix_builder(nodes, tets, tris, edges, field.mesh.edge_lengths, tet_to_field, tet_to_edge, ur, er)
-        
-    E = coo_matrix((dataE, (rows, cols)), shape=(nE*2 + nTri*2, nE*2 + nTri*2)).tocsr()
-    B = coo_matrix((dataB, (rows, cols)), shape=(nE*2 + nTri*2, nE*2 + nTri*2)).tocsr()
-
-    return E, B
+    if csrmap is None:
+        csrmap = CSRMapping.from_rowcol(rows, cols, field.n_field)
+    return dataE, dataB, csrmap
 
 
 ############################################################
@@ -561,14 +561,14 @@ def ned2_tet_stiff_mass(tet_vertices, edge_lengths, local_edge_map, local_tri_ma
 ############################################################
 
 @njit(types.Tuple((c16[:], c16[:], i8[:], i8[:]))(f8[:,:], 
-                                                      i8[:,:], 
-                                                      i8[:,:], 
-                                                      i8[:,:], 
-                                                      f8[:], 
-                                                      i8[:,:], 
-                                                      i8[:,:], 
-                                                      c16[:,:,:], 
-                                                      c16[:,:,:]), cache=True, nogil=True, parallel=True)
+                                                i8[:,:], 
+                                                i8[:,:], 
+                                                i8[:,:], 
+                                                f8[:], 
+                                                i8[:,:], 
+                                                i8[:,:], 
+                                                c16[:,:,:], 
+                                                c16[:,:,:]), cache=True, nogil=True, parallel=True)
 def _matrix_builder(nodes, tets, tris, edges, all_edge_lengths, tet_to_field, tet_to_edge, ur, er):
     nT = tets.shape[1]
     nedges = edges.shape[1]

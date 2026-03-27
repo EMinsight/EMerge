@@ -70,6 +70,7 @@ class MWBoundaryConditionSet(BoundaryConditionSet):
         self.FloquetPort: type[FloquetPort] = self._construct_bc(FloquetPort)
         self.UserDefinedPort: type[UserDefinedPort] = self._construct_bc(UserDefinedPort)
         self.CoaxPort: type[CoaxPort] = self._construct_bc(CoaxPort)
+        self.SphericalWave: type[SphericalWave] = self._construct_bc(SphericalWave)
 
         self._cell: PeriodicCell | None = None
 
@@ -1290,7 +1291,128 @@ class UserDefinedPort(PortBC, Saveable):
         Ez = self._fez(k0, x_global, y_global, z_global)
         Exg, Eyg, Ezg = self.cs.in_global_basis(Ex, Ey, Ez)
         return np.array([Exg, Eyg, Ezg])
+
+
+
+class SphericalWave(PortBC, Saveable):
     
+    _include_stiff: bool = True
+    _include_mass: bool = False
+    _include_force: bool = True
+    _isabc: bool = True
+    _color: str = "#be9f11"
+    _name: str = "UserDefined"
+    _texture: str = "tex5.png"
+    skip_fields = ('_fex','_fey','_fez','_fkz')
+    dim: int = 2
+    
+    def __init__(self, 
+                 face: FaceSelection | GeoSurface,
+                 port_number: int, 
+                 power: float = 1.0,
+                 cs: CoordinateSystem | None = None):
+        """Creates a user defined port field
+        
+        The UserDefinedPort is defined based on user defined field callables. All undefined callables will default to 0 field or k0.
+        
+        All spatial field functions should be defined using the template:
+        >>> def Ec(k0: float, x: np.ndarray, y: np.ndarray, z: np.ndarray) -> np.ndarray
+        >>>     return #shape like x
+        
+        Args:
+            face (FaceSelection, GeoSurface): The port boundary face selection
+            port_number (int): The port number
+            Ex (Callable): The Ex(k0,x,y,z) field
+            Ey (Callable): The Ey(k0,x,y,z) field
+            Ez (Callable): The Ez(k0,x,y,z) field
+            kz (Callable): The out of plane propagation constant kz(k0)
+            power (float): The port output power
+        """
+        super().__init__(face)
+        if cs is None:
+            cs = GCS
+
+        self.cs = cs
+        self.port_number: int = port_number
+        self.active: bool = False
+        self.power: float = power
+        self.type: str = 'TEM'
+        self.order = 1
+        self.radius: float = None
+
+        self._fex: Callable = lambda k0,x,y,z: 0*x
+        self._fey: Callable = lambda k0,x,y,z: 0*x 
+        self._fez: Callable = lambda k0,x,y,z: 1.0*np.exp(-1j*k0*x)
+        self._fkz: Callable = lambda k0: k0
+        self.type = 'TEM'
+
+    def get_basis(self) -> np.ndarray:
+        return self.cs._basis
+        
+    def get_inv_basis(self) -> np.ndarray:
+        return self.cs._basis_inv
+    
+    def modetype(self, k0):
+        return self.type
+    
+    def get_amplitude(self, k0: float) -> float:
+        return np.sqrt(self.power)
+
+    def get_beta(self, k0: float) -> float:
+        ''' Return the out of plane propagation constant. βz.'''
+        return self._fkz(k0)
+    
+    @property
+    def curvature(self) -> float:
+        if self.radius is None:
+            return 0
+        return 1/self.radius
+    
+    def get_gamma(self, k0: float) -> complex:
+        """Computes the γ-constant for matrix assembly. This constant is required for the Robin boundary condition.
+
+        Args:
+            k0 (float): The free space propagation constant.
+
+        Returns:
+            complex: The γ-constant
+        """
+        return (1j*self.get_beta(k0) + self.curvature)
+    
+    def get_Uinc(self, x_global: np.ndarray, y_global: np.ndarray, z_global: np.ndarray, k0: float, mode_nr: int = 1) -> np.ndarray:
+        return -2*1j*self.get_beta(k0)*self.port_mode_3d_global(x_global, y_global, z_global, k0)
+    
+    def port_mode_3d(self, 
+                     x_local: np.ndarray,
+                     y_local: np.ndarray,
+                     k0: float,
+                     which: Literal['E','H'] = 'E',
+                     mode_nr: int = 1) -> np.ndarray:
+        x_global, y_global, z_global = self.cs.in_global_cs(x_local, y_local, 0*x_local)
+
+        Egxyz = self.port_mode_3d_global(x_global,y_global,z_global,k0,which=which)
+        
+        Ex, Ey, Ez = self.cs.in_local_basis(Egxyz[0,:], Egxyz[1,:], Egxyz[2,:])
+
+        Exyz = np.array([Ex, Ey, Ez])
+        return Exyz
+
+    def port_mode_3d_global(self, 
+                            x_global: np.ndarray,
+                            y_global: np.ndarray,
+                            z_global: np.ndarray,
+                            k0: float,
+                            which: Literal['E','H'] = 'E',
+                            mode_nr: int = 1) -> np.ndarray:
+        '''Compute the port mode field for global xyz coordinates.'''
+        xl, yl, _ = self.cs.in_local_cs(x_global, y_global, z_global)
+        Ex = self._fex(k0, x_global, y_global, z_global)
+        Ey = self._fey(k0, x_global, y_global, z_global)
+        Ez = self._fez(k0, x_global, y_global, z_global)
+        Exg, Eyg, Ezg = self.cs.in_global_basis(Ex, Ey, Ez)
+        return np.array([Exg, Eyg, Ezg])
+    
+
 class LumpedPort(PortBC, Saveable):
     
     _include_stiff: bool = True
