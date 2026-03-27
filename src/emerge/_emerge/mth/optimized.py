@@ -200,7 +200,10 @@ def dot(a: np.ndarray, b: np.ndarray) -> float:
     Returns:
         float: a · b
     """
-    return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
+    a0, a1, a2 = a[0], a[1], a[2]
+    b0, b1, b2 = b[0], b[1], b[2]
+    
+    return a0*b0 + a1*b1 + a2*b2
 
 @njit(c16(c16[:], c16[:]), cache=True, fastmath=True, nogil=True)
 def dot_c(a: np.ndarray, b: np.ndarray) -> complex:
@@ -213,7 +216,10 @@ def dot_c(a: np.ndarray, b: np.ndarray) -> complex:
     Returns:
         complex: a · b
     """
-    return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
+    a0, a1, a2 = a[0], a[1], a[2]
+    b0, b1, b2 = b[0], b[1], b[2]
+    
+    return a0*b0 + a1*b1 + a2*b2
 
 @njit(f8[:](f8[:], f8[:]), cache=True, fastmath=True, nogil=True)
 def cross(a: np.ndarray, b: np.ndarray) -> np.ndarray:

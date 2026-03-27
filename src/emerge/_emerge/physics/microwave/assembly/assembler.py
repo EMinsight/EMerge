@@ -311,9 +311,15 @@ class Assembler:
         else:
             # OTHERWISE, COMPUTE
             logger.debug('Assembling matrices')
-            E, B = tet_mass_stiffness_matrices(field, er, ur)
-            self.cached_matrices = (E, B)
+            #from time import time
 
+            #t0 = time()
+            E, B = tet_mass_stiffness_matrices(field, er, ur)
+            #t1 = time()
+            #print(f'Assembly time = {t1-t0}s')
+            #print(f'Speed = {mesh.n_tets/(t1-t0):.1f} tets/s')
+            self.cached_matrices = (E, B)
+        
         # COMBINE THE MASS AND STIFFNESS MATRIX
         K: csr_matrix = (E - B*(K0**2)).tocsr()
 

@@ -20,7 +20,7 @@ import numpy as np
 from ....elements import Nedelec2
 from scipy.sparse import csr_matrix, coo_matrix
 from ....mth.optimized import local_mapping, matinv, dot_c, cross_c, compute_distances
-from numba import c16, types, f8, i8, njit, prange
+from numba import c16, types, f8, i8, njit, prange, void
 
 ############################################################
 #                  CACHED FACTORIAL VALUES                 #
@@ -61,6 +61,28 @@ def matmul(Mat, Vec):
     Vout[1] = Mat[1,0]*Vec[0] + Mat[1,1]*Vec[1] + Mat[1,2]*Vec[2]
     Vout[2] = Mat[2,0]*Vec[0] + Mat[2,1]*Vec[1] + Mat[2,2]*Vec[2]
     return Vout
+
+@njit(void(c16[:,:], c16[:], c16[:]), cache=True, nogil=True)
+def matmul_inplace(Mat, Vec, Vout):
+    v0, v1, v2 = Vec[0], Vec[1], Vec[2]
+    Vout[0] = Mat[0,0]*v0 + Mat[0,1]*v1 + Mat[0,2]*v2
+    Vout[1] = Mat[1,0]*v0 + Mat[1,1]*v1 + Mat[1,2]*v2
+    Vout[2] = Mat[2,0]*v0 + Mat[2,1]*v1 + Mat[2,2]*v2
+
+@njit(void(c16[:], c16[:], c16[:]), cache=True, fastmath=True, nogil=True)
+def cross_c_inplace(a: np.ndarray, b: np.ndarray, c: np.ndarray):
+    """Optimized complex single vector cross product
+
+    Args:
+        a (np.ndarray): (3,) vector a
+        b (np.ndarray): (3,) vector b
+
+    Returns:
+        np.ndarray: a ⨉ b
+    """
+    c[0] = a[1]*b[2] - a[2]*b[1]
+    c[1] = a[2]*b[0] - a[0]*b[2]
+    c[2] = a[0]*b[1] - a[1]*b[0]
 
 @njit(f8(i8, i8, i8, i8), cache=True, fastmath=True, nogil=True)
 def volume_coeff(a: int, b: int, c: int, d: int):
@@ -139,6 +161,87 @@ def tet_coefficients_bcd(xs: np.ndarray, ys: np.ndarray, zs: np.ndarray) -> tupl
     return bbs, ccs, dds, V
 
 
+@njit(types.Tuple((f8[:], f8[:], f8[:], f8))(f8[:], f8[:], f8[:]), cache = True, nogil=True)
+def tet_coefficients_bcd_opt(xs: np.ndarray, ys: np.ndarray, zs: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+    """Computes the a,b,c and d coefficients of a tet barycentric coordinate functions and the volume
+
+    Args:
+        xs (np.ndarray): The tetrahedron X-coordinates
+        ys (np.ndarray): The tetrahedron Y-coordinates
+        zs (np.ndrray): The tetrahedron Z-coordinates
+
+    Returns:
+        tuple[np.ndarray, np.ndarray, np.ndarray, float]: The a, b, c, d coefficients and volume
+    """
+    
+
+    x1, x2, x3, x4 = xs
+    y1, y2, y3, y4 = ys
+    z1, z2, z3, z4 = zs
+
+    bbs = np.empty((4,), dtype=np.float64)
+    ccs = np.empty((4,), dtype=np.float64)
+    dds = np.empty((4,), dtype=np.float64)
+
+
+    x1y2 = x1*y2
+    x1y4 = x1*y4
+    x2y1 = x2*y1
+    x1y3 = x1*y3 
+    x2y3 = x2*y3
+    x3y1 = x3*y1
+    x2y4 = x2*y4
+    x3y4 = x3*y4
+    x4y3 = x4*y3
+    x4y1 = x4*y1
+    x4y2 = x4*y2
+    x3y2 = x3*y2
+
+    P1 = z1*(-x2y3 + x2y4 +x3y2 - x3y4 - x4y2 + x4y3)
+    P2 = z2*(x1y3 - x1y4 - x3y1 + x3y4 + x4y1 - x4y3)
+    P3 = z3*(-x1y2 + x1y4 + x2y1 - x2y4 - x4y1 + x4y2)
+    P4 = z4*(x1y2 - x1y3 - x2y1  + x2y3  + x3y1 - x3y2)
+    V = np.abs(P1+P2+P3+P4)/6
+
+    # X differences
+    dx13 = x1 - x3
+    dx14 = x1 - x4
+    dx23 = x2 - x3
+    dx24 = x2 - x4
+    dx34 = x3 - x4
+
+    # Y differences
+    dy13 = y1 - y3
+    dy14 = y1 - y4
+    dy23 = y2 - y3
+    dy24 = y2 - y4
+    dy34 = y3 - y4
+
+    # Z differences
+    dz13 = z1 - z3
+    dz14 = z1 - z4
+    dz23 = z2 - z3
+    dz24 = z2 - z4
+    dz34 = z3 - z4
+
+    bbs[0] = -dy24 * dz34 + dy34 * dz24
+    bbs[1] =  dy14 * dz34 - dy34 * dz14
+    bbs[2] = -dy14 * dz24 + dy24 * dz14
+    bbs[3] =  dy13 * dz23 - dy23 * dz13
+
+    ccs[0] =  dx24 * dz34 - dx34 * dz24
+    ccs[1] = -dx14 * dz34 + dx34 * dz14
+    ccs[2] =  dx14 * dz24 - dx24 * dz14
+    ccs[3] = -dx13 * dz23 + dx23 * dz13
+
+    dds[0] = -dx24 * dy34 + dx34 * dy24
+    dds[1] =  dx14 * dy34 - dx34 * dy14
+    dds[2] = -dx14 * dy24 + dx24 * dy14
+    dds[3] =  dx13 * dy23 - dx23 * dy13
+
+    return bbs, ccs, dds, V
+
+
 ############################################################
 #              MAIN CURL-CURL MATRIX ASSEMBLY             #
 ############################################################
@@ -189,7 +292,7 @@ def ned2_tet_stiff_mass(tet_vertices, edge_lengths, local_edge_map, local_tri_ma
 
     xs, ys, zs = tet_vertices
 
-    bbs, ccs, dds, V = tet_coefficients_bcd(xs, ys, zs)
+    bbs, ccs, dds, V = tet_coefficients_bcd_opt(xs, ys, zs)
     b1, b2, b3, b4 = bbs
     c1, c2, c3, c4 = ccs
     d1, d2, d3, d4 = dds
@@ -211,16 +314,42 @@ def ned2_tet_stiff_mass(tet_vertices, edge_lengths, local_edge_map, local_tri_ma
     V6 = 6*V
 
     VOLUME_COEFF_CACHE = VOLUME_COEFF_CACHE_BASE*V6
+    
+    # Preallocation
+    erGF = np.empty((3,), dtype=np.complex128)
+    erGC = np.empty((3,), dtype=np.complex128)
+    erGD = np.empty((3,), dtype=np.complex128)
+    CROSS_CF = np.empty((3,), dtype=np.complex128)
+    CROSS_DF = np.empty((3,), dtype=np.complex128)
+    CROSS_CD = np.empty((3,), dtype=np.complex128)
+    
+    Ms_MUL_GCxGF = np.empty((3,), dtype=np.complex128)
+    Ms_MUL_GDxGF = np.empty((3,), dtype=np.complex128)
+    Ms_MUL_GCxGD = np.empty((3,), dtype=np.complex128)
+    Ms_MUL_GCxGD = np.empty((3,), dtype=np.complex128)
+    GAxGB = np.empty((3,), dtype=np.complex128)
+    GCxGD = np.empty((3,), dtype=np.complex128)
+    GCxGF = np.empty((3,), dtype=np.complex128)
+    GDxGF = np.empty((3,), dtype=np.complex128)
+    GCxGD = np.empty((3,), dtype=np.complex128)
+    GAxGE = np.empty((3,), dtype=np.complex128)
+    GBxGE = np.empty((3,), dtype=np.complex128)
+    
     for ei in range(6):
-        ei1, ei2 = local_edge_map[:, ei]
+        ei1 = local_edge_map[0, ei]
+        ei2 = local_edge_map[1, ei]
         GA = GLs[ei1]
         GB = GLs[ei2]
         A, B = letters[ei1], letters[ei2]
         L1 = edge_lengths[ei]
         
+        VAA_mat = VOLUME_COEFF_CACHE[A,A]
+        VAB_mat = VOLUME_COEFF_CACHE[A,B]
+        VBB_mat = VOLUME_COEFF_CACHE[B,B]
         
         for ej in range(6):
-            ej1, ej2 = local_edge_map[:, ej]
+            ej1 = local_edge_map[0, ej]
+            ej2 = local_edge_map[1, ej]
             
             C,D = letters[ej1], letters[ej2]
             
@@ -231,38 +360,40 @@ def ned2_tet_stiff_mass(tet_vertices, edge_lengths, local_edge_map, local_tri_ma
             VAC = VOLUME_COEFF_CACHE[A,C,0,0]
             VBC = VOLUME_COEFF_CACHE[B,C,0,0]
             VBD = VOLUME_COEFF_CACHE[B,D,0,0]
-            VABCD = VOLUME_COEFF_CACHE[A,B,C,D]
-            VABCC = VOLUME_COEFF_CACHE[A,B,C,C]
-            VABDD = VOLUME_COEFF_CACHE[A,B,D,D]
-            VBBCD = VOLUME_COEFF_CACHE[B,B,C,D]
-            VABCD = VOLUME_COEFF_CACHE[A,B,C,D]
-            VBBCD = VOLUME_COEFF_CACHE[B,B,C,D]
-            VAACD = VOLUME_COEFF_CACHE[A,A,C,D]
-            VAADD = VOLUME_COEFF_CACHE[A,A,D,D]
-            VBBCC = VOLUME_COEFF_CACHE[B,B,C,C]
-            VBBDD = VOLUME_COEFF_CACHE[B,B,D,D]
-            VAACC = VOLUME_COEFF_CACHE[A,A,C,C]
+            VABCD = VAB_mat[C,D]
+            VABCC = VAB_mat[C,C]
+            VABDD = VAB_mat[D,D]
+            VBBCD = VBB_mat[C,D]
+            VAACD = VAA_mat[C,D]
+            VAADD = VAA_mat[D,D]
+            VBBCC = VBB_mat[C,C]
+            VBBDD = VBB_mat[D,D]
+            VAACC = VAA_mat[C,C]
 
             L2 = edge_lengths[ej]
 
-            erGF = matmul(Mm,GC)
-            erGC = matmul(Mm,GD)
-            erGD = dot_c(GA,erGF)
+            matmul_inplace(Mm,GC, erGF)
+            matmul_inplace(Mm,GD, erGC)
+            GA_MUL_erGD = dot_c(GA,erGF)
             GE_MUL_erGF = dot_c(GA,erGC)
             GE_MUL_erGC = dot_c(GB,erGF)
             GA_MUL_erGF = dot_c(GB,erGC)
 
             L12 = L1*L2
-            Factor = L12*9*dot_c(cross_c(GA,GB),matmul(Ms,cross_c(GC,GD)))
+            cross_c_inplace(GA,GB,GAxGB)
+            cross_c_inplace(GC,GD,GCxGD)
+            matmul_inplace(Ms,GCxGD,Ms_MUL_GCxGD)
+            Factor = L12*9*dot_c(GAxGB,Ms_MUL_GCxGD)
             Dmat[ei+0,ej+0] = Factor*VAC
             Dmat[ei+0,ej+10] = Factor*VAD
             Dmat[ei+10,ej+0] = Factor*VBC
             Dmat[ei+10,ej+10] = Factor*VBD
             
-            Fmat[ei+0,ej+0] = L12*(VABCD*erGD-VABCC*GE_MUL_erGF-VAACD*GE_MUL_erGC+VAACC*GA_MUL_erGF)
-            Fmat[ei+0,ej+10] = L12*(VABDD*erGD-VABCD*GE_MUL_erGF-VAADD*GE_MUL_erGC+VAACD*GA_MUL_erGF)
-            Fmat[ei+10,ej+0] = L12*(VBBCD*erGD-VBBCC*GE_MUL_erGF-VABCD*GE_MUL_erGC+VABCC*GA_MUL_erGF)
-            Fmat[ei+10,ej+10] = L12*(VBBDD*erGD-VBBCD*GE_MUL_erGF-VABDD*GE_MUL_erGC+VABCD*GA_MUL_erGF)       
+            Fmat[ei+0,ej+0] = L12*(VABCD*GA_MUL_erGD-VABCC*GE_MUL_erGF-VAACD*GE_MUL_erGC+VAACC*GA_MUL_erGF)
+            Fmat[ei+0,ej+10] = L12*(VABDD*GA_MUL_erGD-VABCD*GE_MUL_erGF-VAADD*GE_MUL_erGC+VAACD*GA_MUL_erGF)
+            Fmat[ei+10,ej+0] = L12*(VBBCD*GA_MUL_erGD-VBBCC*GE_MUL_erGF-VABCD*GE_MUL_erGC+VABCC*GA_MUL_erGF)
+            Fmat[ei+10,ej+10] = L12*(VBBDD*GA_MUL_erGD-VBBCD*GE_MUL_erGF-VABDD*GE_MUL_erGC+VABCD*GA_MUL_erGF)       
+
 
         for ej in range(4):
             ej1, ej2, fj = local_tri_map[:, ej]
@@ -273,33 +404,38 @@ def ned2_tet_stiff_mass(tet_vertices, edge_lengths, local_edge_map, local_tri_ma
             GD = GLs[ej2]
             GF = GLs[fj]
 
-            VABCD = VOLUME_COEFF_CACHE[A,B,C,D]
-            VBBCD = VOLUME_COEFF_CACHE[B,B,C,D]
+            VABCD = VAB_mat[C,D]
+            VBBCD = VBB_mat[C,D]
             VAD = VOLUME_COEFF_CACHE[A,D,0,0]
             VAC = VOLUME_COEFF_CACHE[A,C,0,0]
             VAF = VOLUME_COEFF_CACHE[A,F,0,0]
             VBF = VOLUME_COEFF_CACHE[B,F,0,0]
             VBC = VOLUME_COEFF_CACHE[B,C,0,0]
             VBD = VOLUME_COEFF_CACHE[B,D,0,0]
-            VABDF = VOLUME_COEFF_CACHE[A,B,D,F]
-            VABCF = VOLUME_COEFF_CACHE[A,B,F,C]
-            VAADF = VOLUME_COEFF_CACHE[A,A,D,F]
-            VAACD = VOLUME_COEFF_CACHE[A,A,C,D]
-            VBBDF = VOLUME_COEFF_CACHE[B,B,D,F]
-            VBBCD = VOLUME_COEFF_CACHE[B,B,C,D]
-            VBBCF = VOLUME_COEFF_CACHE[B,B,F,C]
-            VAACF = VOLUME_COEFF_CACHE[A,A,C,F]
+            VABDF = VAB_mat[D,F]
+            VABCF = VAB_mat[F,C]
+            VAADF = VAA_mat[D,F]
+            VAACD = VAA_mat[C,D]
+            VBBDF = VBB_mat[D,F]
+            VBBCF = VBB_mat[F,C]
+            VAACF = VAA_mat[C,F]
 
             Lab2 = Ds[ej1, ej2]
             Lac2 = Ds[ej1, fj]
             
-            CROSS_AE = cross_c(GA,GB)
-            CROSS_DF = dot_c(CROSS_AE,matmul(Ms,cross_c(GC,GF)))
-            CROSS_CD = dot_c(CROSS_AE,matmul(Ms,cross_c(GD,GF)))
-            AE_MUL_CF = dot_c(CROSS_AE,matmul(Ms,cross_c(GC,GD)))
-            erGF = matmul(Mm,GF)
-            erGC = matmul(Mm,GC)
-            erGD = matmul(Mm,GD)
+            cross_c_inplace(GA,GB,GAxGB)
+            cross_c_inplace(GC,GF,GCxGF)
+            cross_c_inplace(GD,GF,GDxGF)
+            cross_c_inplace(GC,GD,GCxGD)
+            matmul_inplace(Ms,GCxGF,Ms_MUL_GCxGF)
+            matmul_inplace(Ms,GDxGF,Ms_MUL_GDxGF)
+            matmul_inplace(Ms,GCxGD,Ms_MUL_GCxGD)
+            AE_MUL_DF = dot_c(GAxGB,Ms_MUL_GCxGF)
+            AE_MUL_CD = dot_c(GAxGB,Ms_MUL_GDxGF)
+            AE_MUL_CF = dot_c(GAxGB,Ms_MUL_GCxGD)
+            matmul_inplace(Mm,GF,erGF)
+            matmul_inplace(Mm,GC,erGC)
+            matmul_inplace(Mm,GD,erGD)
             GE_MUL_erGF = dot_c(GA,erGF)
             GE_MUL_erGC = dot_c(GA,erGC)
             GA_MUL_erGF = dot_c(GB,erGF)
@@ -307,15 +443,17 @@ def ned2_tet_stiff_mass(tet_vertices, edge_lengths, local_edge_map, local_tri_ma
             GE_MUL_erGD = dot_c(GA,erGD)
             GA_MUL_erGD = dot_c(GB,erGD)
             
-            Dmat[ei+0,ej+6] = L1*Lac2*(-6*VAD*CROSS_DF-3*VAC*CROSS_CD-3*VAF*AE_MUL_CF)
-            Dmat[ei+0,ej+16] = L1*Lab2*(6*VAF*AE_MUL_CF+3*VAD*CROSS_DF-3*VAC*CROSS_CD)
-            Dmat[ei+10,ej+6] = L1*Lac2*(-6*VBD*CROSS_DF-3*VBC*CROSS_CD-3*VBF*AE_MUL_CF)
-            Dmat[ei+10,ej+16] = L1*Lab2*(6*VBF*AE_MUL_CF+3*VBD*CROSS_DF-3*VBC*CROSS_CD)
+            L1Lac2 = L1*Lac2
+            L1Lab2 = L1*Lab2
+            Dmat[ei+0,ej+6] = L1Lac2*(-6*VAD*AE_MUL_DF-3*VAC*AE_MUL_CD-3*VAF*AE_MUL_CF)
+            Dmat[ei+0,ej+16] = L1Lab2*(6*VAF*AE_MUL_CF+3*VAD*AE_MUL_DF-3*VAC*AE_MUL_CD)
+            Dmat[ei+10,ej+6] = L1Lac2*(-6*VBD*AE_MUL_DF-3*VBC*AE_MUL_CD-3*VBF*AE_MUL_CF)
+            Dmat[ei+10,ej+16] = L1Lab2*(6*VBF*AE_MUL_CF+3*VBD*AE_MUL_DF-3*VBC*AE_MUL_CD)
 
-            Fmat[ei+0,ej+6] = L1*Lac2*(VABCD*GE_MUL_erGF-VABDF*GE_MUL_erGC-VAACD*GA_MUL_erGF+VAADF*GA_MUL_erGC)
-            Fmat[ei+0,ej+16] = L1*Lab2*(VABDF*GE_MUL_erGC-VABCF*GE_MUL_erGD-VAADF*GA_MUL_erGC+VAACF*GA_MUL_erGD)
-            Fmat[ei+10,ej+6] = L1*Lac2*(VBBCD*GE_MUL_erGF-VBBDF*GE_MUL_erGC-VABCD*GA_MUL_erGF+VABDF*GA_MUL_erGC)
-            Fmat[ei+10,ej+16] = L1*Lab2*(VBBDF*GE_MUL_erGC-VBBCF*GE_MUL_erGD-VABDF*GA_MUL_erGC+VABCF*GA_MUL_erGD)
+            Fmat[ei+0,ej+6] = L1Lac2*(VABCD*GE_MUL_erGF-VABDF*GE_MUL_erGC-VAACD*GA_MUL_erGF+VAADF*GA_MUL_erGC)
+            Fmat[ei+0,ej+16] = L1Lab2*(VABDF*GE_MUL_erGC-VABCF*GE_MUL_erGD-VAADF*GA_MUL_erGC+VAACF*GA_MUL_erGD)
+            Fmat[ei+10,ej+6] = L1Lac2*(VBBCD*GE_MUL_erGF-VBBDF*GE_MUL_erGC-VABCD*GA_MUL_erGF+VABDF*GA_MUL_erGC)
+            Fmat[ei+10,ej+16] = L1Lab2*(VBBDF*GE_MUL_erGC-VBBCF*GE_MUL_erGD-VABDF*GA_MUL_erGC+VABCF*GA_MUL_erGD)
     
     ## Mirror the transpose part of the previous iteration as its symmetrical
 
@@ -331,11 +469,19 @@ def ned2_tet_stiff_mass(tet_vertices, edge_lengths, local_edge_map, local_tri_ma
     for ei in range(4):
         ei1, ei2, fi = local_tri_map[:, ei]
         A, B, E = letters[ei1], letters[ei2], letters[fi]
+        VAA_mat = VOLUME_COEFF_CACHE[A,A]
+        VAB_mat = VOLUME_COEFF_CACHE[A,B]
+        VBB_mat = VOLUME_COEFF_CACHE[B,B]
+        
         GA = GLs[ei1]
         GB = GLs[ei2]
         GE = GLs[fi]
         Lac1 = Ds[ei1, fi]
         Lab1 = Ds[ei1, ei2]
+        
+        cross_c_inplace(GA,GE,GAxGE)
+        cross_c_inplace(GB,GE,GBxGE)
+        cross_c_inplace(GA,GB,GAxGB)
         
         for ej in range(4):
             ej1, ej2, fj = local_tri_map[:, ej]
@@ -346,7 +492,7 @@ def ned2_tet_stiff_mass(tet_vertices, edge_lengths, local_edge_map, local_tri_ma
             GD = GLs[ej2]
             GF = GLs[fj]
 
-            VABCD = VOLUME_COEFF_CACHE[A,B,C,D]
+            VABCD = VAB_mat[C,D]
             VAD = VOLUME_COEFF_CACHE[A,D,0,0]
             VAC = VOLUME_COEFF_CACHE[A,C,0,0]
             VAF = VOLUME_COEFF_CACHE[A,F,0,0]
@@ -356,9 +502,9 @@ def ned2_tet_stiff_mass(tet_vertices, edge_lengths, local_edge_map, local_tri_ma
             VDE = VOLUME_COEFF_CACHE[E,D,0,0]
             VEF = VOLUME_COEFF_CACHE[E,F,0,0]
             VCE = VOLUME_COEFF_CACHE[E,C,0,0]
-            VABDF = VOLUME_COEFF_CACHE[A,B,D,F]
+            VABDF = VAB_mat[D,F]
             VACEF = VOLUME_COEFF_CACHE[A,C,E,F]
-            VABCF = VOLUME_COEFF_CACHE[A,B,F,C]
+            VABCF = VAB_mat[F,C]
             VBCDE = VOLUME_COEFF_CACHE[B,C,D,F]
             VBDEF = VOLUME_COEFF_CACHE[B,E,D,F]
             VACDE = VOLUME_COEFF_CACHE[E,A,C,D]
@@ -367,25 +513,22 @@ def ned2_tet_stiff_mass(tet_vertices, edge_lengths, local_edge_map, local_tri_ma
 
             Lac2 = Ds[ej1, fj]
             Lab2 = Ds[ej1, ej2]
-
-            CROSS_AE = cross_c(GA,GE)
-            CROSS_BE = cross_c(GB,GE)
-            CROSS_AB = cross_c(GA,GB)
-            CROSS_CF = matmul(Ms,cross_c(GC,GF))
-            CROSS_DF = matmul(Ms,cross_c(GD,GF))
-            CROSS_CD = matmul(Ms,cross_c(GC,GD))
-            AE_MUL_CF = dot_c(CROSS_AE,CROSS_CF)
-            AE_MUL_DF = dot_c(CROSS_AE,CROSS_DF)
-            AE_MUL_CD = dot_c(CROSS_AE,CROSS_CD)
-            BE_MUL_CF = dot_c(CROSS_BE,CROSS_CF)
-            BE_MUL_DF = dot_c(CROSS_BE,CROSS_DF)
-            BE_MUL_CD = dot_c(CROSS_BE,CROSS_CD)
-            AB_MUL_CF = dot_c(CROSS_AB,CROSS_CF)
-            AB_MUL_DF = dot_c(CROSS_AB,CROSS_DF)
-            AB_MUL_CD = dot_c(CROSS_AB,CROSS_CD)
-            erGF = matmul(Mm,GF)
-            erGC = matmul(Mm,GC)
-            erGD = matmul(Mm,GD)
+            
+            matmul_inplace(Ms, cross_c(GC,GF), CROSS_CF)
+            matmul_inplace(Ms, cross_c(GD,GF), CROSS_DF)
+            matmul_inplace(Ms, cross_c(GC,GD), CROSS_CD)
+            AE_MUL_CF = dot_c(GAxGE,CROSS_CF)
+            AE_MUL_DF = dot_c(GAxGE,CROSS_DF)
+            AE_MUL_CD = dot_c(GAxGE,CROSS_CD)
+            BE_MUL_CF = dot_c(GBxGE,CROSS_CF)
+            BE_MUL_DF = dot_c(GBxGE,CROSS_DF)
+            BE_MUL_CD = dot_c(GBxGE,CROSS_CD)
+            AB_MUL_CF = dot_c(GAxGB,CROSS_CF)
+            AB_MUL_DF = dot_c(GAxGB,CROSS_DF)
+            AB_MUL_CD = dot_c(GAxGB,CROSS_CD)
+            matmul_inplace(Mm,GF,erGF)
+            matmul_inplace(Mm,GC,erGC)
+            matmul_inplace(Mm,GD,erGD)
             GE_MUL_erGF = dot_c(GE,erGF)
             GE_MUL_erGC = dot_c(GE,erGC)
             GA_MUL_erGF = dot_c(GA,erGF)
