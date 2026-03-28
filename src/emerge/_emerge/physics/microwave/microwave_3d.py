@@ -1212,6 +1212,257 @@ class Microwave3D:
         self._completed = True
         return self.data
     
+    def run_scattered(self, 
+                    parallel: bool = False,
+                    n_workers: int = 2, 
+                    harddisc_threshold: int | None = None,
+                    harddisc_path: str = 'EMergeSparse',
+                    frequency_groups: int = -1,
+                    multi_processing: bool = False,
+                    automatic_modal_analysis: bool = True) -> MWData:
+        """Executes a Scattered field simulation
+
+        The study is distributed over "n_workers" workers.
+        As optional parameter you may set a harddisc_threshold as integer. This determines the maximum
+        number of degrees of freedom before which the jobs will be cahced to the harddisk. The
+        path that will be used to cache the sparse matrices can be specified.
+        Additionally the term frequency_groups may be specified. This number will define in how
+        many groups the matrices will be pre-computed before they are send to workers. This can minimize
+        the total amound of RAM memory used. For example with 11 frequencies in gruops of 4, the following
+        frequency indices will be precomputed and then solved: [[1,2,3,4],[5,6,7,8],[9,10,11]]
+
+        Args:
+            n_workers (int, optional): The number of workers. Defaults to 2.
+            harddisc_threshold (int, optional): The number of DOF limit. Defaults to None.
+            harddisc_path (str, optional): The cached matrix path name. Defaults to 'EMergeSparse'.
+            frequency_groups (int, optional): The number of frequency points in a solve group. Defaults to -1.
+            automatic_modal_analysis (bool, optional): Automatically compute port modes. Defaults to False.
+            multi_processing (bool, optional): Whether to use multiprocessing instead of multi-threaded (slower on most machines).
+
+        Raises:
+            SimulationError: An error associated witha a problem during the simulation.
+
+        Returns:
+            MWSimData: The dataset.
+        """
+        
+        # --------------------------------------------------------------------
+        # States
+        # --------------------------------------------------------------------
+        
+        self._completed = False
+        self._simstart = time.time()
+        self.solveroutine.symmetry_limit = self._settings.sim_symmetry_limit
+        
+        # --------------------------------------------------------------------
+        # Local Variables
+        # --------------------------------------------------------------------
+        
+        results: list[SimJob] = []
+        material_set: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
+        job_counter: int = 1
+        
+        # --------------------------------------------------------------------
+        # Checks
+        # --------------------------------------------------------------------
+        
+        if self.bc._initialized is False:
+            raise SimulationError('Cannot run a modal analysis because no boundary conditions have been assigned.')
+        
+        self._initialize_field()
+        self._initialize_bc_data()
+        self._check_physics()
+        
+        if self.basis is None:
+            raise SimulationError('Cannot proceed, the simulation basis class is undefined.')
+
+        if self._settings.check_ram:
+            _check_ram(self.mesh.n_tets, n_workers, parallel)
+        
+        logger.info(f'Starting frequency domain simulation (#tets = {self.mesh.n_tets:,})')
+        
+        # --------------------------------------------------------------------
+        # Material Assignments
+        # --------------------------------------------------------------------
+        
+        logger.debug('Resolving material assingments.')
+        materials = self._get_material_assignment(self.mesher.volumes)
+        
+        # --------------------------------------------------------------------
+        # Initializing solve functions
+        # --------------------------------------------------------------------
+        
+        thread_local = None
+        
+        if parallel:
+            # Thread-local storage for per-thread resources
+            thread_local = threading.local()
+            
+        def get_routine() -> SolveRoutine:
+            if not hasattr(thread_local, "routine"):
+                worker_nr = int(threading.current_thread().name.split('_')[1])+1
+                thread_local.routine = self.solveroutine.duplicate()._configure_routine('MT', thread_nr=worker_nr)
+            return thread_local.routine
+
+        def run_job(job: SimJob) -> SimJob:
+            routine = get_routine()
+            for A, b, ids, reuse, aux in job.iter_Ab():
+                solution, report = routine.solve(A, b, ids, reuse, id=job.id)
+                report.add(**aux)
+                job.submit_solution(solution, report)
+            return job
+        
+        def run_job_single(job: SimJob) -> SimJob:
+            for A, b, ids, reuse, aux in job.iter_Ab():
+                solution, report = self.solveroutine.solve(A, b, ids, reuse, id=job.id)
+                report.add(**aux)
+                job.submit_solution(solution, report)
+            return job
+        
+        # --------------------------------------------------------------------
+        # Grouping solve frequencies
+        # --------------------------------------------------------------------
+        
+        freq_groups = self._get_frequency_groups(frequency_groups) 
+        for i, group in enumerate(freq_groups):
+            group_GHz = [f'{f/1e9:.3f}GHz' for f in group]
+            logger.trace(f'Frequency group ({i}): {group_GHz}')
+        
+        # I am not sure if this is supposed to be there
+        self._compute_modes(sum(self.frequencies)/len(self.frequencies))
+        
+        # --------------------------------------------------------------------
+        # Single Threaded Solve
+        # --------------------------------------------------------------------
+        
+        if not parallel:
+            for i_group, fgroup in enumerate(freq_groups):
+                logger.info(f'Precomputing group {i_group}.')
+                jobs = []
+                ## Assemble jobs
+                for ifreq, freq in enumerate(fgroup):
+                    logger.debug(f'Simulation frequency = {_format_freq(freq)}') 
+                    if automatic_modal_analysis:
+                        self._compute_modes(freq)
+                    job, mats = self.assembler.assemble_scattering_matrix(self.basis, materials, 
+                                                            self.bc.boundary_conditions, 
+                                                            freq, 
+                                                            cache_matrices=self.cache_matrices)
+                    job.store_limit = harddisc_threshold
+                    job.relative_path = harddisc_path
+                    job.id = job_counter
+                    job_counter += 1
+                    jobs.append(job)
+                    material_set.append(mats)
+                
+                logger.info(f'Starting single threaded solve of {len(jobs)} jobs.')
+                group_results = [run_job_single(job) for job in jobs]
+                results.extend(group_results)
+        
+        # --------------------------------------------------------------------
+        # Multi-Threaded Solve
+        # --------------------------------------------------------------------
+        
+        elif not multi_processing:
+            with ThreadPoolExecutor(max_workers=n_workers, thread_name_prefix='WKR') as executor:
+                # ITERATE OVER FREQUENCIES
+                for i_group, fgroup in enumerate(freq_groups):
+                    logger.info(f'Precomputing group {i_group}.')
+                    jobs = []
+                    ## Assemble jobs
+                    for freq in fgroup:
+                        logger.debug(f'Simulation frequency = {_format_freq(freq)}') 
+                        if automatic_modal_analysis:
+                            self._compute_modes(freq)
+                        job, mats = self.assembler.assemble_scattering_matrix(self.basis, materials, 
+                                                                self.bc.boundary_conditions, 
+                                                                freq, 
+                                                                cache_matrices=self.cache_matrices)
+                        job.store_limit = harddisc_threshold
+                        job.relative_path = harddisc_path
+                        job.id = job_counter
+                        job_counter += 1
+                        jobs.append(job)
+                        material_set.append(mats)
+                    
+                    logger.info(f'Starting distributed solve of {len(jobs)} jobs with {n_workers} threads.')
+                    group_results = list(executor.map(run_job, jobs))
+                    results.extend(group_results)
+                executor.shutdown()
+        
+        # --------------------------------------------------------------------
+        # Multi-Processing Solve
+        # --------------------------------------------------------------------
+        
+        else:
+            # Check for entry point protection
+            if not called_from_main_function():
+                raise SimulationError(
+                    "Multiprocess support must be launched from your "
+                    "if __name__ == '__main__' guard in the top-level script."
+                )
+            # Start parallel pool
+            with mp.Pool(processes=n_workers) as pool:
+                for i_group, fgroup in enumerate(freq_groups):
+                    logger.debug(f'Precomputing group {i_group}.')
+                    jobs = []
+                    # Assemble jobs
+                    for freq in fgroup:
+                        logger.debug(f'Simulation frequency = {_format_freq(freq)}') 
+                        if automatic_modal_analysis:
+                            self._compute_modes(freq)
+                        
+                        job, mats = self.assembler.assemble_scattering_matrix(
+                            self.basis, materials,
+                            self.bc.boundary_conditions,
+                            freq,
+                            cache_matrices=self.cache_matrices
+                        )
+
+                        job.store_limit = harddisc_threshold
+                        job.relative_path = harddisc_path
+                        job.id = job_counter
+                        job_counter += 1
+                        jobs.append(job)
+                        material_set.append(mats)
+
+                    logger.info(
+                        f'Starting distributed solve of {len(jobs)} jobs '
+                        f'with {n_workers} processes in parallel'
+                    )
+                    # Distribute taks
+                    group_results = pool.map(run_job_multi, jobs)
+                    results.extend(group_results)
+        
+        # --------------------------------------------------------------------
+        # Cleanup
+        # --------------------------------------------------------------------
+        
+        if parallel:
+            thread_local.__dict__.clear()
+        self.solveroutine.reset()
+        
+        logger.info('Solving complete')
+
+        # --------------------------------------------------------------------
+        # Writing solve reports
+        # --------------------------------------------------------------------
+        
+        for freq, job in zip(self.frequencies, results):
+            self.data.setreport(job.reports, freq=freq, **self._params)
+
+        for variables, data in self.data.sim.iterate():
+            logger.trace(f'Sim variable: {variables}')
+            for item in data['report']:
+                item.logprint(logger.trace)
+
+        # --------------------------------------------------------------------
+        # Post Processing
+        # --------------------------------------------------------------------
+        
+        self._post_process(results, material_set)
+        self._completed = True
+        return self.data
     
     
     def _run_adaptive_mesh(self,

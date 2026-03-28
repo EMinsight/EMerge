@@ -42,7 +42,7 @@ class SimJob:
         self.k0: float = 2*np.pi*freq/299792458
         self.cache_factorization: bool = cache_factorization
         self._fields: dict[int, np.ndarray] = dict()
-        self.port_vectors: dict | None = None
+        self.excitations: dict | None = None
         self.solve_ids: np.ndarray | None = None
 
         self.store_limit: int | None = None
@@ -90,7 +90,7 @@ class SimJob:
     def iter_Ab(self):
         reuse_factorization = False
 
-        for key, mode in self.port_vectors.items():
+        for key, mode in self.excitations.items():
             # Set port as active and add the port mode to the forcing vector
             self._active_port = key
 

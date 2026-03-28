@@ -1294,7 +1294,7 @@ class UserDefinedPort(PortBC, Saveable):
 
 
 
-class ScatteredField(PortBC, Saveable):
+class ScatteredField(RobinBC, Saveable):
     
     _include_stiff: bool = True
     _include_mass: bool = False
@@ -1330,35 +1330,18 @@ class ScatteredField(PortBC, Saveable):
         super().__init__(face)
         if cs is None:
             cs = GCS
-        self.port_number: int = 1 
         self.cs = cs
-        self.active: bool = False
         self.power: float = power
-        self.type: str = 'TEM'
         self.order = 1
         self.abctype = 'A'
         self.radius: float = None
-        self.driven: bool = True
+        
         E0 = (Z0*2)**0.5
-        self._fex: Callable = lambda k0,x,y,z: 0*x
-        self._fey: Callable = lambda k0,x,y,z: 0*x 
-        self._fez: Callable = lambda k0,x,y,z: 1j*2*k0*E0*np.exp(-1j*k0*x)
         
-        self._fex_curl: Callable = lambda k0,x,y,z: 0*x
-        self._fey_curl: Callable = lambda k0,x,y,z: 1j*2*k0*E0*np.exp(-1j*k0*x)
-        self._fez_curl: Callable = lambda k0,x,y,z: 0*x
+        self.thetas: list[float] = [0.0,]
+        self.phis: list[float] = [0.0,]
+        self.polarizations: list[float] = [0.0,]
         
-        def fnorm(x,y,z):
-            R = ((x**2+y**2+z**2)**0.5)
-            rx = x/R
-            ry = y/R
-            rz = z/R
-            rhat =  np.array([rx, ry, rz])
-            return rhat
-        
-        self._fnormal: Callable = fnorm
-        self._fkz: Callable = lambda k0: k0
-        self.type = 'TEM'
 
     def get_basis(self) -> np.ndarray:
         return self.cs._basis
@@ -1376,14 +1359,14 @@ class ScatteredField(PortBC, Saveable):
         ''' Return the out of plane propagation constant. βz.'''
         return self._fkz(k0)
     
-    def gen_Uinc(self, k0: float) -> tuple[Callable, Callable]:
-        
-        def Ufunc(x,y,z): 
-            return self.get_Uinc(x,y,z,k0)
-        def Ufunc_curl(x,y,z):
-            return self.get_Uinc(x,y,z,k0, mode_nr=1, which='curl')
-        
-        return Ufunc, Ufunc_curl
+    def _iter_fields(self, k0: float) -> tuple[Callable, Callable]:
+        for (t,p) in [(t,p) for t in self.thetas for p in self.phis]:
+            def Ufunc(x,y,z): 
+                return self.get_Uinc(x,y,z,k0)
+            def Ufunc_curl(x,y,z):
+                return self.get_Uinc(x,y,z,k0, mode_nr=1, which='curl')
+            
+            return (t,p), Ufunc, Ufunc_curl
 
     @property
     def curvature(self) -> float:
@@ -1402,8 +1385,13 @@ class ScatteredField(PortBC, Saveable):
         """
         return (1j*self.get_beta(k0) + self.curvature)
     
-    def get_Uinc(self, x_global: np.ndarray, y_global: np.ndarray, z_global: np.ndarray, k0: float, mode_nr: int = 1, which='E') -> np.ndarray:
-        return self.port_mode_3d_global(x_global, y_global, z_global, k0, which=which)
+    def field_f(self, x: np.ndarray,
+                      y: np.ndarray,
+                      z: np.ndarray,
+                      theta: float,
+                      phi: float,
+                      k0: float) -> np.ndarray:
+        pass
         
     def port_mode_3d(self, 
                      x_local: np.ndarray,

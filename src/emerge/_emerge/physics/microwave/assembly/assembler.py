@@ -273,7 +273,7 @@ class Assembler:
         """
 
         from .curlcurl import tet_mass_stiffness_matrices
-        from .robinbc import assemble_robin_bc, assemble_robin_bc_bvec, assemble_robin_bc_bvec_scat
+        from .robinbc import assemble_robin_bc, assemble_robin_bc_bvec
         from ....mth.optimized import gaus_quad_tri
         from ....mth.pairing import pair_coordinates
         from .periodicbc import gen_periodic_matrix
@@ -328,7 +328,6 @@ class Assembler:
         robin_bcs: list[RobinBC] = [bc for bc in bcs if isinstance(bc,RobinBC)]
         port_bcs: list[PortBC] = [bc for bc in bcs if isinstance(bc, PortBC)]
         periodic_bcs: list[Periodic] = [bc for bc in bcs if isinstance(bc, Periodic)]
-        scatter_bcs: list[ScatteredField] = [bc for bc in bcs if isinstance(bc, ScatteredField)]
         
         # PREDEFINE THE FORCING VECTOR CONTAINER
         b = np.zeros((NF,), dtype=np.complex128)
@@ -336,10 +335,7 @@ class Assembler:
         for port in sorted(port_bcs, key=lambda x: x.port_number):
             for mat_index, mode_nr in port._iter_port_numbers():
                 port_vectors[mat_index] = np.zeros((NF,), dtype=np.complex128)
-        # There may only be one
-        if len(scatter_bcs) > 0:
-            port_vectors[0] = np.zeros((NF,), dtype=np.complex128)
-
+        
         ############################################################
         #                      PEC BOUNDARY CONDITIONS             #
         ############################################################
@@ -408,13 +404,6 @@ class Assembler:
                             port_vectors[number] += b_p # type: ignore
                             logger.trace(f'..included force vector term with norm {np.linalg.norm(b_p):.3f}')
                     
-                    if bc._include_force and bc.driven and isinstance(bc, ScatteredField):
-                        Ufunc, Ufunc_curl = bc.gen_Uinc(K0)
-                        normals = field.mesh.outward_normals(tri_ids)
-                        b_p = assemble_robin_bc_bvec_scat(field, tri_ids, Ufunc, Ufunc_curl, gauss_points, normals) # type: ignore
-                        port_vectors[bc.port_number] += b_p # type: ignore
-                        logger.trace(f'..included force vector term with norm {np.linalg.norm(b_p):.3f}')
-                    
                     
                     ## Second order absorbing boundary correction
                     if bc._isabc:
@@ -494,7 +483,7 @@ class Assembler:
         
         simjob = SimJob(K, b, K0*299792458/(2*np.pi), True)
         
-        simjob.port_vectors = port_vectors
+        simjob.excitations = port_vectors
         simjob.solve_ids = solve_ids
         simjob._pec_tris = pec_tris
 
@@ -527,7 +516,7 @@ class Assembler:
         """
 
         from .curlcurl import tet_mass_stiffness_matrices
-        from .robinbc import assemble_robin_bc, assemble_robin_bc_bvec
+        from .robinbc import assemble_robin_bc, assemble_robin_bc_bvec_scat
         from ....mth.optimized import gaus_quad_tri
         from ....mth.pairing import pair_coordinates
         from .periodicbc import gen_periodic_matrix
@@ -580,16 +569,11 @@ class Assembler:
         # ISOLATE BOUNDARY CONDITIONS TO ASSEMBLE
         pec_bcs: list[PEC] = [bc for bc in bcs if isinstance(bc,PEC)]
         robin_bcs: list[RobinBC] = [bc for bc in bcs if isinstance(bc,RobinBC)]
-        port_bcs: list[PortBC] = [bc for bc in bcs if isinstance(bc, PortBC)]
         periodic_bcs: list[Periodic] = [bc for bc in bcs if isinstance(bc, Periodic)]
-
-        # PREDEFINE THE FORCING VECTOR CONTAINER
-        b = np.zeros((NF,), dtype=np.complex128)
-        port_vectors: dict[int|float, np.ndarray] = {}
-        for port in sorted(port_bcs, key=lambda x: x.port_number):
-            for mat_index, mode_nr in port._iter_port_numbers():
-                port_vectors[mat_index] = np.zeros((NF,), dtype=np.complex128)
+        scatter_bcs: list[ScatteredField] = [bc for bc in bcs if isinstance(bc, ScatteredField)]
         
+        background_fields: dict[tuple[float, float], np.ndarray] = {}
+        b = np.zeros((NF,), dtype=np.complex128)
 
         ############################################################
         #                      PEC BOUNDARY CONDITIONS             #
@@ -653,12 +637,13 @@ class Assembler:
                     
                     Bempty = assemble_robin_bc(field, Bempty, tri_ids, gamma) # type: ignore
                     
-                    if bc._include_force and bc.driven:
-                        for number, Ufunc in bc._iter_modes(K0):
-                            b_p = assemble_robin_bc_bvec(field, tri_ids, Ufunc, gauss_points) # type: ignore
-                            port_vectors[number] += b_p # type: ignore
+                    if bc._include_force and bc.driven and isinstance(bc, ScatteredField):
+                        for (theta,phi), Ufunc, Ufunc_curl in bc._iter_fields(K0):
+                            Ufunc, Ufunc_curl = bc.gen_Uinc(K0)
+                            normals = field.mesh.outward_normals(tri_ids)
+                            b_p = assemble_robin_bc_bvec_scat(field, tri_ids, Ufunc, Ufunc_curl, gauss_points, normals) # type: ignore
+                            background_fields[(theta,phi)] = b_p # type: ignore
                             logger.trace(f'..included force vector term with norm {np.linalg.norm(b_p):.3f}')
-                    
                     
                     ## Second order absorbing boundary correction
                     if bc._isabc:
@@ -738,7 +723,7 @@ class Assembler:
         
         simjob = SimJob(K, b, K0*299792458/(2*np.pi), True)
         
-        simjob.port_vectors = port_vectors
+        simjob.excitations = {1: scatter_bcs}
         simjob.solve_ids = solve_ids
         simjob._pec_tris = pec_tris
 
