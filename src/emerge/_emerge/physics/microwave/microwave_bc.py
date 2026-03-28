@@ -70,7 +70,7 @@ class MWBoundaryConditionSet(BoundaryConditionSet):
         self.FloquetPort: type[FloquetPort] = self._construct_bc(FloquetPort)
         self.UserDefinedPort: type[UserDefinedPort] = self._construct_bc(UserDefinedPort)
         self.CoaxPort: type[CoaxPort] = self._construct_bc(CoaxPort)
-        self.SphericalWave: type[SphericalWave] = self._construct_bc(SphericalWave)
+        self.ScatteredField: type[ScatteredField] = self._construct_bc(ScatteredField)
 
         self._cell: PeriodicCell | None = None
 
@@ -1294,7 +1294,7 @@ class UserDefinedPort(PortBC, Saveable):
 
 
 
-class SphericalWave(PortBC, Saveable):
+class ScatteredField(PortBC, Saveable):
     
     _include_stiff: bool = True
     _include_mass: bool = False
@@ -1308,7 +1308,6 @@ class SphericalWave(PortBC, Saveable):
     
     def __init__(self, 
                  face: FaceSelection | GeoSurface,
-                 port_number: int, 
                  power: float = 1.0,
                  cs: CoordinateSystem | None = None):
         """Creates a user defined port field
@@ -1331,18 +1330,33 @@ class SphericalWave(PortBC, Saveable):
         super().__init__(face)
         if cs is None:
             cs = GCS
-
+        self.port_number: int = 1 
         self.cs = cs
-        self.port_number: int = port_number
         self.active: bool = False
         self.power: float = power
         self.type: str = 'TEM'
         self.order = 1
+        self.abctype = 'A'
         self.radius: float = None
-
+        self.driven: bool = True
+        E0 = (Z0*2)**0.5
         self._fex: Callable = lambda k0,x,y,z: 0*x
         self._fey: Callable = lambda k0,x,y,z: 0*x 
-        self._fez: Callable = lambda k0,x,y,z: 1.0*np.exp(-1j*k0*x)
+        self._fez: Callable = lambda k0,x,y,z: 1j*2*k0*E0*np.exp(-1j*k0*x)
+        
+        self._fex_curl: Callable = lambda k0,x,y,z: 0*x
+        self._fey_curl: Callable = lambda k0,x,y,z: 1j*2*k0*E0*np.exp(-1j*k0*x)
+        self._fez_curl: Callable = lambda k0,x,y,z: 0*x
+        
+        def fnorm(x,y,z):
+            R = ((x**2+y**2+z**2)**0.5)
+            rx = x/R
+            ry = y/R
+            rz = z/R
+            rhat =  np.array([rx, ry, rz])
+            return rhat
+        
+        self._fnormal: Callable = fnorm
         self._fkz: Callable = lambda k0: k0
         self.type = 'TEM'
 
@@ -1362,6 +1376,15 @@ class SphericalWave(PortBC, Saveable):
         ''' Return the out of plane propagation constant. βz.'''
         return self._fkz(k0)
     
+    def gen_Uinc(self, k0: float) -> tuple[Callable, Callable]:
+        
+        def Ufunc(x,y,z): 
+            return self.get_Uinc(x,y,z,k0)
+        def Ufunc_curl(x,y,z):
+            return self.get_Uinc(x,y,z,k0, mode_nr=1, which='curl')
+        
+        return Ufunc, Ufunc_curl
+
     @property
     def curvature(self) -> float:
         if self.radius is None:
@@ -1379,14 +1402,14 @@ class SphericalWave(PortBC, Saveable):
         """
         return (1j*self.get_beta(k0) + self.curvature)
     
-    def get_Uinc(self, x_global: np.ndarray, y_global: np.ndarray, z_global: np.ndarray, k0: float, mode_nr: int = 1) -> np.ndarray:
-        return -2*1j*self.get_beta(k0)*self.port_mode_3d_global(x_global, y_global, z_global, k0)
-    
+    def get_Uinc(self, x_global: np.ndarray, y_global: np.ndarray, z_global: np.ndarray, k0: float, mode_nr: int = 1, which='E') -> np.ndarray:
+        return self.port_mode_3d_global(x_global, y_global, z_global, k0, which=which)
+        
     def port_mode_3d(self, 
                      x_local: np.ndarray,
                      y_local: np.ndarray,
                      k0: float,
-                     which: Literal['E','H'] = 'E',
+                     which: Literal['E','H','curl'] = 'E',
                      mode_nr: int = 1) -> np.ndarray:
         x_global, y_global, z_global = self.cs.in_global_cs(x_local, y_local, 0*x_local)
 
@@ -1405,11 +1428,18 @@ class SphericalWave(PortBC, Saveable):
                             which: Literal['E','H'] = 'E',
                             mode_nr: int = 1) -> np.ndarray:
         '''Compute the port mode field for global xyz coordinates.'''
-        xl, yl, _ = self.cs.in_local_cs(x_global, y_global, z_global)
-        Ex = self._fex(k0, x_global, y_global, z_global)
-        Ey = self._fey(k0, x_global, y_global, z_global)
-        Ez = self._fez(k0, x_global, y_global, z_global)
-        Exg, Eyg, Ezg = self.cs.in_global_basis(Ex, Ey, Ez)
+        if which == 'E':
+            xl, yl, _ = self.cs.in_local_cs(x_global, y_global, z_global)
+            Ex = self._fex(k0, x_global, y_global, z_global)
+            Ey = self._fey(k0, x_global, y_global, z_global)
+            Ez = self._fez(k0, x_global, y_global, z_global)
+            Exg, Eyg, Ezg = self.cs.in_global_basis(Ex, Ey, Ez)
+        elif which == 'curl':
+            xl, yl, _ = self.cs.in_local_cs(x_global, y_global, z_global)
+            Ex = self._fex_curl(k0, x_global, y_global, z_global)
+            Ey = self._fey_curl(k0, x_global, y_global, z_global)
+            Ez = self._fez_curl(k0, x_global, y_global, z_global)
+            Exg, Eyg, Ezg = self.cs.in_global_basis(Ex, Ey, Ez)
         return np.array([Exg, Eyg, Ezg])
     
 

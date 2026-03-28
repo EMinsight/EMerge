@@ -792,6 +792,29 @@ class Mesh3D(Mesh, Saveable):
         groups = sorted(groups, key = lambda x: sum(self.edge_lengths[np.array(x)]))
         return groups
 
+    def outward_normals(self, tri_ids: list[int]) -> np.ndarray:
+        """ Computes the outward facing normals for a list of triangles"""
+        v1s = self.nodes[:,self.tris[0,tri_ids]]
+        v2s = self.nodes[:,self.tris[1,tri_ids]]
+        v3s = self.nodes[:,self.tris[2,tri_ids]]
+        e1 = v2s-v1s
+        e2 = v3s-v1s
+        nx = e1[1,:]*e2[2,:] - e1[2,:]*e2[1,:]
+        ny = e1[2,:]*e2[0,:] - e1[0,:]*e2[2,:]
+        nz = e1[0,:]*e2[1,:] - e1[1,:]*e2[0,:]
+        nn = (nx**2+ny**2+nz**2)**0.5
+        nx = nx/nn
+        ny = ny/nn
+        nz = nz/nn
+        normals = np.array([nx, ny, nz])
+        tet_ids = np.max(self.tri_to_tet[:,tri_ids], axis=0)
+        tet_centers = self.centers[:,tet_ids]
+        tri_centers = self.tri_centers[:,tri_ids]
+        align = tri_centers-tet_centers
+        signflip = np.sign(np.sum(align*normals, axis=0))
+        normals = signflip*normals
+        return normals
+        
     def boundary_surface(self, 
                          face_tags: Union[int, list[int]], 
                          origin: tuple[float, float, float] | None = None) -> SurfaceMesh:

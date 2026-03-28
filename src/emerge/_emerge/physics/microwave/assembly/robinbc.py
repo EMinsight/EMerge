@@ -34,6 +34,14 @@ def optim_matmul(B: np.ndarray, data: np.ndarray):
     dnew[2,:] = B[2,0]*data[0,:] + B[2,1]*data[1,:] + B[2,2]*data[2,:]
     return dnew
 
+@njit(cache=True, fastmath=True, nogil=True)
+def optim_matmul_vec(B: np.ndarray, data: np.ndarray):
+    dnew = np.zeros((3,), dtype=data.dtype)
+    dnew[0] = B[0,0]*data[0] + B[0,1]*data[1] + B[0,2]*data[2]
+    dnew[1] = B[1,0]*data[0] + B[1,1]*data[1] + B[1,2]*data[2]
+    dnew[2] = B[2,0]*data[0] + B[2,1]*data[1] + B[2,2]*data[2]
+    return dnew
+
 @njit(f8(i8, i8, i8, i8), cache=True, fastmath=True, nogil=True)
 def area_coeff(a, b, c, d):
     klmn = np.array([0,0,0,0,0,0,0])
@@ -226,6 +234,118 @@ def ned2_tri_force(glob_vertices, glob_Uinc, DPTs):
     
     return bvec
 
+
+@njit(c16[:](f8[:,:], c16[:,:], c16[:,:], f8[:,:], f8[:]), cache=True, nogil=True, parallel=False)
+def ned2_tri_force_scat(glob_vertices, glob_Uinc, glob_Uinc_curl, DPTs, nhat):
+    ''' Nedelec-2 Triangle Stiffness matrix and forcing vector (For Boundary Condition of the Third Kind)
+
+    '''
+    local_edge_map = np.array([[0,1,0],[1,2,2]])
+    bvec = np.zeros((8,), dtype=np.complex128)
+
+    orig = glob_vertices[:,0]
+    v2 = glob_vertices[:,1]
+    v3 = glob_vertices[:,2]
+    
+    e1 = v2-orig
+    e2 = v3-orig
+    zhat = normalize(cross(e1, e2))
+    xhat = normalize(e1)
+    yhat = normalize(cross(zhat, xhat))
+    basis = np.zeros((3,3), dtype=np.float64)
+    basis[0,:] = xhat
+    basis[1,:] = yhat
+    basis[2,:] = zhat
+    
+    lcs_vertices = optim_matmul(basis, glob_vertices - orig[:,np.newaxis])
+    lcs_Uinc = optim_matmul(basis, glob_Uinc)
+    lcs_Uinc_curl = optim_matmul(basis, glob_Uinc_curl)
+    lcs_nhat = optim_matmul_vec(basis, nhat)
+    sgn = np.sign(lcs_nhat[2])
+    xs = lcs_vertices[0,:]
+    ys = lcs_vertices[1,:]
+    
+    x1, x2, x3 = xs
+    y1, y2, y3 = ys
+
+    a1 = x2*y3-y2*x3
+    a2 = x3*y1-y3*x1
+    a3 = x1*y2-y1*x2
+    b1 = y2-y3
+    b2 = y3-y1
+    b3 = y1-y2
+    c1 = x3-x2
+    c2 = x1-x3
+    c3 = x2-x1
+
+    As = np.array([a1, a2, a3])
+    Bs = np.array([b1, b2, b3])
+    Cs = np.array([c1, c2, c3])
+
+    Ds = compute_distances(xs, ys, np.zeros_like(xs))
+    
+    Area = 0.5 * np.abs((x1 - x3) * (y2 - y1) - (x1 - x2) * (y3 - y1))
+    signA = -np.sign((x1 - x3) * (y2 - y1) - (x1 - x2) * (y3 - y1))
+
+    Lt1, Lt2 = Ds[2, 0], Ds[1, 0]
+    
+    Ux_dir = lcs_Uinc[0,:]
+    Uy_dir = lcs_Uinc[1,:]
+    UxCurl = lcs_Uinc_curl[0,:]
+    UyCurl = lcs_Uinc_curl[1,:] 
+    
+    Ux = Ux_dir + UyCurl * sgn
+    Uy = Uy_dir - UxCurl * sgn
+    
+
+    x = x1*DPTs[1,:] + x2*DPTs[2,:] + x3*DPTs[3,:]
+    y = y1*DPTs[1,:] + y2*DPTs[2,:] + y3*DPTs[3,:]
+
+    Ws = DPTs[0,:]
+
+    for ei in range(3):
+        ei1, ei2 = local_edge_map[:, ei]
+        Li = Ds[ei1, ei2]
+             
+        A1, A2 = As[ei1], As[ei2]
+        B1, B2 = Bs[ei1], Bs[ei2]
+        C1, C2 = Cs[ei1], Cs[ei2]
+
+        Q = A2 + B2*x + C2*y
+        Z = A1 + B1*x + C1*y
+        A4 = (4*Area**2)
+        Q2 = Q/A4
+        Z2 = Z/A4
+        Ar2 = 1/(2*Area)
+
+        Ee1x = (B1*Q2 - B2*Z2)*(Z)*Ar2
+        Ee1y = (C1*Q2 - C2*Z2)*(Z)*Ar2
+        Ee2x = (B1*Q2 - B2*Z2)*(Q)*Ar2
+        Ee2y = (C1*Q2 - C2*Z2)*(Q)*Ar2
+
+        bvec[ei] += signA*Area*Li*np.sum(Ws*(Ee1x*Ux + Ee1y*Uy))
+        bvec[ei+4] += signA*Area*Li*np.sum(Ws*(Ee2x*Ux + Ee2y*Uy))
+    
+    A1, A2, A3 = As
+    B1, B2, B3 = Bs
+    C1, C2, C3 = Cs
+
+    Q = A2 + B2*x + C2*y
+    Z = A1 + B1*x + C1*y
+    FA = (8*Area**3)
+    W = (A3 + B3*x + C3*y)/FA
+    W2 = Q*W
+
+    Ef1x = Lt1*(-B1*W2 + B3*(Z)*(Q)/FA)
+    Ef1y = Lt1*(-C1*W2 + C3*(Z)*(Q)/FA)
+    Ef2x = Lt2*(B1*W2 - B2*(Z)*W)
+    Ef2y = Lt2*(C1*W2 - C2*(Z)*W)
+    
+    bvec[3] += signA*Area*np.sum(Ws*(Ef1x*Ux + Ef1y*Uy))
+    bvec[7] += signA*Area*np.sum(Ws*(Ef2x*Ux + Ef2y*Uy))
+    
+    return bvec
+
 @njit(c16[:](f8[:,:], i8[:,:], c16[:], i8[:], c16[:,:,:], f8[:,:], i8[:,:]), cache=True, nogil=True, parallel=False)
 def compute_force_entries(vertices_global, tris, Bvec, surf_triangle_indices, Uglobal_all, DPTs, tri_to_field):
     Niter = surf_triangle_indices.shape[0]
@@ -237,6 +357,24 @@ def compute_force_entries(vertices_global, tris, Bvec, surf_triangle_indices, Ug
         Ulocal = Uglobal_all[:,:, i]
 
         bvec = ned2_tri_force(vertices_global[:,vertex_ids], Ulocal, DPTs)
+        
+        indices = tri_to_field[:, itri]
+        
+        Bvec[indices] += bvec
+    return Bvec
+
+@njit(c16[:](f8[:,:], i8[:,:], c16[:], i8[:], c16[:,:,:],c16[:,:,:], f8[:,:], i8[:,:], f8[:,:]), cache=True, nogil=True, parallel=False)
+def compute_force_entries_scat(vertices_global, tris, Bvec, surf_triangle_indices, Uglobal_all, Uglobal_all_curl, DPTs, tri_to_field, normals):
+    Niter = surf_triangle_indices.shape[0]
+    for i in prange(Niter): # type: ignore
+        itri = surf_triangle_indices[i]
+
+        vertex_ids = tris[:, itri]
+
+        Uglobal = Uglobal_all[:,:, i]
+        UglobalCurl = Uglobal_all_curl[:,:,i]
+
+        bvec = ned2_tri_force_scat(vertices_global[:,vertex_ids], Uglobal, UglobalCurl, DPTs, normals[:,i])
         
         indices = tri_to_field[:, itri]
         
@@ -389,6 +527,28 @@ def assemble_robin_bc_bvec(field: Nedelec2,
     U_global_all = U_global.reshape((3, DPTs.shape[1], surf_triangle_indices.shape[0]))
 
     Bvec = compute_force_entries(vertices, field.mesh.tris, Bvec, surf_triangle_indices, U_global_all, DPTs, field.tri_to_field)
+    return Bvec
+
+def assemble_robin_bc_bvec_scat(field: Nedelec2,
+                                surf_triangle_indices: np.ndarray,
+                                Ufunc: Callable,
+                                UfuncCurl: Callable,
+                                DPTs: np.ndarray,
+                                normals: np.ndarray):
+
+    Bvec = np.zeros((field.n_field,), dtype=np.complex128)
+
+    vertices = field.mesh.nodes
+
+    xflat, yflat, zflat = generate_points_3d(vertices, field.mesh.tris, DPTs, surf_triangle_indices)
+
+    U_global = Ufunc(xflat, yflat, zflat)
+    U_global_curl = UfuncCurl(xflat, yflat, zflat)
+    
+    U_global_all = U_global.reshape((3, DPTs.shape[1], surf_triangle_indices.shape[0]))
+    U_global_all_curl = U_global_curl.reshape((3, DPTs.shape[1], surf_triangle_indices.shape[0]))
+    
+    Bvec = compute_force_entries_scat(vertices, field.mesh.tris, Bvec, surf_triangle_indices, U_global_all, U_global_all_curl, DPTs, field.tri_to_field, normals)
     return Bvec
 
 def assemble_robin_bc(field: Nedelec2,

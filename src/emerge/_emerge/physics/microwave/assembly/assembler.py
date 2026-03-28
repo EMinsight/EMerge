@@ -17,7 +17,7 @@
 
 # Last Cleanup: 2025-01-01
 import numpy as np
-from ..microwave_bc import PEC, BoundaryCondition, RectangularWaveguide, RobinBC, PortBC, Periodic, MWBoundaryConditionSet
+from ..microwave_bc import PEC, BoundaryCondition, ScatteredField, RobinBC, PortBC, Periodic, MWBoundaryConditionSet
 from ....elements.nedelec2 import Nedelec2
 from ....elements.nedleg2 import NedelecLegrange2
 from ....mth.csr_cast import CSRMapping
@@ -273,7 +273,7 @@ class Assembler:
         """
 
         from .curlcurl import tet_mass_stiffness_matrices
-        from .robinbc import assemble_robin_bc, assemble_robin_bc_bvec
+        from .robinbc import assemble_robin_bc, assemble_robin_bc_bvec, assemble_robin_bc_bvec_scat
         from ....mth.optimized import gaus_quad_tri
         from ....mth.pairing import pair_coordinates
         from .periodicbc import gen_periodic_matrix
@@ -328,14 +328,17 @@ class Assembler:
         robin_bcs: list[RobinBC] = [bc for bc in bcs if isinstance(bc,RobinBC)]
         port_bcs: list[PortBC] = [bc for bc in bcs if isinstance(bc, PortBC)]
         periodic_bcs: list[Periodic] = [bc for bc in bcs if isinstance(bc, Periodic)]
-
+        scatter_bcs: list[ScatteredField] = [bc for bc in bcs if isinstance(bc, ScatteredField)]
+        
         # PREDEFINE THE FORCING VECTOR CONTAINER
         b = np.zeros((NF,), dtype=np.complex128)
         port_vectors: dict[int|float, np.ndarray] = {}
         for port in sorted(port_bcs, key=lambda x: x.port_number):
             for mat_index, mode_nr in port._iter_port_numbers():
                 port_vectors[mat_index] = np.zeros((NF,), dtype=np.complex128)
-        
+        # There may only be one
+        if len(scatter_bcs) > 0:
+            port_vectors[0] = np.zeros((NF,), dtype=np.complex128)
 
         ############################################################
         #                      PEC BOUNDARY CONDITIONS             #
@@ -399,11 +402,18 @@ class Assembler:
                     
                     Bempty = assemble_robin_bc(field, Bempty, tri_ids, gamma) # type: ignore
                     
-                    if bc._include_force and bc.driven:
+                    if bc._include_force and bc.driven and not isinstance(bc, ScatteredField):
                         for number, Ufunc in bc._iter_modes(K0):
                             b_p = assemble_robin_bc_bvec(field, tri_ids, Ufunc, gauss_points) # type: ignore
                             port_vectors[number] += b_p # type: ignore
                             logger.trace(f'..included force vector term with norm {np.linalg.norm(b_p):.3f}')
+                    
+                    if bc._include_force and bc.driven and isinstance(bc, ScatteredField):
+                        Ufunc, Ufunc_curl = bc.gen_Uinc(K0)
+                        normals = field.mesh.outward_normals(tri_ids)
+                        b_p = assemble_robin_bc_bvec_scat(field, tri_ids, Ufunc, Ufunc_curl, gauss_points, normals) # type: ignore
+                        port_vectors[bc.port_number] += b_p # type: ignore
+                        logger.trace(f'..included force vector term with norm {np.linalg.norm(b_p):.3f}')
                     
                     
                     ## Second order absorbing boundary correction
