@@ -114,6 +114,10 @@ class CuDSSInterface(metaclass=Singleton):
             reorder_alg.nbytes
         )
 
+    def clear_memory(self):
+        # TODO: Implement this
+        pass
+    
     def set_algorithm(self, alg_type: Literal['METIS','COLAMD','COLAM_BT','AMD']):
         """Define fill-in reduction column permuation algorithm. The options are:
 
@@ -227,8 +231,8 @@ class CuDSSInterface(metaclass=Singleton):
         self.x_cobj = cudss.matrix_create_dn(self.N, 1, self.N, _c_pointer(self.x_cu),
                                     int(self.VTYPE), int(cudss.Layout.COL_MAJOR))
 
-    def from_symbolic(self, A: csr_matrix, b: np.ndarray) -> np.ndarray:
-        """Solves Ax=b starting from the symbolic factorization
+    def symbolic(self, A: csr_matrix) -> np.ndarray:
+        """Executes symbolic LU factorization of Ax=b starting 
 
         Args:
             A (csr_matrix): The input sparse matrix
@@ -238,15 +242,11 @@ class CuDSSInterface(metaclass=Singleton):
             np.ndarray: The solved vector
         """
         self.submit_matrix(A)
-        self.submit_vector(b)
-        self.create_solvec()
         self._create_dss_data()
         self._symbolic()
-        self._numeric(False)
-        return self._solve()
 
-    def from_numeric(self, A: csr_matrix, b: np.ndarray) -> np.ndarray:
-        """Solves Ax=b starting from the Numeric factorization
+    def numeric(self, A: csr_matrix | None) -> np.ndarray:
+        """Executes numeric factorization of A.
 
         Args:
             A (csr_matrix): The input sparse matrix
@@ -256,13 +256,13 @@ class CuDSSInterface(metaclass=Singleton):
             np.ndarray: The solved vector
         """
         self.submit_matrix(A)
-        self.submit_vector(b)
-        self.create_solvec()
         self._update_dss_data()
-        self._numeric(True)
-        return self._solve()
+        if A is None:
+            self._numeric(False)
+        else:
+            self._numeric(True)
 
-    def from_solve(self, b: np.ndarray) -> np.ndarray:
+    def solve(self, b: np.ndarray) -> np.ndarray:
         """Solves Ax=b only with a new b vector.
 
         Args:

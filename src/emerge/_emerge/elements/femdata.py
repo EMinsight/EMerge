@@ -99,10 +99,10 @@ class FEMBasis(Saveable):
         N = self.n_tri_dofs**2
         return slice(itri*N,(itri+1)*N)
     
-    def generate_csr(self, data: np.ndarray):
-        from scipy.sparse import csr_matrix # type: ignore
+    def generate_csc(self, data: np.ndarray):
+        from scipy.sparse import csc_matrix # type: ignore
         ids = np.argwhere(data!=0)[:,0]
-        return csr_matrix((data[ids], (self._rows[ids], self._cols[ids])), shape=(self.n_field, self.n_field))
+        return csc_matrix((data[ids], (self._rows[ids], self._cols[ids])), shape=(self.n_field, self.n_field))
     
 
     ############################################################

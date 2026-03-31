@@ -41,7 +41,7 @@ for offset, Lin in sim.opt.run(max_iter=40):
     sim.commit_geometry()
     sim.mw.set_frequency_range(8e9, 10e9, 5)
     sim.set_resolution(0.2)
-    
+     
     sim.mw.bc.ModalPort(coax_out.face('+z'), 1, modetype='TEM')
     sim.mw.bc.RectangularWaveguide(waveguide.face('+y'), 2)
     

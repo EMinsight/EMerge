@@ -137,7 +137,7 @@ abc = model.mw.bc.AbsorbingBoundary(boundary_selection)
 # --- Run frequency-domain solver ----------------------------------------
 model.view(plot_mesh=True, volume_mesh=False)
 model.view(bc=True)
-model.adaptive_mesh_refinement(frequency=2.45e9, max_steps=12)
+model.adaptive_mesh_refinement(frequency=2.45e9, max_steps=6)
 model.view(plot_mesh=True, volume_mesh=False)
 data = model.mw.run_sweep()
 

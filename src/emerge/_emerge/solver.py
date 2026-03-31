@@ -17,7 +17,7 @@
 
 # Last Cleanup: 2025-01-01
 from __future__ import annotations
-from scipy.sparse import csr_matrix # type: ignore
+from scipy.sparse import csc_matrix # type: ignore
 from scipy.sparse.csgraph import reverse_cuthill_mckee # type: ignore
 from scipy.sparse.linalg import bicgstab, gmres, gcrotmk, eigs, splu # type: ignore
 from scipy.linalg import eig # type: ignore
@@ -306,13 +306,13 @@ def filter_unique_eigenpairs(eigen_values: list[complex],
 
 def complex_to_real_block(A, b):
     """Return (Â,  b̂) real-augmented representation of A x = b."""
-    A_r = sparse.csr_matrix(A.real)
-    A_i = sparse.csr_matrix(A.imag)
+    A_r = sparse.csc_matrix(A.real)
+    A_i = sparse.csc_matrix(A.imag)
     #  [ ReA  -ImA ]
     #  [ ImA   ReA ]
     upper = sparse.hstack([A_r, -A_i])
     lower = sparse.hstack([A_i,  A_r])
-    A_hat = sparse.vstack([upper, lower]).tocsr()
+    A_hat = sparse.vstack([upper, lower]).tocsc()
 
     b_hat = np.hstack([b.real, b.imag])
     return A_hat, b_hat
@@ -359,7 +359,7 @@ class Sorter:
     def __str__(self) -> str:
         return f'{self.__class__.__name__}'
     
-    def sort(self, A: csr_matrix, b: np.ndarray, reuse_sorting: bool = False) -> tuple[csr_matrix, np.ndarray]:
+    def sort(self, A: csc_matrix, b: np.ndarray, reuse_sorting: bool = False) -> tuple[csc_matrix, np.ndarray]:
         return A,b
     
     def unsort(self, x: np.ndarray) -> np.ndarray:
@@ -375,7 +375,7 @@ class Preconditioner:
     def __str__(self) -> str:
         return f'{self.__class__.__name__}'
     
-    def init(self, A: csr_matrix, b: np.ndarray) -> None:
+    def init(self, A: csc_matrix, b: np.ndarray) -> None:
         raise NotImplementedError('')
 
 class Solver:
@@ -415,7 +415,7 @@ class Solver:
         Options may be ignored depending on the type of solver used."""
         pass
         
-    def solve(self, A: csr_matrix, b: np.ndarray, precon: Preconditioner, 
+    def solve(self, A: csc_matrix, b: np.ndarray, precon: Preconditioner, 
               reuse_factorization: bool = False, id: int = -1) -> tuple[np.ndarray, SolveReport]:
         raise NotImplementedError("This classes Ax=B solver method is not implemented.")
     
@@ -449,7 +449,7 @@ class EigSolver:
     def duplicate(self) -> Solver:
         return self.__class__(self.pre)
 
-    def eig(self, A: csr_matrix | csr_matrix, B: csr_matrix | csr_matrix, nmodes: int = 6, 
+    def eig(self, A: csc_matrix, B: csc_matrix, nmodes: int = 6, 
             target_k0: float = 0.0, which: str = 'LM', sign: float = 1.):
         raise NotImplementedError("This classes eigenmdoe solver method is not implemented.")
     
@@ -547,7 +547,7 @@ class SolverGCROTMK(Solver):
         convergence = np.linalg.norm((self.A @ xk - self.b))
         logger.info(self.pre + f'Iteration {convergence:.4f}')
 
-    def solve(self, A: csr_matrix, b: np.ndarray, precon: Preconditioner, reuse_factorization: bool = False, id: int = -1) -> tuple[np.ndarray, SolveReport]:
+    def solve(self, A: csc_matrix, b: np.ndarray, precon: Preconditioner, reuse_factorization: bool = False, id: int = -1) -> tuple[np.ndarray, SolveReport]:
         logger.info(f'{_pfx(self.pre,id)} Calling GCRO-T(m,k) algorithm')
         self.A = A
         self.b = b
@@ -628,14 +628,12 @@ class SolverSuperLU(Solver):
         if pivoting_threshold is not None:
             self._pivoting_threshold = pivoting_threshold
     
-    def solve(self, A, b, precon, reuse_factorization: bool = False, id: int = -1) -> tuple[np.ndarray, SolveReport]:
+    def solve(self, A: csc_matrix, b: np.ndarray, precon, id: int = -1) -> tuple[np.ndarray, SolveReport]:
         logger.info(f'{_pfx(self.pre,id)} Calling SuperLU Solver.')
         self.single = True
-        if not reuse_factorization:
-            logger.trace(self.pre + 'Computing LU-Decomposition')
-            #self.lu = factorized(A)
-            self.lu = splu(A, permc_spec='MMD_AT_PLUS_A', relax=0, diag_pivot_thresh=self._pivoting_threshold, options=self.options)
-        x = self.lu.solve(b)
+        logger.trace(self.pre + 'Computing LU-Decomposition')
+        self.lu = splu(A, permc_spec='MMD_AT_PLUS_A', relax=0, diag_pivot_thresh=self._pivoting_threshold, options=self.options)
+        x = self.lu.solve(b.T).T
         aux = {
             "pivoting threshold": str(self._pivoting_threshold)
         }
@@ -692,7 +690,7 @@ class SolverUMFPACK(Solver):
         new_solver.set_options(pivoting_threshold = self._pivoting_threshold)
         return new_solver
 
-    def solve(self, A, b, precon, reuse_factorization: bool = False, id: int = -1) -> tuple[np.ndarray, SolveReport]:
+    def solve(self, A, b, precon, id: int = -1) -> tuple[np.ndarray, SolveReport]:
         logger.info(f'{_pfx(self.pre,id)} Calling UMFPACK Solver.')
         A.indptr  = A.indptr.astype(np.int64)
         A.indices = A.indices.astype(np.int64)
@@ -700,12 +698,14 @@ class SolverUMFPACK(Solver):
             logger.trace(f'{_pfx(self.pre,id)} Executing symbollic factorization.')
             self.umfpack.symbolic(A)
             self.fact_symb = True
-        if not reuse_factorization:
-            logger.trace(f'{_pfx(self.pre,id)} Executing numeric factorization.')
-            self.umfpack.numeric(A)
-            self.A = A
+        
+        logger.trace(f'{_pfx(self.pre,id)} Executing numeric factorization.')
+        self.umfpack.numeric(A)
         logger.trace(f'{_pfx(self.pre,id)} Solving linear system.')
-        x = self.umfpack.solve(um.UMFPACK_A, self.A, b, autoTranspose = False ) # ty: ignore
+        x = np.zeros_like(b)
+        for i in range(b.shape[0]):
+            logger.trace(f'{_pfx(self.pre,id)} Solving RHS {i}')
+            x[i,:] = self.umfpack.solve(um.UMFPACK_A, A, b[i,:], autoTranspose = False ) # ty: ignore
         aux = {
             "Pivoting Threshold": str(self._pivoting_threshold),
         }
@@ -757,7 +757,10 @@ class SolverMUMPS(Solver):
             self.mumps.factorize(A)
             self.A = A
         logger.trace(f'{_pfx(self.pre,id)} Solving linear system.')
-        x, _ = self.mumps.solve(b) # ty: ignore
+        x = np.zeros_like(b)
+        for i in range(x.shape[0]):
+            logger.trace(f'{_pfx(self.pre,id)} Solve RHS {i}.')
+            x[i,:], _ = self.mumps.solve(b[i,:]) # ty: ignore
         return x, SolveReport(solver=str(self), exit_code=0)
 
 
@@ -800,18 +803,21 @@ class SolverAASDS(Solver):
         new_solver = self.__class__(self.pre)
         return new_solver
 
-    def solve(self, A, b, precon, reuse_factorization: bool = False, id: int = -1) -> tuple[np.ndarray, SolveReport]:
+    def solve(self, A, b, precon, id: int = -1) -> tuple[np.ndarray, SolveReport]:
         logger.info(f'{_pfx(self.pre,id)} Calling Apple Accelerate Solver.')
         if self.fact_symb is False:
             logger.trace(f'{_pfx(self.pre,id)} Executing symbollic factorization.')
             self.aasds.analyse(A)
             self.fact_symb = True
-        if not reuse_factorization:
-            logger.trace(f'{_pfx(self.pre,id)} Executing numeric factorization.')
-            self.aasds.factorize(A)
-            self.A = A
+
+        logger.trace(f'{_pfx(self.pre,id)} Executing numeric factorization.')
+        self.aasds.factorize(A)
+        self.A = A
         logger.trace(f'{_pfx(self.pre,id)} Solving linear system.')
-        x, _ = self.aasds.solve(b) # ty: ignore
+        x = np.zeros_like(b)
+        for i in range(x.shape[0]):
+            logger.trace(f'{_pfx(self.pre,id)} Solving RHS {i}')
+            x[i,:], _ = self.aasds.solve(b[i,:]) # ty: ignore
         return x, SolveReport(solver=str(self), exit_code=0)
 
 class SolverPardiso(Solver):
@@ -833,23 +839,35 @@ class SolverPardiso(Solver):
             return
         self.solver = PardisoInterface()
         self.initialized = True
+    
+    def reset(self) -> None:
+        self.A = None
+        self.B = None
+        self.solver.clear_memory()
         
-    def solve(self, A, b, precon, reuse_factorization: bool = False, id: int = -1) -> tuple[np.ndarray, SolveReport]:
+    def solve(self, A: csc_matrix, b, precon, id: int = -1) -> tuple[np.ndarray, SolveReport]:
+        A = A.tocsr()
         logger.info(f'{_pfx(self.pre,id)} Calling Pardiso Solver')
         if self.fact_symb is False:
             logger.trace(f'{_pfx(self.pre,id)} Executing symbollic factorization.')
             self.solver.symbolic(A)
             self.fact_symb = True
-        if not reuse_factorization:
-            logger.trace(f'{_pfx(self.pre,id)} Executing numeric factorization.')
-            self.solver.numeric(A)
-            self.A = A
+
+        logger.trace(f'{_pfx(self.pre,id)} Executing numeric factorization.')
+        self.solver.numeric(A)
+        self.A = A
+        
         logger.trace(f'{_pfx(self.pre,id)} Solving linear system.')
-        x, error = self.solver.solve(A, b)
+        x = np.zeros_like(b)
+        for i in range(x.shape[0]):
+            logger.trace(f'{_pfx(self.pre,id)} Solving RHS {i}')
+            x[i,:], error = self.solver.solve(A, b[i,:])
+        
         if error != 0:
             logger.error(f'{_pfx(self.pre,id)} Terminated with error code {error}')
             logger.error(self.pre + self.solver.get_error(error))
             raise SimulationError(f'{_pfx(self.pre,id)} PARDISO Terminated with error code {error}')
+        
         aux = {}
         return x, SolveReport(solver=str(self), exit_code=error, aux=aux)
     
@@ -879,21 +897,22 @@ class SolverCuDSS(Solver):
     def reset(self) -> None:
         self.fact_symb = False
         self.fact_numb = False
+        self._cudss.clear_memory()
 
-    def solve(self, A, b, precon, reuse_factorization: bool = False, id: int = -1):
+    def solve(self, A, b, precon, id: int = -1):
         logger.info(f'{_pfx(self.pre,id)} Calling cuDSS Solver')
         
         if self.fact_symb is False:
             logger.trace(f'{_pfx(self.pre,id)} Starting from symbollic factorization.')
-            x = self._cudss.from_symbolic(A,b)
+            x = self._cudss.symbolic(A)
             self.fact_symb = True
-        else:
-            if reuse_factorization:
-                logger.trace(f'{_pfx(self.pre,id)} Solving linear system.')
-                x = self._cudss.from_solve(b)
-            else:
-                logger.trace(f'{_pfx(self.pre,id)} Starting from numeric factorization.')
-                x = self._cudss.from_numeric(A,b)
+    
+        logger.trace(f'{_pfx(self.pre,id)} Starting from numeric factorization.')
+        x = self._cudss.numeric(None)
+        logger.trace(f'{_pfx(self.pre,id)} Solving linear system.')
+        x = np.zeros_like(b)
+        for i in range(b.shape[0]):
+            x[i,:] = self._cudss.solve(b[i,:])
         
         return x, SolveReport(solver=str(self), exit_code=0, aux={})
 
@@ -906,8 +925,8 @@ class SolverLAPACK(EigSolver):
     name = 'LAPACK'
     
     def eig(self, 
-            A: csr_matrix | csr_matrix, 
-            B: csr_matrix | csr_matrix,
+            A: csc_matrix, 
+            B: csc_matrix,
             nmodes: int = 6,
             target_k0: float = 0,
             which: str = 'LM',
@@ -944,8 +963,8 @@ class SolverARPACK(EigSolver):
     name = 'ARPACK'
     
     def eig(self, 
-            A: csr_matrix | csr_matrix, 
-            B: csr_matrix | csr_matrix,
+            A: csc_matrix, 
+            B: csc_matrix,
             nmodes: int = 6,
             target_k0: float = 0,
             which: str = 'LM',
@@ -991,8 +1010,8 @@ class SmartARPACK_BMA(EigSolver):
             self.tot_energies.append(energy)
 
     def eig(self, 
-            A: csr_matrix | csr_matrix, 
-            B: csr_matrix | csr_matrix,
+            A: csc_matrix, 
+            B: csc_matrix,
             nmodes: int = 6,
             target_k0: float = 0,
             which: str = 'LM',
@@ -1070,7 +1089,7 @@ class SmartARPACK(EigSolver):
         self.energy_limit: float = 1e-4
 
 
-    def reduct_solutions(self, A: csr_matrix, B: csr_matrix, eigen_values: np.ndarray, eigen_modes: np.ndarray, limit: float) -> tuple[np.ndarray, np.ndarray]:
+    def reduct_solutions(self, A: csc_matrix, B: csc_matrix, eigen_values: np.ndarray, eigen_modes: np.ndarray, limit: float) -> tuple[np.ndarray, np.ndarray]:
         N = eigen_values.shape[0]
         eigen_values_out = []
         eigen_modes_out = []
@@ -1087,8 +1106,8 @@ class SmartARPACK(EigSolver):
         return eigen_values_out, eigen_modes_out
 
     def eig(self, 
-            A: csr_matrix | csr_matrix, 
-            B: csr_matrix | csr_matrix,
+            A: csc_matrix, 
+            B: csc_matrix,
             nmodes: int = 6,
             target_k0: float = 0,
             which: str = 'LM',
@@ -1364,7 +1383,7 @@ class SolveRoutine:
             self.solvers = {key: solver for key, solver in self.solvers.items() if solver is not None}
 
 
-    def _get_solver(self, A: csr_matrix, b: np.ndarray) -> Solver:
+    def _get_solver(self, A: csc_matrix, b: np.ndarray) -> Solver:
         """Returns the relevant Solver object given a certain matrix and source vector
 
         This is the default implementation for the SolveRoutine Class.
@@ -1386,7 +1405,7 @@ class SolveRoutine:
                 return solver
         return self.pick_solver(A,b)
         
-    def pick_solver(self, A: csr_matrix, b: np.ndarray) -> Solver:
+    def pick_solver(self, A: csc_matrix, b: np.ndarray) -> Solver:
         """Returns the relevant Solver object given a certain matrix and source vector
 
         This is the default implementation for the SolveRoutine Class.
@@ -1401,7 +1420,7 @@ class SolveRoutine:
         """
         return self._try_solver(EMSolver.SUPERLU)
     
-    def _get_eig_solver(self, A: csr_matrix, b: csr_matrix, direct: bool | None = None) -> EigSolver:
+    def _get_eig_solver(self, A: csc_matrix, b: csc_matrix, direct: bool | None = None) -> EigSolver:
         """Returns the relevant eigenmode Solver object given a certain matrix and source vector
 
         This is the default implementation for the SolveRoutine Class.
@@ -1423,7 +1442,7 @@ class SolveRoutine:
         else:
             return self.solvers[EMSolver.SMART_ARPACK] # type: ignore
             
-    def _get_eig_solver_bma(self, A: csr_matrix, b: csr_matrix, direct: bool | None = None) -> EigSolver:
+    def _get_eig_solver_bma(self, A: csc_matrix, b: csc_matrix, direct: bool | None = None) -> EigSolver:
         """Returns the relevant eigenmode Solver object given a certain matrix and source vector
 
         This is the default implementation for the SolveRoutine Class.
@@ -1446,10 +1465,9 @@ class SolveRoutine:
         else:
             return self.solvers[EMSolver.SMART_ARPACK_BMA]  # type: ignore
     
-    def solve(self, A: csr_matrix | csr_matrix, 
+    def solve(self, A: csc_matrix | csc_matrix, 
               b: np.ndarray, 
               solve_ids: np.ndarray,
-              reuse: bool = False,
               id: int = -1) -> tuple[np.ndarray, SolveReport]:
         """ Solve the system of equations defined by Ax=b for x.
 
@@ -1457,7 +1475,7 @@ class SolveRoutine:
         The solve routine will go through the required steps defined in the routine to tackle the problme.
 
         Args:
-            A (np.ndarray | csr_matrix | csr_matrix): The (Sparse) matrix
+            A (np.ndarray | csc_matrix): The (Sparse) matrix
             b (np.ndarray): The source vector
             solve_ids (np.ndarray): A vector of ids for which to solve the problem. For EM problems this
             implies all non-PEC degrees of freedom.
@@ -1468,6 +1486,8 @@ class SolveRoutine:
         """
         symmetry, is_symmetric = is_numerically_complex_symmetric(A, self.symmetry_limit)
         logger.debug(f'Matrix complex symmetric = {is_symmetric} with tolerance = {symmetry:.5f}')
+        if b.ndim == 1:
+            b = b.reshape((1, b.shape[0]))
         solver: Solver = self._get_solver(A, b)
         
         solver.initialize()
@@ -1475,11 +1495,10 @@ class SolveRoutine:
         
         NF = A.shape[0]
         NS = solve_ids.shape[0]
-
-        A = A.tocsc()
+        NB = b.shape[0]
         
         Asel = A[:, solve_ids][solve_ids,:]
-        bsel = b[solve_ids]
+        bsel = b[:,solve_ids]
         nnz = Asel.nnz
 
         logger.debug(f'{_pfx(self.pre,id)} Removed {NF-NS} prescribed DOFs ({NS:,} left, {nnz:,}≠0)')
@@ -1492,7 +1511,7 @@ class SolveRoutine:
         sorter = 'None'
         if solver.req_sorter and self.use_sorter:
             sorter = str(self.sorter)
-            Asorted, bsorted = self.sorter.sort(Asel, bsel, reuse_sorting=reuse)
+            Asorted, bsorted = self.sorter.sort(Asel, bsel)
         else:
             Asorted, bsorted = Asel, bsel
         
@@ -1505,7 +1524,7 @@ class SolveRoutine:
 
         start = time.time()
         
-        x_solved, report = solver.solve(Asorted, bsorted, self.precon, reuse_factorization=reuse, id=id)
+        x_solved, report = solver.solve(Asorted, bsorted, self.precon, id=id)
         
         end = time.time()
         simtime = end-start
@@ -1521,9 +1540,9 @@ class SolveRoutine:
             logger.debug(f'{_pfx(self.pre,id)} Converting back to complex matrix')
             x = real_to_complex_block(x)
 
-        solution = np.zeros((NF,), dtype=np.complex128)
+        solution = np.zeros((NB, NF), dtype=np.complex128)
         
-        solution[solve_ids] = x
+        solution[:,solve_ids] = x
 
         logger.debug(f'{_pfx(self.pre,id)} Solver complete!')
         report.jobid = id
@@ -1539,7 +1558,7 @@ class SolveRoutine:
         return solution, report
     
     def eig_boundary(self, 
-            A: csr_matrix | csr_matrix, 
+            A: csc_matrix, 
             B: np.ndarray, 
             solve_ids: np.ndarray,
             nmodes: int = 6,
@@ -1552,8 +1571,8 @@ class SolveRoutine:
         For generalized eigenvalue problems of boundary mode analysis studies, the equation is: Ae = -β²Be
 
         Args:
-            A (csr_matrix): The Stiffness matrix
-            B (csr_matrix): The mass matrix
+            A (csc_matrix): The Stiffness matrix
+            B (csc_matrix): The mass matrix
             solve_ids (np.ndarray): The free nodes (non PEC)
             nmodes (int): The number of modes to solve for. Defaults to 6
             direct (bool): If the direct solver should be used (always). Defaults to False
@@ -1587,7 +1606,7 @@ class SolveRoutine:
                                                       sorter='None', precon='None')
 
     def eig(self, 
-            A: csr_matrix | csr_matrix, 
+            A: csc_matrix, 
             B: np.ndarray, 
             solve_ids: np.ndarray,
             nmodes: int = 6,
@@ -1650,7 +1669,7 @@ class AutomaticRoutine(SolveRoutine):
             Solver: A solver object appropriate for solving the problem.
 
         """
-        N = b.shape[0]
+        N = A.shape[0]
         if N < 10_000:
             return self._try_solver(EMSolver.SUPERLU)
         if self.parallel=='SI':

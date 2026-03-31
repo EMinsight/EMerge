@@ -239,6 +239,8 @@ class PARDISOMType(Enum):
     COMP_NONSYM = 13
 
 class PARDISOPhase(Enum):
+    CLEAR = -1
+    NONE = 0
     SYMBOLIC_FACTOR = 11
     NUMERIC_FACTOR = 12
     NUMERIC_SOLVE = 33
@@ -473,4 +475,7 @@ class PardisoInterface:
         """
         self.factorized_A = None
         self.matrix = None
-        self.symbolic(sparse.csr_matrix((0,0), dtype=np.complex128), np.zeros(0, dtype=np.complex128))
+        A = sparse.csr_matrix((0,0), dtype=np.complex128)
+        b = np.zeros(0, dtype=np.complex128)
+        _, error = self._call_solver(A, b, phase=PARDISOPhase.CLEAR)
+        

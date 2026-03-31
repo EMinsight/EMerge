@@ -68,10 +68,10 @@ def run_job_multi(job: SimJob) -> SimJob:
     """
     nr = int(mp.current_process().name.split('-')[1])
     routine = DEFAULT_ROUTINE._configure_routine('MP', proc_nr=nr)
-    for A, b, ids, reuse, aux in job.iter_Ab():
-        solution, report = routine.solve(A, b, ids, reuse, id=job.id)
-        report.add(**aux)
-        job.submit_solution(solution, report)
+    A, bmat, ids, aux = job.get_Ab()
+    solution, report = routine.solve(A, bmat, ids, id=job.id)
+    report.add(**aux)
+    job.submit_solution(solution, report)
     return job
 
 
@@ -94,11 +94,11 @@ def _check_ram(ntets: int, njobs: int, parallel: bool) -> None:
     logger.debug(f'Required RAM: (low: {req_low:.2f}GB, nom: {req_mid:.2f}GB, high: {req_high:.2f}GB)')
     
     if available < req_low:
-        raise RuntimeError(f'Not enough free RAM detected ({available:.1f}GB), at least {req_low:.1f}GB Required. Potential swap memory not included. You can disable this check by changing model.settings.check_ram=False.')
+        raise RuntimeError(f'Not enough free RAM detected ({available:.1f}GB), at least {req_low:.1f}GB Required. Potential swap memory not included. You can reduce the number of parallel solvers or disable this check by changing model.settings.check_ram=False.')
     if available < req_mid:
-        raise RuntimeError(f'Not enough free RAM detected ({available:.1f}GB),  around {req_mid:.1f}GB Required. Potential swap memory not included. You can disable this check by changing model.settings.check_ram=False.')
+        raise RuntimeError(f'Not enough free RAM detected ({available:.1f}GB),  around {req_mid:.1f}GB Required. Potential swap memory not included. You can reduce the number of parallel solvers or disable this check by changing model.settings.check_ram=False.')
     if available < req_high:
-        logger.warning(f'Low free RAM detected ({available:.1f}GB), up to {req_high:.1f}GB could be Required.')
+        logger.warning(f'Low free RAM detected ({available:.1f}GB), up to {req_high:.1f}GB could be Required. You can reduce the number of parallel solvers or disable this check by changing model.settings.check_ram=False.')
 
 def _dimstring(data: list[float] | np.ndarray) -> str:
     """A String formatter for dimensions in millimeters
@@ -345,7 +345,7 @@ class Microwave3D:
         self.basis: FEMBasis = None
         self.solveroutine.reset()
         self.assembler.cached_matrices = None
-        self.assembler.cached_csrmap = None
+        self.assembler.cached_cscmap = None
 
     @property
     def nports(self) -> int:
@@ -1054,17 +1054,17 @@ class Microwave3D:
 
         def run_job(job: SimJob) -> SimJob:
             routine = get_routine()
-            for A, b, ids, reuse, aux in job.iter_Ab():
-                solution, report = routine.solve(A, b, ids, reuse, id=job.id)
-                report.add(**aux)
-                job.submit_solution(solution, report)
+            A, bmat, ids, aux = job.get_Ab()
+            solution, report = routine.solve(A, bmat, ids, id=job.id)
+            report.add(**aux)
+            job.submit_solution(solution, report)
             return job
         
         def run_job_single(job: SimJob) -> SimJob:
-            for A, b, ids, reuse, aux in job.iter_Ab():
-                solution, report = self.solveroutine.solve(A, b, ids, reuse, id=job.id)
-                report.add(**aux)
-                job.submit_solution(solution, report)
+            A, bmat, ids, aux = job.get_Ab()
+            solution, report = self.solveroutine.solve(A, bmat, ids, id=job.id)
+            report.add(**aux)
+            job.submit_solution(solution, report)
             return job
         
         # --------------------------------------------------------------------
@@ -1306,17 +1306,17 @@ class Microwave3D:
 
         def run_job(job: SimJob) -> SimJob:
             routine = get_routine()
-            for A, b, ids, reuse, aux in job.iter_Ab():
-                solution, report = routine.solve(A, b, ids, reuse, id=job.id)
-                report.add(**aux)
-                job.submit_solution(solution, report)
+            A, bmat, ids, aux = job.get_Ab()
+            solution, report = routine.solve(A, bmat, ids, id=job.id)
+            report.add(**aux)
+            job.submit_solution(solution, report)
             return job
         
         def run_job_single(job: SimJob) -> SimJob:
-            for A, b, ids, reuse, aux in job.iter_Ab():
-                solution, report = self.solveroutine.solve(A, b, ids, reuse, id=job.id)
-                report.add(**aux)
-                job.submit_solution(solution, report)
+            A, bmat, ids, aux = job.get_Ab()
+            solution, report = self.solveroutine.solve(A, bmat, ids, id=job.id)
+            report.add(**aux)
+            job.submit_solution(solution, report)
             return job
         
         # --------------------------------------------------------------------
@@ -1519,10 +1519,10 @@ class Microwave3D:
     
     
         def run_job_single(job: SimJob):
-            for A, b, ids, reuse, aux in job.iter_Ab():
-                solution, report = self.solveroutine.solve(A, b, ids, reuse, id=job.id)
-                report.add(**aux)
-                job.submit_solution(solution, report)
+            A, bmat, ids, aux = job.get_Ab()
+            solution, report = self.solveroutine.solve(A, bmat, ids, id=job.id)
+            report.add(**aux)
+            job.submit_solution(solution, report)
             return job
         
         
@@ -1603,13 +1603,13 @@ class Microwave3D:
         er, ur, cond = matset
         logger.info('Solving complete')
 
-        A, C, solve_ids = job.yield_AC()
+        A, C, solve_ids = job.get_AC()
 
         target_k0 = 2*np.pi*search_frequency/299792458
 
         eigen_values, eigen_modes, report = self.solveroutine.eig(A, C, solve_ids, nmodes, direct, target_k0, which=mode)
 
-        eigen_modes = job.fix_solutions(eigen_modes)
+        eigen_modes = job.unpermute_solutions(eigen_modes)
 
         logger.debug(f'Eigenvalues: {np.sqrt(eigen_values)} rad/m')
 
@@ -1673,6 +1673,7 @@ class Microwave3D:
         condtri = np.zeros((self.mesh.n_tris,), dtype=np.complex128)
         
         for job, mats in zip(results, materials):
+            job.load_solutions()
             freq = job.freq
             er, ur, cond = mats
             
@@ -1722,9 +1723,9 @@ class Microwave3D:
                                          Z0 = active_port.portZ0(k0),
                                          Pout= active_port.power)
                 
-                solution = job._fields[smat_index_j]
+                solution = job._solutions_dict[smat_index_j]
 
-                fielddata._fields = job._fields
+                fielddata._fields = job._solutions_dict
                 fielddata.basis = self.basis
                 # Compute the S-parameters
                 # Define the field interpolation function
@@ -1775,7 +1776,8 @@ class Microwave3D:
             if single_corr:
                 for i,j in product(range(N), range(N)):
                     scalardata.Sp[i,j] = scalardata.Sp[i,j] / max(1.0, np.abs(scalardata.Sp[i,j]))
-                    
+            
+            job.clear_solutions()      
                     
 
         if not_conserved and conserve_margin > 0.01:
@@ -1818,6 +1820,7 @@ class Microwave3D:
         scatter_bc: ScatteredField = self.bc.oftype(ScatteredField)[0]
 
         for job, mats in zip(results, materials):
+            job.load_solutions()
             freq = job.freq
             er, ur, cond = mats
             
@@ -1840,7 +1843,7 @@ class Microwave3D:
             fielddata._der = np.squeeze(er_scal)
             fielddata._dur = np.squeeze(ur_scal)
             fielddata._dsig = np.squeeze(cond_scal)
-            fielddata._fields = job._fields
+            fielddata._fields = job._solutions_dict
             fielddata.basis = self.basis
 
             logger.info(f'Post Processing simulation frequency = {freq/1e9:.3f} GHz') 
@@ -1852,6 +1855,8 @@ class Microwave3D:
                i += 1
             
             fielddata.set_field_vector()
+            job.clear_solutions()
+            
         logger.info('Simulation Complete!')
         self._simend = time.time()    
         logger.info(f'Elapsed time = {(self._simend-self._simstart):.2f} seconds.')

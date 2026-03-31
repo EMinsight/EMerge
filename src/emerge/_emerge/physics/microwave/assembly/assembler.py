@@ -20,13 +20,12 @@ import numpy as np
 from ..microwave_bc import PEC, BoundaryCondition, ScatteredField, RobinBC, PortBC, Periodic, MWBoundaryConditionSet
 from ....elements.nedelec2 import Nedelec2
 from ....elements.nedleg2 import NedelecLegrange2
-from ....mth.csr_cast import CSRMapping
+from ....mth.csc_cast import CSCMapping
 from emsutil import Material
 from ....settings import Settings
-from scipy.sparse import csr_matrix
+from scipy.sparse import csc_matrix
 from loguru import logger
 from ..simjob import SimJob
-from .. import background_field as bf
 from ....const import MU0, EPS0, C0
 import math
 
@@ -166,7 +165,7 @@ class Assembler:
     def __init__(self, settings: Settings):
         
         self.cached_matrices = None
-        self.cached_csrmap: CSRMapping | None = None
+        self.cached_cscmap: CSCMapping | None = None
         self.settings: Settings = settings
         self.SELECT_INDEX: int = None
         
@@ -177,7 +176,7 @@ class Assembler:
                         sig: np.ndarray,
                         k0: float,
                         port: PortBC,
-                        bc_set: MWBoundaryConditionSet) -> tuple[csr_matrix, csr_matrix, np.ndarray, NedelecLegrange2]:
+                        bc_set: MWBoundaryConditionSet) -> tuple[csc_matrix, csc_matrix, np.ndarray, NedelecLegrange2]:
         """Computes the boundary mode analysis matrices
 
         Args:
@@ -313,13 +312,13 @@ class Assembler:
         else:
             # OTHERWISE, COMPUTE
             logger.debug('Assembling matrices')
-            Evec, Bvec, csrmap = tet_mass_stiffness_matrices(field, er, ur, self.cached_csrmap)
-            self.cached_csrmap = csrmap
+            Evec, Bvec, cscmap = tet_mass_stiffness_matrices(field, er, ur, self.cached_cscmap)
+            self.cached_cscmap = cscmap
             self.cached_matrices = (Evec, Bvec)
             
         
         # COMBINE THE MASS AND STIFFNESS MATRIX
-        K: csr_matrix = self.cached_csrmap.to_csr(Evec - Bvec*(K0**2))
+        K: csc_matrix = self.cached_cscmap.to_csc(Evec - Bvec*(K0**2))
 
         NF = field.n_field
 
@@ -330,7 +329,6 @@ class Assembler:
         periodic_bcs: list[Periodic] = [bc for bc in bcs if isinstance(bc, Periodic)]
         
         # PREDEFINE THE FORCING VECTOR CONTAINER
-        b = np.zeros((NF,), dtype=np.complex128)
         port_vectors: dict[int|float, np.ndarray] = {}
         for port in sorted(port_bcs, key=lambda x: x.port_number):
             for mat_index, mode_nr in port._iter_port_numbers():
@@ -413,7 +411,7 @@ class Assembler:
                             mat = abc_order_2_matrix(field, tri_ids, 1j*c2/(K0))
                             Bempty += mat
             
-            K += field.generate_csr(Bempty)
+            K += field.generate_csc(Bempty)
         
         if len(periodic_bcs) > 0:
             logger.debug('Implementing Periodic Boundary Conditions.')
@@ -476,20 +474,22 @@ class Assembler:
             mask[solve_ids] = 1
             mask = mask[keep_indices]
             solve_ids = np.argwhere(mask==1).flatten()
+            Pd = Pmat.getH()
+            K = Pd @ K @ Pmat
+            for key, b in port_vectors.items():
+                port_vectors[key] = Pd @ b
 
         logger.debug(f'Number of tets: {mesh.n_tets:,}')
         logger.debug(f'Number of DoF: {K.shape[0]:,}')
         logger.debug(f'Number of non-zero: {K.nnz:,}')
         
-        simjob = SimJob(K, b, K0*299792458/(2*np.pi), True)
+        simjob = SimJob(K, port_vectors, K0*299792458/(2*np.pi))
         
-        simjob.excitations = port_vectors
         simjob.solve_ids = solve_ids
         simjob._pec_tris = pec_tris
-
+        
         if has_periodic:
             simjob.P = Pmat
-            simjob.Pd = Pmat.getH()
             simjob.has_periodic = has_periodic
 
         return simjob, (er, ur, cond)
@@ -556,13 +556,13 @@ class Assembler:
         else:
             # OTHERWISE, COMPUTE
             logger.debug('Assembling matrices')
-            Evec, Bvec, csrmap = tet_mass_stiffness_matrices(field, er, ur, self.cached_csrmap)
-            self.cached_csrmap = csrmap
+            Evec, Bvec, cscmap = tet_mass_stiffness_matrices(field, er, ur, self.cached_cscmap)
+            self.cached_cscmap = cscmap
             self.cached_matrices = (Evec, Bvec)
             
         
         # COMBINE THE MASS AND STIFFNESS MATRIX
-        K: csr_matrix = self.cached_csrmap.to_csr(Evec - Bvec*(K0**2))
+        K: csc_matrix = self.cached_cscmap.to_csc(Evec - Bvec*(K0**2))
 
         NF = field.n_field
 
@@ -640,7 +640,6 @@ class Assembler:
                         Bempty = assemble_robin_bc(field, Bempty, tri_ids, gamma) # type: ignore
                     else: 
                         Bempty *= 0.0
-                    r2d = 180/np.pi
 
                     if isinstance(bc, ScatteredField):
                         for bf in bc._iter_fields(K0):
@@ -660,7 +659,7 @@ class Assembler:
                             mat = abc_order_2_matrix(field, tri_ids, 1j*c2/(K0))
                             Bempty += mat
             
-            K += field.generate_csr(Bempty)
+            K += field.generate_csc(Bempty)
         
         if len(periodic_bcs) > 0:
             logger.debug('Implementing Periodic Boundary Conditions.')
@@ -723,20 +722,21 @@ class Assembler:
             mask[solve_ids] = 1
             mask = mask[keep_indices]
             solve_ids = np.argwhere(mask==1).flatten()
-
+            Pd = Pmat.getH()
+            K = Pd @ K @ Pmat
+            for key, b in background_fields:
+                background_fields[key] = Pd @ b
+                
         logger.debug(f'Number of tets: {mesh.n_tets:,}')
         logger.debug(f'Number of DoF: {K.shape[0]:,}')
         logger.debug(f'Number of non-zero: {K.nnz:,}')
         
-        simjob = SimJob(K, b, K0*299792458/(2*np.pi), True)
+        simjob = SimJob(K, background_fields, K0*299792458/(2*np.pi), True)
         
-        simjob.excitations = background_fields
         simjob.solve_ids = solve_ids
-        simjob._pec_tris = pec_tris
 
         if has_periodic:
             simjob.P = Pmat
-            simjob.Pd = Pmat.getH()
             simjob.has_periodic = has_periodic
 
         return simjob, (er, ur, cond)
@@ -787,7 +787,9 @@ class Assembler:
         
         logger.debug('Assembling matrices')
         
-        E, B = tet_mass_stiffness_matrices(field, er, ur)
+        E, B, cscmapping = tet_mass_stiffness_matrices(field, er, ur)
+        E = cscmapping.to_csc(E)
+        B = cscmapping.to_csc(B)
         self.cached_matrices = (E, B)
 
         NF = E.shape[0]
@@ -853,7 +855,7 @@ class Assembler:
                         mat = abc_order_2_matrix(field, tri_ids, 1j*c2/k0)
                         Bempty += mat
 
-            B -= field.generate_csr(Bempty) / (k0**2)
+            B -= field.generate_csc(Bempty) / (k0**2)
             del Bempty
         
         if len(periodic) > 0:
@@ -907,16 +909,18 @@ class Assembler:
             mask[solve_ids] = 1
             mask = mask[keep_indices]
             solve_ids = np.argwhere(mask==1).flatten()
+            Pd = Pmat.getH()
+            E = Pd @ E @ Pmat
+            B = Pd @ B @ Pmat
 
         logger.debug(f'Number of tets: {mesh.n_tets}')
         logger.debug(f'Number of DoF: {E.shape[0]}')
-        simjob = SimJob(E, None, frequency, False, B=B)
+        simjob = SimJob(E, None, frequency, B=B)
         
         simjob.solve_ids = solve_ids
 
         if has_periodic:
             simjob.P = Pmat
-            simjob.Pd = Pmat.getH()
             simjob.has_periodic = has_periodic
 
         return simjob, (er, ur, cond)

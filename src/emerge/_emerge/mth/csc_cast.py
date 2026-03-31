@@ -22,16 +22,16 @@
 from __future__ import annotations
 import numpy as np
 from numba import njit, prange, c16, i8, types
-from scipy.sparse import csr_matrix
+from scipy.sparse import csc_matrix
 from dataclasses import dataclass
 
 
 
 @dataclass
-class CSRMapping:
+class CSCMapping:
     indptr: np.ndarray
     indices: np.ndarray
-    csr_map: np.ndarray
+    csc_map: np.ndarray
     N: int
     nnz: int = 0
     
@@ -40,15 +40,15 @@ class CSRMapping:
         self.nnz = self.indices.shape[0]
 
     @staticmethod
-    def from_rowcol(rows, cols, N) -> CSRMapping:
-        return CSRMapping(*precompute_csr_pattern(rows, cols, N), N)
+    def from_rowcol(rows, cols, N) -> CSCMapping:
+        return CSCMapping(*precompute_csc_pattern(cols, rows, N), N)
     
-    def to_csr(self, data: np.ndarray) -> csr_matrix:
-        return csr_matrix((scatter_to_csr(data, self.csr_map, self.nnz), self.indices, self.indptr), shape=(self.N,self.N))
+    def to_csc(self, data: np.ndarray) -> csc_matrix:
+        return csc_matrix((scatter_to_csc(data, self.csc_map, self.nnz), self.indices, self.indptr), shape=(self.N,self.N))
     
 
 @njit(types.Tuple((i8[:], i8[:], i8[:]))(i8[:], i8[:], i8), nogil=True, cache=True, parallel=False)
-def precompute_csr_pattern(rows, cols, N) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def precompute_csc_pattern(cols, rows, N) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """One-time precomputation: builds CSR structure and a mapping
     from each COO entry to its position in the CSR data array.
     
@@ -60,32 +60,32 @@ def precompute_csr_pattern(rows, cols, N) -> tuple[np.ndarray, np.ndarray, np.nd
     Returns:
         indptr: CSR row pointer array (length N+1)
         indices: CSR column index array (length nnz, deduplicated)
-        csr_map: for each COO entry k, csr_map[k] is the index into
+        csc_map: for each COO entry k, csc_map[k] is the index into
                  the CSR data array where that entry accumulates.
     """
-    nnz_coo = rows.shape[0]
+    nnz_coo = cols.shape[0]
     
     # --- Pass 1: count unique (row, col) pairs per row ---
     # Sort COO entries by (row, col) using radix-style approach:
     # first, count entries per row
-    row_offsets = np.zeros(N + 1, dtype=np.int64)
+    col_offsets = np.zeros(N + 1, dtype=np.int64)
     for k in range(nnz_coo):
-        row_offsets[rows[k]+1] += 1
+        col_offsets[cols[k]+1] += 1
     
     max_counts = 0
     # Build row offsets for a row-sorted permutation
     for i in range(1, N+1):
-        row_offsets[i] = row_offsets[i-1] + row_offsets[i]
-        diff = row_offsets[i]-row_offsets[i-1]
+        col_offsets[i] = col_offsets[i-1] + col_offsets[i]
+        diff = col_offsets[i]-col_offsets[i-1]
         if diff > max_counts:
             max_counts = diff
     
     # Scatter into row-sorted order
     # Perm tells where to place the next entry in the COO matrix
     perm = np.empty(nnz_coo, dtype=np.int32)
-    cursor = row_offsets.copy()
+    cursor = col_offsets.copy()
     for k in range(nnz_coo):
-        r = rows[k]
+        r = cols[k]
         perm[cursor[r]] = k
         cursor[r] += 1
     
@@ -96,14 +96,14 @@ def precompute_csr_pattern(rows, cols, N) -> tuple[np.ndarray, np.ndarray, np.nd
     local_cols = np.empty(max_counts, dtype=np.int64)
     local_perm = np.empty(max_counts, dtype=np.int64)
     for i in range(N):
-        start = row_offsets[i]
-        end = row_offsets[i + 1]
+        start = col_offsets[i]
+        end = col_offsets[i + 1]
         if start == end:
             continue
         count = end - start
         
         for j in range(count):
-            local_cols[j] = cols[perm[start + j]]
+            local_cols[j] = rows[perm[start + j]]
             local_perm[j] = j
 
         # Insertion sort on local_cols (and track the permutation)
@@ -131,18 +131,18 @@ def precompute_csr_pattern(rows, cols, N) -> tuple[np.ndarray, np.ndarray, np.nd
     
     total_nnz = indptr[N]
     indices = np.empty(total_nnz, dtype=np.int64)
-    csr_map = np.empty(nnz_coo, dtype=np.int64)
+    csc_map = np.empty(nnz_coo, dtype=np.int64)
     
     # --- Pass 3: fill indices and csr_map ---
     for i in range(N):
-        start = row_offsets[i]
-        end = row_offsets[i + 1]
+        start = col_offsets[i]
+        end = col_offsets[i + 1]
         if start == end:
             continue
         count = end - start
 
         for j in range(count):
-            local_cols[j] = cols[perm[start + j]]
+            local_cols[j] = rows[perm[start + j]]
             local_perm[j] = j
         
         # Same insertion sort
@@ -158,21 +158,21 @@ def precompute_csr_pattern(rows, cols, N) -> tuple[np.ndarray, np.ndarray, np.nd
             local_perm[m + 1] = key_p
         
         # Walk sorted entries, assign CSR positions
-        csr_pos = indptr[i]
-        indices[csr_pos] = local_cols[0]
-        csr_map[perm[start + local_perm[0]]] = csr_pos
+        csc_pos = indptr[i]
+        indices[csc_pos] = local_cols[0]
+        csc_map[perm[start + local_perm[0]]] = csc_pos
         
         for j in range(1, count):
             if local_cols[j] != local_cols[j - 1]:
-                csr_pos += 1
-                indices[csr_pos] = local_cols[j]
-            csr_map[perm[start + local_perm[j]]] = csr_pos
+                csc_pos += 1
+                indices[csc_pos] = local_cols[j]
+            csc_map[perm[start + local_perm[j]]] = csc_pos
     
-    return indptr, indices, csr_map
+    return indptr, indices, csc_map
 
 
 @njit(c16[:](c16[:], i8[:], i8), nogil=True, cache=True, parallel=True)
-def scatter_to_csr(data_coo, csr_map, nnz):
+def scatter_to_csc(data_coo, csr_map, nnz):
     """Scatter COO values into CSR data array, summing duplicates.
     
     Args:
