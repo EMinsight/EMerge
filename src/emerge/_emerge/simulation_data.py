@@ -317,6 +317,14 @@ class BaseDataset(Generic[T,M], Saveable):
         return self._datatype._fields # type: ignore
     
     @property
+    def n(self) -> int:
+        return len(self._data_entries)
+    
+    def iter(self) -> Generator[T, None, None]:
+        for item in self._data_entries:
+            yield item
+            
+    @property
     def _copy(self) -> list[str]:
         return self._datatype._copy # type: ignore
 

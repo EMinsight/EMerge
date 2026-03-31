@@ -26,7 +26,7 @@ from ....settings import Settings
 from scipy.sparse import csr_matrix
 from loguru import logger
 from ..simjob import SimJob
-
+from .. import background_field as bf
 from ....const import MU0, EPS0, C0
 import math
 
@@ -624,6 +624,7 @@ class Assembler:
         
             gauss_points = gaus_quad_tri(4)
             Bempty = field.empty_tri_matrix()
+            
             for bc in robin_bcs:
                 logger.trace(f'.Implementing {bc}')
                 for tag in bc.tags:
@@ -635,15 +636,21 @@ class Assembler:
                     gamma = bc.get_gamma(K0)
                     logger.trace(f'..robin bc γ={gamma:.3f}')
                     
-                    Bempty = assemble_robin_bc(field, Bempty, tri_ids, gamma) # type: ignore
-                    
-                    if bc._include_force and bc.driven and isinstance(bc, ScatteredField):
-                        for (theta,phi), Ufunc, Ufunc_curl in bc._iter_fields(K0):
-                            Ufunc, Ufunc_curl = bc.gen_Uinc(K0)
+                    if not bc.pml:
+                        Bempty = assemble_robin_bc(field, Bempty, tri_ids, gamma) # type: ignore
+                    else: 
+                        Bempty *= 0.0
+                    r2d = 180/np.pi
+
+                    if isinstance(bc, ScatteredField):
+                        for bf in bc._iter_fields(K0):
                             normals = field.mesh.outward_normals(tri_ids)
-                            b_p = assemble_robin_bc_bvec_scat(field, tri_ids, Ufunc, Ufunc_curl, gauss_points, normals) # type: ignore
-                            background_fields[(theta,phi)] = b_p # type: ignore
-                            logger.trace(f'..included force vector term with norm {np.linalg.norm(b_p):.3f}')
+                            b_p = assemble_robin_bc_bvec_scat(field, tri_ids, bf.Uinc, bf.Uinc_curl, gauss_points, normals) # type: ignore
+                            if bf in background_fields:
+                                background_fields[bf] += b_p
+                            else:
+                                background_fields[bf] = b_p # type: ignore
+                            logger.debug(f'.. Background field {bf} {np.linalg.norm(b_p):.3f}')
                     
                     ## Second order absorbing boundary correction
                     if bc._isabc:
@@ -723,7 +730,7 @@ class Assembler:
         
         simjob = SimJob(K, b, K0*299792458/(2*np.pi), True)
         
-        simjob.excitations = {1: scatter_bcs}
+        simjob.excitations = background_fields
         simjob.solve_ids = solve_ids
         simjob._pec_tris = pec_tris
 

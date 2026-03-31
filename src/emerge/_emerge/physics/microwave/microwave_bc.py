@@ -31,7 +31,7 @@ from ...periodic import PeriodicCell, HexCell, RectCell
 from emsutil import Material, AIR, Saveable
 from ...const import Z0, C0, EPS0, MU0
 from ...logsettings import DEBUG_COLLECTOR
-
+from . import background_field as bf
 
 
 ############################################################
@@ -118,7 +118,7 @@ class MWBoundaryConditionSet(BoundaryConditionSet):
         for port in ports:
             for mat_index, mode_nr in port._iter_port_numbers():
                 yield port, mat_index, mode_nr
-        
+    
     # Checks
     def _is_excited(self) -> bool:
         for bc in self.boundary_conditions:
@@ -1308,7 +1308,7 @@ class ScatteredField(RobinBC, Saveable):
     
     def __init__(self, 
                  face: FaceSelection | GeoSurface,
-                 power: float = 1.0,
+                 power_density: float = 1.0/(2*Z0),
                  cs: CoordinateSystem | None = None):
         """Creates a user defined port field
         
@@ -1331,16 +1331,15 @@ class ScatteredField(RobinBC, Saveable):
         if cs is None:
             cs = GCS
         self.cs = cs
-        self.power: float = power
         self.order = 1
+        self.pml: bool = False
         self.abctype = 'A'
         self.radius: float = None
-        
-        E0 = (Z0*2)**0.5
-        
         self.thetas: list[float] = [0.0,]
         self.phis: list[float] = [0.0,]
         self.polarizations: list[float] = [0.0,]
+        self.E0: float = (power_density*2*Z0)**0.5
+        self.defintion: bf.DEFINITIONS = 'EA'
         
 
     def get_basis(self) -> np.ndarray:
@@ -1353,26 +1352,22 @@ class ScatteredField(RobinBC, Saveable):
         return self.type
     
     def get_amplitude(self, k0: float) -> float:
-        return np.sqrt(self.power)
+        return self.E0
 
     def get_beta(self, k0: float) -> float:
         ''' Return the out of plane propagation constant. βz.'''
-        return self._fkz(k0)
+        return k0
     
-    def _iter_fields(self, k0: float) -> tuple[Callable, Callable]:
-        for (t,p) in [(t,p) for t in self.thetas for p in self.phis]:
-            def Ufunc(x,y,z): 
-                return self.get_Uinc(x,y,z,k0)
-            def Ufunc_curl(x,y,z):
-                return self.get_Uinc(x,y,z,k0, mode_nr=1, which='curl')
-            
-            return (t,p), Ufunc, Ufunc_curl
+    def _iter_fields(self, k0: float) -> Generator[bf.BackgroundField,None,None]:
+        from itertools import product
+        for (theta,phi,psi) in product(self.thetas, self.phis, self.polarizations):
+            yield bf.BackgroundField(k0, theta, phi, psi, self.cs.origin, self.E0, self.defintion)
 
     @property
     def curvature(self) -> float:
         if self.radius is None:
             return 0
-        return 1/self.radius
+        return 1/(2*self.radius)
     
     def get_gamma(self, k0: float) -> complex:
         """Computes the γ-constant for matrix assembly. This constant is required for the Robin boundary condition.
@@ -1384,51 +1379,6 @@ class ScatteredField(RobinBC, Saveable):
             complex: The γ-constant
         """
         return (1j*self.get_beta(k0) + self.curvature)
-    
-    def field_f(self, x: np.ndarray,
-                      y: np.ndarray,
-                      z: np.ndarray,
-                      theta: float,
-                      phi: float,
-                      k0: float) -> np.ndarray:
-        pass
-        
-    def port_mode_3d(self, 
-                     x_local: np.ndarray,
-                     y_local: np.ndarray,
-                     k0: float,
-                     which: Literal['E','H','curl'] = 'E',
-                     mode_nr: int = 1) -> np.ndarray:
-        x_global, y_global, z_global = self.cs.in_global_cs(x_local, y_local, 0*x_local)
-
-        Egxyz = self.port_mode_3d_global(x_global,y_global,z_global,k0,which=which)
-        
-        Ex, Ey, Ez = self.cs.in_local_basis(Egxyz[0,:], Egxyz[1,:], Egxyz[2,:])
-
-        Exyz = np.array([Ex, Ey, Ez])
-        return Exyz
-
-    def port_mode_3d_global(self, 
-                            x_global: np.ndarray,
-                            y_global: np.ndarray,
-                            z_global: np.ndarray,
-                            k0: float,
-                            which: Literal['E','H'] = 'E',
-                            mode_nr: int = 1) -> np.ndarray:
-        '''Compute the port mode field for global xyz coordinates.'''
-        if which == 'E':
-            xl, yl, _ = self.cs.in_local_cs(x_global, y_global, z_global)
-            Ex = self._fex(k0, x_global, y_global, z_global)
-            Ey = self._fey(k0, x_global, y_global, z_global)
-            Ez = self._fez(k0, x_global, y_global, z_global)
-            Exg, Eyg, Ezg = self.cs.in_global_basis(Ex, Ey, Ez)
-        elif which == 'curl':
-            xl, yl, _ = self.cs.in_local_cs(x_global, y_global, z_global)
-            Ex = self._fex_curl(k0, x_global, y_global, z_global)
-            Ey = self._fey_curl(k0, x_global, y_global, z_global)
-            Ez = self._fez_curl(k0, x_global, y_global, z_global)
-            Exg, Eyg, Ezg = self.cs.in_global_basis(Ex, Ey, Ez)
-        return np.array([Exg, Eyg, Ezg])
     
 
 class LumpedPort(PortBC, Saveable):

@@ -7,7 +7,6 @@ from .logsettings import LOG_CONTROLLER, DEBUG_COLLECTOR, _LOG_BUFFER
 from .geometry import _GEOMANAGER, _GENERATOR
 from loguru import logger
 from .geo.pcb import _NAME_MANAGER
-
 def cleanup() -> None:
     """ Cleanup all global states used in EMerge."""
     logger.info('Cleaning up EMerge global states')

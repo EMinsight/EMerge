@@ -98,7 +98,7 @@ class SimJob:
             A = self.load_if_needed('A')
 
             aux = {
-                'Active port': str(key),
+                'Active Excitation': str(key),
             }
 
             if self.has_periodic:

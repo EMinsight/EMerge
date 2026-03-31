@@ -56,7 +56,7 @@ def open_region(xmargin: float | tuple[float, float],
     D = y2-y1 + ym1 + ym2
     H = z2-z1 + zm1 + zm2
 
-    return Box(W,D,H, position=(x1-xm1, y1-ym1, z1-zm1), name='OpenRegion').set_material(material)
+    return Box(W,D,H, position=(x1-xm1, y1-ym1, z1-zm1), name='OpenRegion').set_material(material).background()
 
 
 def open_pml_region(xmargin: float | tuple[float, float],

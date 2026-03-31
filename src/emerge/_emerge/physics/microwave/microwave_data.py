@@ -32,6 +32,7 @@ from ...const import MU0
 from ...coord import Line
 from emsutil.emdata import EHField, EHFieldFF, DataStructure
 from ...file import Saveable
+from . import background_field as bf
 
 EMField = Literal[
     "er", "ur", "freq", "k0",
@@ -327,6 +328,7 @@ class PortProperties(Saveable):
     mode_number: int = 1
     smat_index: int | float = 1
 
+
 class MWData(Saveable):
     scalar: BaseDataset[MWScalar, MWScalarNdim]
     field:   BaseDataset[MWField, None]
@@ -438,6 +440,7 @@ class MWField(Saveable):
         self.excitation: dict[int | float, complex] = dict()
         self.Nports: int = None
         self.port_modes: list[PortProperties] = []
+        self.background_fields: list[bf.BackgroundField] = []
         self.Ex: np.ndarray = None
         self.Ey: np.ndarray = None
         self.Ez: np.ndarray = None
@@ -447,6 +450,7 @@ class MWField(Saveable):
         self.er: np.ndarray = None
         self.ur: np.ndarray = None
         self.sig: np.ndarray = None
+        self._rel: bool = False
 
     def add_port_properties(self, 
                             port_number: int,
@@ -464,6 +468,9 @@ class MWField(Saveable):
                                               Z0=Z0,
                                               Pout=Pout))
     
+    def add_field_properties(self, field: bf.BackgroundField):
+        self.background_fields.append(field)
+
     @property
     def mesh(self) -> Mesh3D:
         return self.basis.mesh
@@ -476,12 +483,41 @@ class MWField(Saveable):
     def _field(self) -> np.ndarray:
         if self._mode_field is not None:
             return self._mode_field
-        return sum([self.excitation[mode.smat_index]*self._fields[mode.smat_index] for mode in self.port_modes]) # type: ignore
+        
+        if len(self.port_modes) > 0:
+            return sum([self.excitation[mode.smat_index]*self._fields[mode.smat_index] for mode in self.port_modes]) # type: ignore
+        
+        elif len(self.background_fields) > 0:
+            return sum([self.excitation[mode]*self._fields[mode] for mode in self.background_fields])
+    
+    @property
+    def relative(self) -> MWData:
+        self._rel = True
+        return self
+    
+    def backE(self, x: np.ndarray, y: np.ndarray, z: np.ndarray, mask) -> np.ndarray:
+        out = np.zeros((3, x.shape[0]), dtype=np.complex128)
+        out[:,~mask] = np.nan
+        for field in self.background_fields:
+            out[:,mask] += self.excitation[field] * field.E(x,y,z)[:,mask]
+        return out
+    
+    def backH(self, x: np.ndarray, y: np.ndarray, z: np.ndarray, mask) -> np.ndarray:
+        out = np.zeros((3, x.shape[0]), dtype=np.complex128)
+        out[:,~mask] = np.nan
+        for field in self.background_fields:
+            out[:,mask] += self.excitation[field] * field.H(x,y,z)[:,mask]
+        return out
     
     def set_field_vector(self) -> None:
         """Defines the default excitation coefficients for the current dataset as an excitation of only port 1."""
         self.excitation = {key: 0.0 for key in self._fields.keys()}
-        self.excitation[self.port_modes[0].smat_index] = 1.0 + 0j
+        
+        # Freq sweep with ports
+        if len(self.port_modes) > 0:
+            self.excitation[self.port_modes[0].smat_index] = 1.0 + 0.j
+        elif len(self.background_fields) > 0:
+            self.excitation[self.background_fields[0]] = 1.0 + 0.0j
 
     def excite_port(self, number: int | float, excitation: complex = 1.0 + 0.0j) -> None:
         """Excite a single port provided by a given port number
@@ -537,6 +573,12 @@ class MWField(Saveable):
         zf = zs.flatten()
         logger.info(f'Interpolating {xf.shape[0]} field points')
         Ex, Ey, Ez = self.basis.interpolate(self._field, xf, yf, zf, usenan=usenan)
+        mask = ~np.isnan(Ex)
+        if self._rel:
+            Eb = self.backE(xf,xf,xf,mask)
+            Ex = Ex - Eb[0,:]
+            Ey = Ey - Eb[1,:]
+            Ez = Ez - Eb[2,:]
         logger.debug('E Interpolation complete')
         self.Ex = Ex.reshape(shp)
         self.Ey = Ey.reshape(shp)
@@ -545,6 +587,11 @@ class MWField(Saveable):
         
         constants = 1/ (-1j*2*np.pi*self.freq*(self._dur*MU0) )
         Hx, Hy, Hz = self.basis.interpolate_curl(self._field, xf, yf, zf, constants, usenan=usenan)
+        if self._rel:
+            Hb = self.backH(xf,xf,xf,mask)
+            Hx = Hx - Hb[0,:]
+            Hy = Hy - Hb[1,:]
+            Hz = Hz - Hb[2,:]
         logger.debug('H Interpolation complete')
         ids = self.basis.interpolate_index(xf, yf, zf)
         
@@ -563,6 +610,7 @@ class MWField(Saveable):
                           _H=np.array([self.Hx, self.Hy, self.Hz]),
                           x=xs, y=ys, z=zs,
                           freq=self.freq, er=self.er, ur=self.ur, sig=self.sig)
+        self._rel = False
         return ehfield
     
     def _solution_quality(self, solve_ids: np.ndarray) -> tuple[np.ndarray, np.ndarray]:

@@ -18,7 +18,7 @@
 # Last Cleanup: 2026-03-04
 from ...mesher import Mesher
 from emsutil import Material
-from ...mesh3d import Mesh3D, SurfaceMesh
+from ...mesh3d import Mesh3D
 from ...coord import Line
 from ...geometry import GeoSurface, GeoVolume
 from ...elements.femdata import FEMBasis
@@ -30,7 +30,7 @@ from ...settings import Settings
 from ...simstate import SimState
 from ...logsettings import DEBUG_COLLECTOR
 
-from .microwave_bc import MWBoundaryConditionSet, PEC, ModalPort, LumpedPort, PortBC
+from .microwave_bc import MWBoundaryConditionSet, PEC, ModalPort, LumpedPort, PortBC, ScatteredField
 from .microwave_data import MWData
 from .assembly.assembler import Assembler
 from .port_functions import compute_avg_power_flux
@@ -38,7 +38,7 @@ from .simjob import SimJob
 
 from concurrent.futures import ThreadPoolExecutor
 from loguru import logger
-from typing import Callable, Literal, Any, Generator
+from typing import Callable, Literal, Any
 import multiprocessing as mp
 from cmath import sqrt as csqrt
 from itertools import product
@@ -1460,7 +1460,7 @@ class Microwave3D:
         # Post Processing
         # --------------------------------------------------------------------
         
-        self._post_process(results, material_set)
+        self._post_process_scatter(results, material_set)
         self._completed = True
         return self.data
     
@@ -1789,6 +1789,74 @@ class Microwave3D:
         logger.info(f'Elapsed time = {(self._simend-self._simstart):.2f} seconds.')
         self._state.set_modified()
     
+    def _post_process_scatter(self, results: list[SimJob], materials: list[tuple[np.ndarray, np.ndarray, np.ndarray]]):
+        """Compute the S-parameters after Frequency sweep
+
+        Args:
+            results (list[SimJob]): The set of simulation results
+            er (np.ndarray): The domain εᵣ
+            ur (np.ndarray): The domain μᵣ
+            cond (np.ndarray): The domain conductivity
+        """
+        
+        if self.basis is None:
+            raise SimulationError('Cannot post-process. Simulation basis function is undefined.')
+        
+        mesh = self.mesh
+        logger.info('Computing S-parameters')
+        
+        not_conserved = False
+        conserve_margin = 0.0
+        single_corr = self._settings.mw_cap_sp_single
+        col_corr = self._settings.mw_cap_sp_col
+        recip_corr = self._settings.mw_recip_sp
+        
+        ertri = np.zeros((3,3,self.mesh.n_tris), dtype=np.complex128)
+        urtri = np.zeros((3,3,self.mesh.n_tris), dtype=np.complex128)
+        condtri = np.zeros((self.mesh.n_tris,), dtype=np.complex128)
+        
+        scatter_bc: ScatteredField = self.bc.oftype(ScatteredField)[0]
+
+        for job, mats in zip(results, materials):
+            freq = job.freq
+            er, ur, cond = mats
+            
+            er_scal = (er[0,0,:] + er[1,1,:] + er[2,2,:])/3
+            ur_scal = (ur[0,0,:] + ur[1,1,:] + ur[2,2,:])/3
+            cond_scal = (cond[0,0,:] + cond[1,1,:] + cond[2,2,:])/3
+            
+            ertri[:,:,:] = er[:,:, self.mesh.tri_to_tet[0,:]]
+            urtri[:,:,:] = ur[:,:, self.mesh.tri_to_tet[0,:]]
+            condtri[:] = cond[0,0, self.mesh.tri_to_tet[0,:]]
+                
+            k0 = 2*np.pi*freq/299792458
+
+            scalardata = self.data.scalar.new(freq=freq, **self._params)
+            scalardata.k0 = k0
+            scalardata.freq = freq
+            
+            fielddata = self.data.field.new(freq=freq, **self._params)
+            fielddata.freq = freq
+            fielddata._der = np.squeeze(er_scal)
+            fielddata._dur = np.squeeze(ur_scal)
+            fielddata._dsig = np.squeeze(cond_scal)
+            fielddata._fields = job._fields
+            fielddata.basis = self.basis
+
+            logger.info(f'Post Processing simulation frequency = {freq/1e9:.3f} GHz') 
+
+            # Recording port information
+            i = 1
+            for bf in scatter_bc._iter_fields(k0):
+               fielddata.add_field_properties(bf)
+               i += 1
+            
+            fielddata.set_field_vector()
+        logger.info('Simulation Complete!')
+        self._simend = time.time()    
+        logger.info(f'Elapsed time = {(self._simend-self._simstart):.2f} seconds.')
+        self._state.set_modified()
+
     def _compute_s_data(self, 
                         bc: PortBC, 
                         mode_nr: int,
