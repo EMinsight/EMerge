@@ -206,6 +206,7 @@ class CuDSSInterface(metaclass=Singleton):
         """
         cudss.matrix_set_values(self.A_cobj, _c_pointer(self._VAL))
         
+    def _update_rhs_data(self):
         self.b_cobj = cudss.matrix_create_dn(self.N, 1, self.N, _c_pointer(self.b_cu),
                                     int(self.VTYPE), int(cudss.Layout.COL_MAJOR))
         self.x_cobj = cudss.matrix_create_dn(self.N, 1, self.N, _c_pointer(self.x_cu),
@@ -225,9 +226,9 @@ class CuDSSInterface(metaclass=Singleton):
             int(self.MVIEW),
             int(INDEX_BASE),
         )
-
         self.b_cobj = cudss.matrix_create_dn(self.N, 1, self.N, _c_pointer(self.b_cu),
                                     int(self.VTYPE), int(cudss.Layout.COL_MAJOR))
+
         self.x_cobj = cudss.matrix_create_dn(self.N, 1, self.N, _c_pointer(self.x_cu),
                                     int(self.VTYPE), int(cudss.Layout.COL_MAJOR))
 
@@ -242,6 +243,8 @@ class CuDSSInterface(metaclass=Singleton):
             np.ndarray: The solved vector
         """
         self.submit_matrix(A)
+        self.submit_vector(np.zeros((A.shape[0],), dtype=np.complex128))
+        self.create_solvec()
         self._create_dss_data()
         self._symbolic()
 
@@ -256,11 +259,10 @@ class CuDSSInterface(metaclass=Singleton):
             np.ndarray: The solved vector
         """
         self.submit_matrix(A)
+        self.submit_vector(np.zeros((A.shape[0],), dtype=np.complex128))
+        self.create_solvec()
         self._update_dss_data()
-        if A is None:
-            self._numeric(False)
-        else:
-            self._numeric(True)
+        self._numeric(True)
 
     def solve(self, b: np.ndarray) -> np.ndarray:
         """Solves Ax=b only with a new b vector.
@@ -274,6 +276,7 @@ class CuDSSInterface(metaclass=Singleton):
         """
         self.submit_vector(b)
         self.create_solvec()
+        self._update_rhs_data()
         return self._solve()
 
     def _symbolic(self):
