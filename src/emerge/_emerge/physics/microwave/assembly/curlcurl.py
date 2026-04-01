@@ -21,6 +21,7 @@ import numpy as np
 from ....elements import Nedelec2
 from ....mth.optimized import local_mapping, matinv, dot_c, cross_c, compute_distances
 from ....mth.csc_cast import CSCMapping
+from ....mth.csr_cast import CSRMapping
 from numba import c16, types, f8, i8, njit, prange, void
 
 
@@ -251,7 +252,7 @@ def tet_coefficients_bcd_opt(xs: np.ndarray, ys: np.ndarray, zs: np.ndarray) -> 
 def tet_mass_stiffness_matrices(field: Nedelec2,
                                 er: np.ndarray, 
                                 ur: np.ndarray, 
-                                csrmap: CSCMapping | None = None) -> tuple[np.ndarray, np.ndarray, CSCMapping]:
+                                cscmap: CSRMapping | None = None) -> tuple[np.ndarray, np.ndarray, CSRMapping]:
     """Computes the curl-curl Nedelec-2 mass and stiffness matrices
 
     Args:
@@ -272,9 +273,9 @@ def tet_mass_stiffness_matrices(field: Nedelec2,
 
 
     dataE, dataB, rows, cols = _matrix_builder(nodes, tets, tris, edges, field.mesh.edge_lengths, tet_to_field, tet_to_edge, ur, er)
-    if csrmap is None:
-        csrmap = CSCMapping.from_rowcol(rows, cols, field.n_field)
-    return dataE, dataB, csrmap
+    if cscmap is None:
+        cscmap = CSCMapping.from_rowcol(rows, cols, field.n_field)
+    return dataE, dataB, cscmap
 
 
 ############################################################

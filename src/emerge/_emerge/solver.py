@@ -17,7 +17,7 @@
 
 # Last Cleanup: 2025-01-01
 from __future__ import annotations
-from scipy.sparse import csc_matrix # type: ignore
+from scipy.sparse import csc_matrix, coo_matrix, csr_matrix, save_npz# type: ignore
 from scipy.sparse.csgraph import reverse_cuthill_mckee # type: ignore
 from scipy.sparse.linalg import bicgstab, gmres, gcrotmk, eigs, splu # type: ignore
 from scipy.linalg import eig # type: ignore
@@ -320,8 +320,8 @@ def complex_to_real_block(A, b):
 def real_to_complex_block(x):
     """Return x = (x_r, x_i) as complex vector."""
     n = x.shape[0] // 2
-    x_r = x[:n]
-    x_i = x[n:]
+    x_r = x[:n,:]
+    x_i = x[n:,:]
     return x_r + 1j * x_i
 
 
@@ -633,7 +633,7 @@ class SolverSuperLU(Solver):
         self.single = True
         logger.trace(self.pre + 'Computing LU-Decomposition')
         self.lu = splu(A, permc_spec='MMD_AT_PLUS_A', relax=0, diag_pivot_thresh=self._pivoting_threshold, options=self.options)
-        x = self.lu.solve(b.T).T
+        x = self.lu.solve(b)
         aux = {
             "pivoting threshold": str(self._pivoting_threshold)
         }
@@ -703,9 +703,9 @@ class SolverUMFPACK(Solver):
         self.umfpack.numeric(A)
         logger.trace(f'{_pfx(self.pre,id)} Solving linear system.')
         x = np.zeros_like(b)
-        for i in range(b.shape[0]):
+        for i in range(b.shape[1]):
             logger.trace(f'{_pfx(self.pre,id)} Solving RHS {i}')
-            x[i,:] = self.umfpack.solve(um.UMFPACK_A, A, b[i,:], autoTranspose = False ) # ty: ignore
+            x[:,i] = self.umfpack.solve(um.UMFPACK_A, A, b[:,i], autoTranspose = False ) # ty: ignore
         aux = {
             "Pivoting Threshold": str(self._pivoting_threshold),
         }
@@ -758,9 +758,9 @@ class SolverMUMPS(Solver):
             self.A = A
         logger.trace(f'{_pfx(self.pre,id)} Solving linear system.')
         x = np.zeros_like(b)
-        for i in range(x.shape[0]):
+        for i in range(x.shape[1]):
             logger.trace(f'{_pfx(self.pre,id)} Solve RHS {i}.')
-            x[i,:], _ = self.mumps.solve(b[i,:]) # ty: ignore
+            x[:,i], _ = self.mumps.solve(b[:,i]) # ty: ignore
         return x, SolveReport(solver=str(self), exit_code=0)
 
 
@@ -803,21 +803,22 @@ class SolverAASDS(Solver):
         new_solver = self.__class__(self.pre)
         return new_solver
 
-    def solve(self, A, b, precon, id: int = -1) -> tuple[np.ndarray, SolveReport]:
-        logger.info(f'{_pfx(self.pre,id)} Calling Apple Accelerate Solver.')
+    def solve(self, A: csc_matrix, b, precon, id: int = -1) -> tuple[np.ndarray, SolveReport]:
         if self.fact_symb is False:
-            logger.trace(f'{_pfx(self.pre,id)} Executing symbollic factorization.')
+            logger.trace(f'{_pfx(self.pre,id)} Executing symbolic factorization.')
             self.aasds.analyse(A)
             self.fact_symb = True
-
-        logger.trace(f'{_pfx(self.pre,id)} Executing numeric factorization.')
-        self.aasds.factorize(A)
-        self.A = A
+        if True:
+            logger.trace(f'{_pfx(self.pre,id)} Executing numeric factorization.')
+            self.aasds.factorize(A)
+            self.A = A
         logger.trace(f'{_pfx(self.pre,id)} Solving linear system.')
         x = np.zeros_like(b)
-        for i in range(x.shape[0]):
-            logger.trace(f'{_pfx(self.pre,id)} Solving RHS {i}')
-            x[i,:], _ = self.aasds.solve(b[i,:]) # ty: ignore
+        for i in range(x.shape[1]):
+            logger.trace(f'{_pfx(self.pre,id)} Solve RHS {i}.')
+            x[:,i], _ = self.aasds.solve(b[:,i])
+
+       #
         return x, SolveReport(solver=str(self), exit_code=0)
 
 class SolverPardiso(Solver):
@@ -846,7 +847,7 @@ class SolverPardiso(Solver):
         self.solver.clear_memory()
         
     def solve(self, A: csc_matrix, b, precon, id: int = -1) -> tuple[np.ndarray, SolveReport]:
-        A = A.tocsr()
+        
         logger.info(f'{_pfx(self.pre,id)} Calling Pardiso Solver')
         if self.fact_symb is False:
             logger.trace(f'{_pfx(self.pre,id)} Executing symbollic factorization.')
@@ -859,9 +860,9 @@ class SolverPardiso(Solver):
         
         logger.trace(f'{_pfx(self.pre,id)} Solving linear system.')
         x = np.zeros_like(b)
-        for i in range(x.shape[0]):
+        for i in range(x.shape[1]):
             logger.trace(f'{_pfx(self.pre,id)} Solving RHS {i}')
-            x[i,:], error = self.solver.solve(A, b[i,:])
+            x[:,i], error = self.solver.solve(A, b[:,i])
         
         if error != 0:
             logger.error(f'{_pfx(self.pre,id)} Terminated with error code {error}')
@@ -911,8 +912,8 @@ class SolverCuDSS(Solver):
         x = self._cudss.numeric(None)
         logger.trace(f'{_pfx(self.pre,id)} Solving linear system.')
         x = np.zeros_like(b)
-        for i in range(b.shape[0]):
-            x[i,:] = self._cudss.solve(b[i,:])
+        for i in range(b.shape[1]):
+            x[:,i] = self._cudss.solve(b[:,i])
         
         return x, SolveReport(solver=str(self), exit_code=0, aux={})
 
@@ -1487,7 +1488,7 @@ class SolveRoutine:
         symmetry, is_symmetric = is_numerically_complex_symmetric(A, self.symmetry_limit)
         logger.debug(f'Matrix complex symmetric = {is_symmetric} with tolerance = {symmetry:.5f}')
         if b.ndim == 1:
-            b = b.reshape((1, b.shape[0]))
+            b = b.reshape((b.shape[0],1))
         solver: Solver = self._get_solver(A, b)
         
         solver.initialize()
@@ -1495,10 +1496,10 @@ class SolveRoutine:
         
         NF = A.shape[0]
         NS = solve_ids.shape[0]
-        NB = b.shape[0]
+        NB = b.shape[1]
         
         Asel = A[:, solve_ids][solve_ids,:]
-        bsel = b[:,solve_ids]
+        bsel = b[solve_ids,:]
         nnz = Asel.nnz
 
         logger.debug(f'{_pfx(self.pre,id)} Removed {NF-NS} prescribed DOFs ({NS:,} left, {nnz:,}≠0)')
@@ -1540,9 +1541,9 @@ class SolveRoutine:
             logger.debug(f'{_pfx(self.pre,id)} Converting back to complex matrix')
             x = real_to_complex_block(x)
 
-        solution = np.zeros((NB, NF), dtype=np.complex128)
+        solution = np.zeros((NF,NB), dtype=np.complex128)
         
-        solution[:,solve_ids] = x
+        solution[solve_ids,:] = x
 
         logger.debug(f'{_pfx(self.pre,id)} Solver complete!')
         report.jobid = id

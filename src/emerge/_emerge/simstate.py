@@ -24,6 +24,7 @@ from typing import Any
 import numpy as np
 from .selection import _CALC_INTERFACE
 import gmsh
+from pathlib import Path
 
 class _SimStateCollection:
     
@@ -54,8 +55,9 @@ _GLOBAL_SIMSTATES = _SimStateCollection()
 
 class SimState:
     
-    def __init__(self, modelname: str):
+    def __init__(self, modelname: str, modelpath: Path):
         self.modelname: str = modelname
+        self.modelpath: Path = modelpath
         self.mesh: Mesh3D = Mesh3D()
         self.geos: list[GeoObject] = []
         self.data: SimulationDataset = SimulationDataset()

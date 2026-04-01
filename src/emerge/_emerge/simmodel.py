@@ -118,7 +118,7 @@ class Simulation:
         self.mesher: Mesher = Mesher()
         self.modeler: Modeler = Modeler()
         
-        self.state: SimState = SimState(self.modelname)
+        self.state: SimState = SimState(self.modelname, self.modelpath)
         self.select: Selector = Selector()
         self.settings: Settings = DEFAULT_SETTINGS
         self.opt: Optimizer = Optimizer()

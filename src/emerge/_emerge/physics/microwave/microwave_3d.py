@@ -953,9 +953,9 @@ class Microwave3D:
     def run_sweep(self, 
                 parallel: bool = False,
                 n_workers: int = 2, 
-                harddisc_threshold: int | None = None,
                 harddisc_path: str = 'EMergeSparse',
                 frequency_groups: int = -1,
+                cache_harddisk: bool = False,
                 multi_processing: bool = False,
                 automatic_modal_analysis: bool = True) -> MWData:
         """Executes a frequency domain study
@@ -1001,7 +1001,7 @@ class Microwave3D:
         results: list[SimJob] = []
         material_set: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
         job_counter: int = 1
-        
+        harddisc_path = str(self._state.modelpath / harddisc_path)
         # --------------------------------------------------------------------
         # Checks
         # --------------------------------------------------------------------
@@ -1096,8 +1096,9 @@ class Microwave3D:
                                                             self.bc.boundary_conditions, 
                                                             freq, 
                                                             cache_matrices=self.cache_matrices)
-                    job.store_limit = harddisc_threshold
-                    job.relative_path = harddisc_path
+                    if cache_harddisk:
+                        job.store_if_needed(harddisc_path)
+                    
                     job.id = job_counter
                     job_counter += 1
                     jobs.append(job)
@@ -1126,8 +1127,9 @@ class Microwave3D:
                                                                 self.bc.boundary_conditions, 
                                                                 freq, 
                                                                 cache_matrices=self.cache_matrices)
-                        job.store_limit = harddisc_threshold
-                        job.relative_path = harddisc_path
+                        if cache_harddisk:
+                            job.store_if_needed(harddisc_path)
+
                         job.id = job_counter
                         job_counter += 1
                         jobs.append(job)
@@ -1167,8 +1169,9 @@ class Microwave3D:
                             cache_matrices=self.cache_matrices
                         )
 
-                        job.store_limit = harddisc_threshold
-                        job.relative_path = harddisc_path
+                        if cache_harddisk:
+                            job.store_if_needed(harddisc_path)
+
                         job.id = job_counter
                         job_counter += 1
                         jobs.append(job)
@@ -1215,7 +1218,7 @@ class Microwave3D:
     def run_scattered(self, 
                     parallel: bool = False,
                     n_workers: int = 2, 
-                    harddisc_threshold: int | None = None,
+                    cache_harddisk: bool = False,
                     harddisc_path: str = 'EMergeSparse',
                     frequency_groups: int = -1,
                     multi_processing: bool = False,
@@ -1348,8 +1351,8 @@ class Microwave3D:
                                                             self.bc.boundary_conditions, 
                                                             freq, 
                                                             cache_matrices=self.cache_matrices)
-                    job.store_limit = harddisc_threshold
-                    job.relative_path = harddisc_path
+                    if cache_harddisk:
+                        job.store_if_needed(harddisc_path)
                     job.id = job_counter
                     job_counter += 1
                     jobs.append(job)
@@ -1378,8 +1381,8 @@ class Microwave3D:
                                                                 self.bc.boundary_conditions, 
                                                                 freq, 
                                                                 cache_matrices=self.cache_matrices)
-                        job.store_limit = harddisc_threshold
-                        job.relative_path = harddisc_path
+                        if cache_harddisk:
+                            job.store_if_needed(harddisc_path)
                         job.id = job_counter
                         job_counter += 1
                         jobs.append(job)
@@ -1419,8 +1422,8 @@ class Microwave3D:
                             cache_matrices=self.cache_matrices
                         )
 
-                        job.store_limit = harddisc_threshold
-                        job.relative_path = harddisc_path
+                        if cache_harddisk:
+                            job.store_if_needed(harddisc_path)
                         job.id = job_counter
                         job_counter += 1
                         jobs.append(job)

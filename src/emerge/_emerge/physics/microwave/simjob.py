@@ -21,6 +21,7 @@ import os
 from typing import Hashable
 from scipy.sparse import csr_matrix, save_npz, load_npz, issparse # type: ignore
 from ...solver import SolveReport
+from loguru import logger
 
 class SimJob:
 
@@ -36,9 +37,9 @@ class SimJob:
         if b_vectors is not None:
             self.nb: int = len(b_vectors)
             self.b_ind_map: dict[Hashable, np.ndarray] = {key: i for i,key in enumerate(b_vectors.keys())}
-            self.b_vectors: np.ndarray = np.zeros((self.nb, A.shape[0]), dtype=np.complex128)
+            self.b_vectors: np.ndarray = np.zeros((A.shape[0], self.nb), dtype=np.complex128)
             for key,index in self.b_ind_map.items():
-                self.b_vectors[index,:] = b_vectors[key]
+                self.b_vectors[:,index] = b_vectors[key]
         else:
             self.b_vectors = None
         self.P: csr_matrix | None= None
@@ -63,7 +64,6 @@ class SimJob:
         self._active_b_key: int = -1
         self.reports: list[SolveReport] = []
         self.id: int = -1
-        self.store_if_needed()
 
     def ensure_directory(self) -> None:
         """Ensures that the store directory exists."""
@@ -72,7 +72,7 @@ class SimJob:
     def gen_filename(self, matrix: np.ndarray | csr_matrix, name: str) -> str:
         if issparse(matrix):
             return os.path.join(self.relative_path, f"csr_{str(self.freq).replace('.','_')}_{name}.npz")
-        elif isinstance(np.ndarray):
+        elif isinstance(matrix, np.ndarray):
             return os.path.join(self.relative_path, f"np_{str(self.freq).replace('.','_')}_{name}.npy")
     
     def maybe_store(self, matrix: csr_matrix | np.ndarray, name: str) -> None:
@@ -80,7 +80,11 @@ class SimJob:
             # Create temp directory if needed
             self.ensure_directory()
             path = self.gen_filename(matrix, name)
-            save_npz(path, matrix, compressed=False)
+            logger.trace(f'   Caching Matrix {name} as "{path}"')
+            if issparse(matrix):
+                save_npz(path, matrix, compressed=False)
+            else:
+                np.save(path, matrix)
             self._store_location[name] = path
             self._stored = True
             return None  # Unload from memory
@@ -91,7 +95,10 @@ class SimJob:
         self._sorter = order
         self._isorter = np.argsort(order)
         
-    def store_if_needed(self):
+    def store_if_needed(self, path: str):
+        self.store_data = True
+        self.relative_path = path
+        logger.debug(f'Caching matrices in "{path}".')
         self.A = self.maybe_store(self.A, 'A')
         self.b_vectors = self.maybe_store(self.b_vectors, 'b_vectors')
         if self.has_periodic:
@@ -101,7 +108,12 @@ class SimJob:
 
     def load_if_needed(self, name: str):
         if name in self._store_location:
-            return load_npz(self._store_location[name])
+            filename = self._store_location[name]
+            logger.trace(f'   loading {name} from "{filename}".')
+            if '.npy' in filename:
+                return np.load(filename)
+            else:
+                return load_npz(filename)
         return getattr(self, name)
 
     def get_Ab(self) -> tuple[csr_matrix, np.ndarray, np.ndarray, bool, dict]:
@@ -119,13 +131,14 @@ class SimJob:
         return self.A, self.B, self.solve_ids
     
     def store_solution(self):
-        self.maybe_store(self._solutions, '_solutions')
+        self._solution = self.maybe_store(self._solutions, '_solutions')
     
     def load_solutions(self) -> None:
         solutions = self.load_if_needed('_solutions')
         self._solutions_dict = dict()
         for key, index in self.b_ind_map.items():
-             self._solutions_dict[key] = solutions[index,:]
+             self._solutions_dict[key] = solutions[:,index]
+        self.cleanup_data()
         
     def clear_solutions(self) -> None:
         self._solutions = None
@@ -141,30 +154,30 @@ class SimJob:
     def submit_solution(self, solution: np.ndarray, report: SolveReport):
         # Solve the Ax=b problem
         if self.has_periodic:
-            solution = (self.P @ solution.T).T
+            solution = (self.P @ solution)
         self._solutions = solution
         self.reports.append(report)
         self.routine = None
         self.is_solved = True
         self.store_solution()
-        self.cleanup_data()
-    
-    def cleanup_data(self):
         self.A = None
         self.B = None
-
+    
+    def cleanup_data(self):
         if not self._stored:
             return
         
         if not os.path.isdir(self.relative_path):
             return
-
+        logger.debug('Cleaning up directory.')
         # Remove only the files we saved
         for path in self._store_location.values():
             if os.path.isfile(path):
                 os.remove(path)
+                logger.trace(f'   removing "{path}"')
 
         # If the directory is now empty, remove it
         if not os.listdir(self.relative_path):
+            logger.trace(f'   removing directory "{self.relative_path}"')
             os.rmdir(self.relative_path)
             
