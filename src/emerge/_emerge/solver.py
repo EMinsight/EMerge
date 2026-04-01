@@ -844,7 +844,8 @@ class SolverPardiso(Solver):
     def reset(self) -> None:
         self.A = None
         self.B = None
-        self.solver.clear_memory()
+        if self.solver is not None:
+            self.solver.clear_memory()
         
     def solve(self, A: csc_matrix, b, precon, id: int = -1) -> tuple[np.ndarray, SolveReport]:
         
@@ -898,7 +899,8 @@ class SolverCuDSS(Solver):
     def reset(self) -> None:
         self.fact_symb = False
         self.fact_numb = False
-        self._cudss.clear_memory()
+        if self._cudss is not None:
+            self._cudss.clear_memory()
 
     def solve(self, A, b, precon, id: int = -1):
         logger.info(f'{_pfx(self.pre,id)} Calling cuDSS Solver')
@@ -909,7 +911,7 @@ class SolverCuDSS(Solver):
             self.fact_symb = True
     
         logger.trace(f'{_pfx(self.pre,id)} Starting from numeric factorization.')
-        x = self._cudss.numeric(None)
+        x = self._cudss.numeric(A)
         logger.trace(f'{_pfx(self.pre,id)} Solving linear system.')
         x = np.zeros_like(b)
         for i in range(b.shape[1]):
