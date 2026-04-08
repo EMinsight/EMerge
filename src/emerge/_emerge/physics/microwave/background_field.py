@@ -9,6 +9,13 @@ import numpy as np
 #               ELEVATION AZIMUTH DEFINITION              #
 ############################################################
 
+def fE_k(x: np.ndarray, y: np.ndarray, z: np.ndarray, theta: float, phi: float, psi: float, k0: float, origin: tuple[float,float,float]) -> np.ndarray:
+    kx = k0*np.cos(theta)*np.cos(phi)
+    ky = k0*np.cos(theta)*np.sin(phi)
+    kz = -k0*np.sin(theta)
+    return np.array([kx, ky, kz])
+
+
 def fE_EA(x: np.ndarray, y: np.ndarray, z: np.ndarray, theta: float, phi: float, psi: float, k0: float, origin: tuple[float,float,float]) -> np.ndarray:
     kx = k0*np.cos(theta)*np.cos(phi)
     ky = k0*np.cos(theta)*np.sin(phi)
@@ -18,7 +25,7 @@ def fE_EA(x: np.ndarray, y: np.ndarray, z: np.ndarray, theta: float, phi: float,
     zp = z-origin[2]
     Phi = np.exp(-1j*(kx*xp + ky*yp + kz*zp))
     Ex = (np.sin(theta)*np.cos(phi)*np.cos(psi) - np.sin(phi)*np.sin(psi))*Phi
-    Ey = (np.sin(theta)*np.cos(phi)*np.sin(psi) + np.cos(phi)*np.sin(psi))*Phi
+    Ey = (np.sin(theta)*np.sin(phi)*np.cos(psi) + np.cos(phi)*np.sin(psi))*Phi
     Ez = (np.cos(theta)*np.cos(psi))*Phi
     return np.array([Ex, Ey, Ez])
 
@@ -32,7 +39,7 @@ def fH_EA(x: np.ndarray, y: np.ndarray, z: np.ndarray, theta: float, phi: float,
     zp = z-origin[2]
     Phi = np.exp(-1j*(kx*xp + ky*yp + kz*zp))
     Ex = (np.sin(theta)*np.cos(phi)*np.cos(psi) - np.sin(phi)*np.sin(psi))*Phi
-    Ey = (np.sin(theta)*np.cos(phi)*np.sin(psi) + np.cos(phi)*np.sin(psi))*Phi
+    Ey = (np.sin(theta)*np.sin(phi)*np.cos(psi) + np.cos(phi)*np.sin(psi))*Phi
     Ez = (np.cos(theta)*np.cos(psi))*Phi
 
     CEx = -1j*(ky*Ez - kz*Ey) * 1j/(w0*MU0)
@@ -49,7 +56,7 @@ def fEcurl_EA(x: np.ndarray, y: np.ndarray, z: np.ndarray, theta: float, phi: fl
     zp = z-origin[2]
     Phi = np.exp(-1j*(kx*xp + ky*yp + kz*zp))
     Ex = (np.sin(theta)*np.cos(phi)*np.cos(psi) - np.sin(phi)*np.sin(psi))*Phi
-    Ey = (np.sin(theta)*np.cos(phi)*np.sin(psi) + np.cos(phi)*np.sin(psi))*Phi
+    Ey = (np.sin(theta)*np.sin(phi)*np.cos(psi) + np.cos(phi)*np.sin(psi))*Phi
     Ez = (np.cos(theta)*np.cos(psi))*Phi
 
     CEx = 1j*(ky*Ez - kz*Ey)
@@ -91,6 +98,10 @@ class BackgroundField(Saveable):
     def Uinc_curl(self, x: np.ndarray, y: np.ndarray, z: np.ndarray) -> np.ndarray:
         return self.curlE(x,y,z)
     
+    def k(self, x: np.ndarray, y: np.ndarray, z:np.ndarray) -> np.ndarray:
+        if self.definition == 'EA':
+            return fE_k(x,y,z,self.theta, self.phi, self.psi, self.k0, self.origin)
+        
     def E(self, x: np.ndarray, y: np.ndarray, z:np.ndarray) -> np.ndarray:
         if self.definition == 'EA':
             return self.E0*fE_EA(x,y,z,self.theta, self.phi, self.psi, self.k0, self.origin)

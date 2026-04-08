@@ -369,7 +369,7 @@ class Microwave3D:
     #                            SETTERS                       #
     ############################################################
 
-    def set_frequency(self, frequency: float | list[float] | np.ndarray ) -> None:
+    def set_frequency(self, frequency: float | list[float] | np.ndarray) -> None:
         """Define the frequencies for the frequency sweep
 
         Args:
@@ -381,14 +381,6 @@ class Microwave3D:
         else:
             self.frequencies = [frequency,]
             
-        # Safety tests
-        if len(self.frequencies) > 200:
-            DEBUG_COLLECTOR.add_report(f'More than 200 frequency points are detected ({len(self.frequencies)}). This may cause slow simulations. Consider using Vector Fitting to subsample S-parameters.')
-        if min(self.frequencies) < 1e6:
-            DEBUG_COLLECTOR.add_report(f'A frequency smaller than 1MHz has been detected ({min(self.frequencies)} Hz). Perhaps you forgot to include usints like 1e6 for MHz etc.')
-        if max(self.frequencies) > 1e12:
-            DEBUG_COLLECTOR.add_report(f'A frequency greater than THz has been detected ({min(self.frequencies)} Hz). Perhaps you double counted frequency units like twice 1e6 for MHz etc.')
-        
         self.mesher.max_size = self.resolution * 299792458 / max(self.frequencies)
         self.mesher.min_size = 0.1 * self.mesher.max_size
 
@@ -957,7 +949,8 @@ class Microwave3D:
                 frequency_groups: int = -1,
                 cache_harddisk: bool = False,
                 multi_processing: bool = False,
-                automatic_modal_analysis: bool = True) -> MWData:
+                automatic_modal_analysis: bool = True,
+                _reset_solvers: bool = True) -> MWData:
         """Executes a frequency domain study
 
         The study is distributed over "n_workers" workers.
@@ -1002,6 +995,21 @@ class Microwave3D:
         material_set: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
         job_counter: int = 1
         harddisc_path = str(self._state.modelpath / harddisc_path)
+
+
+        ############################################################
+        #                          FREQUENCY CHECK                 #
+        ############################################################
+
+        # Safety tests
+        if len(self.frequencies) > 200:
+            DEBUG_COLLECTOR.add_report(f'More than 200 frequency points are detected ({len(self.frequencies)}). This may cause slow simulations. Consider using Vector Fitting to subsample S-parameters.')
+        if min(self.frequencies) < 1e6:
+            DEBUG_COLLECTOR.add_report(f'A frequency smaller than 1MHz has been detected ({min(self.frequencies)} Hz). Perhaps you forgot to include usints like 1e6 for MHz etc.')
+        if max(self.frequencies) > 1e12:
+            DEBUG_COLLECTOR.add_report(f'A frequency greater than THz has been detected ({min(self.frequencies)} Hz). Perhaps you double counted frequency units like twice 1e6 for MHz etc.')
+        
+
         # --------------------------------------------------------------------
         # Checks
         # --------------------------------------------------------------------
@@ -1191,7 +1199,9 @@ class Microwave3D:
         
         if parallel:
             thread_local.__dict__.clear()
-        self.solveroutine.reset()
+        
+        if _reset_solvers:
+            self.solveroutine.reset()
         
         logger.info('Solving complete')
 
@@ -1215,6 +1225,103 @@ class Microwave3D:
         self._completed = True
         return self.data
     
+    def run_adaptive_sweep(self, 
+                parallel: bool = False,
+                n_workers: int = 2, 
+                n_initial: int = 5,
+                n_max_new: int = 4,
+                harddisc_path: str = 'EMergeSparse',
+                frequency_groups: int = -1,
+                cache_harddisk: bool = False,
+                multi_processing: bool = False,
+                automatic_modal_analysis: bool = True,
+                _reset_solvers: bool = True) -> MWData:
+        """Executes a frequency domain study
+
+        The study is distributed over "n_workers" workers.
+        As optional parameter you may set a harddisc_threshold as integer. This determines the maximum
+        number of degrees of freedom before which the jobs will be cahced to the harddisk. The
+        path that will be used to cache the sparse matrices can be specified.
+        Additionally the term frequency_groups may be specified. This number will define in how
+        many groups the matrices will be pre-computed before they are send to workers. This can minimize
+        the total amound of RAM memory used. For example with 11 frequencies in gruops of 4, the following
+        frequency indices will be precomputed and then solved: [[1,2,3,4],[5,6,7,8],[9,10,11]]
+
+        Args:
+            n_workers (int, optional): The number of workers. Defaults to 2.
+            harddisc_threshold (int, optional): The number of DOF limit. Defaults to None.
+            harddisc_path (str, optional): The cached matrix path name. Defaults to 'EMergeSparse'.
+            frequency_groups (int, optional): The number of frequency points in a solve group. Defaults to -1.
+            automatic_modal_analysis (bool, optional): Automatically compute port modes. Defaults to False.
+            multi_processing (bool, optional): Whether to use multiprocessing instead of multi-threaded (slower on most machines).
+
+        Raises:
+            SimulationError: An error associated witha a problem during the simulation.
+
+        Returns:
+            MWSimData: The dataset.
+        """
+
+        f_target = np.array(self.frequencies)
+        fmin = min(f_target)
+        fmax = max(f_target)
+        
+        def getf(f1: float, f2: float) -> np.ndarray:
+            sub = f_target[(f_target >= f1) & (f_target <= f2)]
+            return np.linspace(f1, f2, max(len(sub), 21))
+
+        def _smat_ok(Smat, errs) -> bool:
+            return np.all(np.abs(Smat.flatten()) <= 1.0) and np.all(np.abs(errs.flatten())<0.01)
+        
+        frequency_set = list(np.linspace(fmin, fmax, max(n_initial,n_workers)))
+        self.set_frequencies(frequency_set)
+        istart = max(0,self.data.scalar.n - 1)
+
+        converged = False
+        last_converged = False
+        N = len(frequency_set)
+        while not converged:
+            logger.info(f"Adaptive sweep at frequencies: {self.frequencies} GHz")
+            dataset = self.run_sweep(parallel, n_workers=n_workers, harddisc_path=harddisc_path, frequency_groups=frequency_groups, cache_harddisk=cache_harddisk, multi_processing=multi_processing, automatic_modal_analysis=automatic_modal_analysis, _reset_solvers=False)
+            sgrid = dataset.scalar.slice_set(istart,None, sort_by='freq').grid
+
+            newF = []
+            
+            if _smat_ok(sgrid.model_Smat(f_target), sgrid.model_Smat(sgrid.freq)-sgrid.Smat):
+                if not last_converged:
+                    last_converged = True
+
+                    dFi = sorted([(i, f2-f1) for i, (f1, f2) in enumerate(zip(frequency_set[:-1], frequency_set[1:]))], key= lambda df: df[1], reverse=True)
+                    for i, df in dFi[:4]:
+                        newF.append(frequency_set[i] +df/2)
+
+                else:
+                    logger.info(f'Adaptive sweep converged! with {N} total simulations')
+                    break
+
+           
+
+            for i1, (f1, f2) in enumerate(zip(frequency_set[:-1], frequency_set[1:])):
+                i2 = i1 + 1
+                Smat =  sgrid.model_Smat(getf(f1,f2), _warn=False) 
+                er1 = Smat[0,:,:] - sgrid.Smat[i1,:,:]
+                er2 = Smat[-1,:,:] - sgrid.Smat[i2,:,:]
+                if np.any(np.abs(er1.flatten() > 0.01)) or np.any(np.abs(er2.flatten() > 0.01)) or np.any(np.abs(Smat.flatten()) > 1.0):
+                    newF.append((f1*f2)**0.5)
+                    logger.debug(f'  Adding {newF[-1]/1e9} GHz as new sample point.')
+                
+            # if len(newF) > n_max_new:
+            #     newF = newF[0:n_max_new]
+            newF = sorted(newF)
+            N += len(newF)
+            frequency_set = sorted(frequency_set + newF)
+            logger.debug(f"Resimulating at {newF}")
+            self.set_frequencies(newF)
+
+        self.solveroutine.reset()
+        return self.data
+
+
     def run_scattered(self, 
                     parallel: bool = False,
                     n_workers: int = 2, 

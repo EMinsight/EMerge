@@ -241,7 +241,8 @@ class SparamModel:
                  Sparam: np.ndarray,
                  n_poles: int | Literal['auto'] = 10,
                  inc_real: bool = False,
-                 maxpoles: int = 40):
+                 maxpoles: int = 40,
+                 _warn: bool = True):
         self.f: np.ndarray = frequencies
         self.S: np.ndarray = Sparam
 
@@ -259,13 +260,13 @@ class SparamModel:
 
                 S = self(fdense)
 
-                error = np.mean(np.abs(Sparam-self(self.f)))
-                if all(np.abs(S) <= 1.0) and error < 1e-2:
+                self.error = np.mean(np.abs(Sparam-self(self.f)))
+                if all(np.abs(S) <= 1.0) and self.error < 1e-2:
                     logger.debug(f'Using {nps} poles.')
                     success = True
                     break
-            if not success:
-                logger.warning('Could not model S-parameters. Try a denser grid')
+            if not success and _warn:
+                logger.warning('Could not model S-parameters. Try simulating at a denser grid of poitns.')
 
         else:
             poles, residues, d, h, _ = vectfit_auto_rescale(Sparam, s, n_poles=n_poles, inc_real=inc_real)
@@ -276,4 +277,3 @@ class SparamModel:
     
     def __call__(self, f: np.ndarray) -> np.ndarray:
         return model(1j*f, self.poles, self.residues, self.d, self.h)
-    

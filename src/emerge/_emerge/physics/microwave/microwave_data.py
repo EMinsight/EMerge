@@ -1185,7 +1185,20 @@ class MWScalarNdim(Saveable):
         self._portnumbers: list[int | float] = []
         self._dense_frequencies: np.ndarray = None
 
-    def dense_f(self, N: int) -> np.ndarray:
+
+    def dense_f(self, N: int | None = None, frequencies: list[float] | np.ndarray | None = None) -> np.ndarray:
+        """Specify a frequency subsample point density or provide a list of denser frequency points.
+
+        Args:
+            N (int): The number of frequency points
+            frequencies (list[float] | np.ndarray | None, optional): A list of frequency points. Defaults to None.
+
+        Returns:
+            np.ndarray: The new list of frequency points
+        """
+        if frequencies is not None:
+            self._dense_frequencies = np.array(frequencies)
+            return frequencies
         self._dense_frequencies = np.linspace(np.min(self.freq), np.max(self.freq), N)
         return self._dense_frequencies
     
@@ -1293,7 +1306,8 @@ class MWScalarNdim(Saveable):
             freq: np.ndarray | None = None, 
             Npoles: int | Literal['auto'] = 'auto', 
             inc_real: bool = False,
-            maxpoles: int = 30) -> np.ndarray:
+            maxpoles: int = 30,
+            _warn: bool = True) -> np.ndarray:
         """Returns an S-parameter model object at a dense frequency range.
         This method uses vector fitting inside the datasets frequency points to determine a model for the linear system.
         If no frequency array is provided the .dense_f(NF) method should have been called.
@@ -1320,14 +1334,14 @@ class MWScalarNdim(Saveable):
             nf = len(freq)
             Sarray = np.zeros(tuple(dims) + (nf,), dtype=np.complex128)
             for ids in np.ndindex(*dims):
-                Sarray[ids,:] = SparamModel(np.squeeze(self.freq[(*ids,slice(None))]), np.squeeze(self.S(i,j)[(*ids,slice(None))]), n_poles=Npoles, inc_real=inc_real, maxpoles=maxpoles)(freq)
+                Sarray[ids,:] = SparamModel(np.squeeze(self.freq[(*ids,slice(None))]), np.squeeze(self.S(i,j)[(*ids,slice(None))]), n_poles=Npoles, inc_real=inc_real, maxpoles=maxpoles, _warn=_warn)(freq)
             return Sarray
         else:
-            return SparamModel(np.squeeze(self.freq), np.squeeze(self.S(i,j)), n_poles=Npoles, inc_real=inc_real, maxpoles=maxpoles)(freq)
+            return SparamModel(np.squeeze(self.freq), np.squeeze(self.S(i,j)), n_poles=Npoles, inc_real=inc_real, maxpoles=maxpoles, _warn=_warn)(freq)
 
     def model_Smat(self, frequencies: np.ndarray | None = None,
                         Npoles: int = 10,
-                        inc_real: bool = False) -> np.ndarray:
+                        inc_real: bool = False, _warn: bool = True) -> np.ndarray:
         """Generates a full S-parameter matrix on the provided frequency points using the Vector Fitting algorithm.
 
         This function output can be used directly with the .save_matrix() method.
@@ -1353,9 +1367,8 @@ class MWScalarNdim(Saveable):
         
         for i in self._portnumbers:
             for j in self._portnumbers:
-                S = self.model_S(i,j,frequencies, Npoles=Npoles, inc_real=inc_real)
+                S = self.model_S(i,j,frequencies, Npoles=Npoles, inc_real=inc_real, _warn=_warn)
                 Smat[:,i-1,j-1] = S
-
         return Smat
 
     def export_touchstone(self, 

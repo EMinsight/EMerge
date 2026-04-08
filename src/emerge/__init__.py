@@ -63,7 +63,6 @@ LOG_CONTROLLER._set_log_buffer()
 
 import gmsh
 from ._emerge.simmodel import Simulation, SimulationBeta
-#from ._emerge.material import Material, FreqCoordDependent, FreqDependent, CoordDependent
 from ._emerge import bc
 from ._emerge.solver import SolverBicgstab, SolverGMRES, SolveRoutine, ReverseCuthillMckee, Sorter, SolverPardiso, SolverUMFPACK, SolverSuperLU, EMSolver
 from ._emerge.cs import CoordinateSystem, CS, GCS, Plane, Axis, XAX, YAX, ZAX, XYPLANE, XZPLANE, YZPLANE, YXPLANE, ZXPLANE, ZYPLANE, cs
@@ -74,7 +73,6 @@ from ._emerge.geometry import select
 from ._emerge.mth.common_functions import norm, coax_rout, coax_rin, dot, cross
 from ._emerge.periodic import RectCell, HexCell
 from ._emerge.mesher import Algorithm2D, Algorithm3D
-#from . import lib
 from ._emerge.howto import _HowtoClass
 from ._emerge.emerge_update import update_emerge
 from ._emerge.cleanup import cleanup
@@ -85,6 +83,7 @@ from emsutil.material import Material, MatProperty, FreqDependent, CoordDependen
 import emsutil.plot as plot
 from emsutil import EMergeTheme
 from emsutil import themes
+from emsutil.lib import C0, MU0, EPS0, Z0
 
 howto = _HowtoClass()
 
@@ -93,6 +92,7 @@ logger.debug('Importing complete!')
 from ._emerge.install_check import run_installation_checks
 
 run_installation_checks()
+
 ############################################################
 #                         CONSTANTS                        #
 ############################################################

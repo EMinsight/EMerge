@@ -16,8 +16,9 @@ with em.Simulation("myfile", load_file=True) as m:
     f = data.freq
     S11 = data.S(1,1)
     S21 = data.S(2,1)
-    plt.plot_sp(f/1e9, [S11, S21])
+    plt.plot_sp(f, [S11, S21], labels=['S11','S21])
     
+    ehfield = m.data.mw.field[0]
     m.display.add_object(m['box'])
-    m.display.add_surf(*m.data.mw.field[0].cutplane(1*mm, z=5*mm).scalar('Ez','real'))
+    m.display.add_field(ehfield.cutplane(1*mm, z=5*mm).scalar('Ez','real'))
     m.display.show()

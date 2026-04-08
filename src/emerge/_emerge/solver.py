@@ -804,6 +804,7 @@ class SolverAASDS(Solver):
         return new_solver
 
     def solve(self, A: csc_matrix, b, precon, id: int = -1) -> tuple[np.ndarray, SolveReport]:
+        logger.info(f'{_pfx(self.pre,id)} Calling Accelerate Solver.')
         if self.fact_symb is False:
             logger.trace(f'{_pfx(self.pre,id)} Executing symbolic factorization.')
             self.aasds.analyse(A)

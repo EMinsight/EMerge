@@ -59,7 +59,6 @@ class SimState:
         self.modelname: str = modelname
         self.modelpath: Path = modelpath
         self.mesh: Mesh3D = Mesh3D()
-        self.geos: list[GeoObject] = []
         self.data: SimulationDataset = SimulationDataset()
         self.params: dict[str, float] = dict()
         self._stashed: SimulationDataset | None = None
@@ -129,7 +128,6 @@ class SimState:
         del self._stashed
         self.modelname: str = ''
         self.mesh: Mesh3D = Mesh3D()
-        self.geos: list[GeoObject] = []
         self.data: SimulationDataset = SimulationDataset()
         self.params: dict[str, float] = dict()
         self._stashed: SimulationDataset | None = None
@@ -140,7 +138,6 @@ class SimState:
         """Initializes the Simstate to a clean starting point.
         """
         self.mesh = Mesh3D()
-        self.geos = []
         self.reset_geostate()
         self.data.initialize(**self.params)
         self.sign_on()
@@ -187,7 +184,7 @@ class SimState:
         Args:
             geos (list[GeoObject]): _description_
         """
-        self.geos = geos
+
         _GEOMANAGER.set_geometries(geos)
 
     def clear_mesh(self) -> None:
@@ -199,8 +196,7 @@ class SimState:
         """Saves the current geometry state to the simulatin dataset
         """
         logger.trace('Storing geometries in data.sim')
-        self.geos = self.current_geo_state
-        self.data.sim['geos'] = self.geos
+        self.data.sim['geos'] = self.current_geo_state
         self.data.sim['mesh'] = self.mesh
         
     def get_dataset(self) -> dict[str, Any]:

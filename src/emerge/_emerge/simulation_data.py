@@ -402,7 +402,7 @@ class BaseDataset(Generic[T,M], Saveable):
                 output.append(self.get_entry(i))
         return output
     
-    def slice_set(self, i1: int, i2: int | None = None) -> BaseDataset[T,M]:
+    def slice_set(self, i1: int, i2: int | None = None, sort_by: str | None = None) -> BaseDataset[T,M]:
         """Reduces the DataSet object to a slice with the given range
 
         Args:
@@ -415,7 +415,11 @@ class BaseDataset(Generic[T,M], Saveable):
         new_set = BaseDataset(self._datatype, self._matrixtype, self._scalar)
         new_set._data_entries = self._data_entries[slice(i1,i2)]
         new_set._variables = drop_constant_variables(self._variables[slice(i1,i2)])
-        
+        if sort_by is not None:
+            ids = range(self.n)
+            ids = sorted(ids, key=lambda x: getattr(self._data_entries[x], sort_by))
+            self._data_entries = [self._data_entries[i] for i in ids]
+            self._variables = [self._variables[i] for i in ids]
         return new_set
         
     def find(self, **variables: float) -> T:

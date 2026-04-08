@@ -318,7 +318,7 @@ class Simulation:
         """
         logger.trace('Committing temporary geometry.')
         self.state.store_geometry_data()
-        logger.trace(f'Parsed geometries = {self.state.geos}')
+        logger.trace(f'Parsed geometries = {self.state.current_geo_state}')
         self.mesher.submit_objects(self.state.current_geo_state)
         self.display._facetags = [dt[1] for dt in gmsh.model.get_entities(2)]
         
@@ -713,7 +713,7 @@ class Simulation:
         
         self.state.store_geometry_data()
         
-        logger.trace(f'Parsed geometries = {self.state.geos}')
+        logger.trace(f'Parsed geometries = {self.state.current_geo_state}')
         self.state.manager.self_destruct()
         self.mesher.submit_objects(self.state.current_geo_state)
         
@@ -731,6 +731,17 @@ class Simulation:
             list[GeoObject]: A list of all GeoObjects
         """
         return self.state.current_geo_state
+    
+    def find_geo(self, name: str) -> GeoObject:
+        """Searches first for an exact match and then the first partial match for the provided geometry name
+
+        Args:
+            name (str): _description_
+
+        Returns:
+            GeoObject: _description_
+        """
+        return self.state.manager.find_geo(name)
     
     def quick_mesh(self) -> None:
         logger.info('Starting quick mesh generation phase.')

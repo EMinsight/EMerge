@@ -113,7 +113,7 @@ class STEPItems:
         
         i = 0
         for dim, tag in dimtags:
-            name = gmsh.model.getEntityName(dim, tag) #for now, this doesn't actually ever work.
+            name = gmsh.model.getEntityName(dim, tag) 
             if string_parser is not None:
                 name = string_parser(name)
             if name == '':

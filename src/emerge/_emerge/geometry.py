@@ -58,7 +58,6 @@ class _GeometryManager:
     def __init__(self):
         self.geometry_list: dict[str, dict[str, GeoObject]] = dict()
         self.active: str = ''
-        self.geometry_names: dict[str, set[str]] = dict()
 
     def get_surfaces(self) -> list[GeoSurface]:
         """Return a list of all GeoSurface objects
@@ -67,6 +66,16 @@ class _GeometryManager:
             list[GeoSurface]: _description_
         """
         return [geo for geo in self.all_geometries() if geo.dim==2]
+    
+    def find_geo(self, name: str, model: str | None = None) -> GeoObject:
+        if model is None:
+            model = self.active
+        if name in self.geometry_list[model]:
+            return self.geometry_list[model][name]
+        for key, geo in self.geometry_list[model].items():
+            if name.lower() in key:
+                return geo
+        raise ValueError(f"Couldn't find a geometry by name {name}. Only know: {self.all_names(model)}")
     
     def self_destruct(self):
         for geo in self.geometry_list[self.active].values():
@@ -86,7 +95,7 @@ class _GeometryManager:
     def all_names(self, model: str | None = None) -> set[str]:
         if model is None:
             model = self.active
-        return self.geometry_names[model]
+        return set([geo.name for geo in self.all_geometries(model)])
     
     def get_name(self, suggestion: str, model: str | None = None) -> str:
         names = self.all_names(model)
@@ -96,16 +105,23 @@ class _GeometryManager:
             if f'{suggestion}_{i}' not in names:
                 return f'{suggestion}_{i}'
         raise RuntimeError('Cannot generate a unique name.')
-        
+    
+    def set_name(self, geo_obj: GeoObject) -> None:
+        self.geometry_list[self.active][geo_obj.name] = geo_obj
+        to_remove = []
+        for key, obj in self.geometry_list[self.active].items():
+            if obj == geo_obj and key!=geo_obj.name:
+                to_remove.append(key)
+        for key in to_remove:
+            del self.geometry_list[self.active][key]
+
     def submit_geometry(self, geo: GeoObject, model: str | None = None) -> None:
         if model is None:
             model = self.active
         self.geometry_list[model][geo.name] = geo
-        self.geometry_names[model].add(geo.name)
 
     def sign_in(self, modelname: str) -> None:
         self.geometry_list[modelname] = dict()
-        self.geometry_names[modelname] = set()
         self.active = modelname
 
     def reset(self, modelname: str) -> None:
@@ -113,7 +129,6 @@ class _GeometryManager:
     
     def clear(self) -> None:
         self.geometry_list = dict()
-        self.geometry_names = dict()
         self.active = ''
         
     def lowest_priority(self) -> int:
@@ -121,6 +136,9 @@ class _GeometryManager:
     
     def highest_priority(self) -> int:
         return max([geo._base_priority for geo in self.all_geometries()])
+    
+    def __getitem__(self, key: str) -> GeoObject:
+        return self.geometry_list[self.active][key]
     
 class _FacePointer(Saveable):
     """The FacePointer class defines a face to be selectable as a
@@ -628,6 +646,7 @@ class GeoObject(Saveable):
         if name is None:
             name = self._default_name
         self.name: str = _GEOMANAGER.get_name(name)
+        _GEOMANAGER.set_name(self)
         return self
     
     @property

@@ -25,8 +25,8 @@ with em.Simulation("myfile", save_file=True) as m:
     m.view()
 
     # Set boundary conditions
-    port1 = m.mw.bc.RectangularWaveguide(m['box'].face('front'), 1)
-    port2 = m.mw.bc.RectangularWaveguide(m['box'].face('back'), 2)
+    port1 = m.mw.bc.RectangularWaveguide(m['box'].front 1)
+    port2 = m.mw.bc.RectangularWaveguide(m['box'].back, 2)
 
     # Run simulation steps
     m.mw.run_sweep()
