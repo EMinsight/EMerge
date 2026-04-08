@@ -35,7 +35,7 @@ Rcirc = 8       # Readius of the open circuit circle.
 # We will invoke the SimulationBeta class because it houses some specific
 # implementation details required for adaptive mesh refinement.
 m = em.Simulation('Transition')
-m.check_version("2.4.3")
+m.check_version("2.5.0")
 # Next we create the PCB designer class instance.
 pcb = em.geo.PCBNew(th, mm, material=em.lib.DIEL_RO4003C)
 
