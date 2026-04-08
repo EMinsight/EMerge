@@ -711,7 +711,7 @@ class GeoObject(Saveable):
             
         out.material = objects[0].material
         out.prio_set(objects[0]._priority)
-        out.name = f'MergedGeometries{[obj.name for obj in objects]}'
+        out.give_name(f'MergedGeometries{[obj.name for obj in objects]}')
         return out
     
     def __repr__(self) -> str:
