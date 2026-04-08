@@ -34,7 +34,7 @@ warnings.filterwarnings(
 
 import os
 
-__version__ = "2.5.0"
+__version__ = "2.5.1"
 
 NTHREADS = "1"
 
