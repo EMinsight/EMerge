@@ -954,14 +954,13 @@ class Microwave3D:
         """Executes a frequency domain study
 
         The study is distributed over "n_workers" workers.
-        As optional parameter you may set a harddisc_threshold as integer. This determines the maximum
-        number of degrees of freedom before which the jobs will be cahced to the harddisk. The
+        As optional parameter you may set cache_harddisk which will write the matrices to the harddsik. The
         path that will be used to cache the sparse matrices can be specified.
         Additionally the term frequency_groups may be specified. This number will define in how
         many groups the matrices will be pre-computed before they are send to workers. This can minimize
         the total amound of RAM memory used. For example with 11 frequencies in gruops of 4, the following
         frequency indices will be precomputed and then solved: [[1,2,3,4],[5,6,7,8],[9,10,11]]
-
+        
         Args:
             n_workers (int, optional): The number of workers. Defaults to 2.
             harddisc_threshold (int, optional): The number of DOF limit. Defaults to None.
@@ -1333,8 +1332,7 @@ class Microwave3D:
         """Executes a Scattered field simulation
 
         The study is distributed over "n_workers" workers.
-        As optional parameter you may set a harddisc_threshold as integer. This determines the maximum
-        number of degrees of freedom before which the jobs will be cahced to the harddisk. The
+        As optional parameter you may set cache_harddisk which will write the matrices to the harddsik. The
         path that will be used to cache the sparse matrices can be specified.
         Additionally the term frequency_groups may be specified. This number will define in how
         many groups the matrices will be pre-computed before they are send to workers. This can minimize

@@ -91,3 +91,6 @@ filename = "examples/demo20_optimization.py"
 
 [[tool.bumpversion.files]]
 filename = "examples/demo21_inverted_F_antenna.py"
+
+[[tool.bumpversion.files]]
+filename = "examples/demo22_RCS.py"

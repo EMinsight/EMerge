@@ -1313,11 +1313,18 @@ class ScatteredField(RobinBC, Saveable):
         """Creates a user defined port field
         
         The UserDefinedPort is defined based on user defined field callables. All undefined callables will default to 0 field or k0.
-        
-        All spatial field functions should be defined using the template:
-        >>> def Ec(k0: float, x: np.ndarray, y: np.ndarray, z: np.ndarray) -> np.ndarray
-        >>>     return #shape like x
-        
+
+        Define a set of excitation plane waves using: .set_excitation:
+        The coordinate system used is different from spherical coordinates and is defined with three numbers:
+         - θ (deg) - Elevation
+         - ϕ (deg) - Azimuth
+         - Ѱ (deg) - Polarization 
+        The following angles will yield the following propagation (k) and polarization (E) direcitons
+         - (0,0,0):     k= +X, E= +Z
+         - (0,90,0):    k= +Y, E= +Z
+         - (90,0,0):    k= -Z, E= +X
+         - (0,0,90):    k= +X, E= +Y
+
         Args:
             face (FaceSelection, GeoSurface): The port boundary face selection
             port_number (int): The port number
@@ -1380,6 +1387,39 @@ class ScatteredField(RobinBC, Saveable):
         """
         return (1j*self.get_beta(k0) + self.curvature)
     
+    def set_excitations(self, thetas: np.ndarray | float = 0.0, phis: np.ndarray | float = 0.0, polarizations: np.ndarray | float = 0.0) -> None:
+        """Set the excitations of different modes in degrees
+
+        The coordinate system used is different from spherical coordinates and is defined with three numbers:
+         - θ (deg) - Elevation
+         - ϕ (deg) - Azimuth
+         - Ѱ (deg) - Polarization 
+        The following angles will yield the following propagation (k) and polarization (E) direcitons
+         - (0,0,0):     k= +X, E= +Z
+         - (0,90,0):    k= +Y, E= +Z
+         - (90,0,0):    k= -Z, E= +X
+         - (0,0,90):    k= +X, E= +Y
+
+
+        Args:
+            thetas (np.ndarray | float, optional): The theta angles. Defaults to 0.0.
+            phis (np.ndarray | float, optional): The phi angles. Defaults to 0.0.
+            polarizations (np.ndarray | float, optional): The polarizaiton angles. Defaults to 0.0.
+        """
+        t, p, pol = np.broadcast_arrays(thetas, phis, polarizations)
+        t = t*np.pi/180
+        p = p*np.pi/180
+        pol = pol*np.pi/180
+        # Convert to list if that is your preferred storage format
+        self.thetas = t.tolist()
+        self.phis = p.tolist()
+        self.polarizations = pol.tolist()
+        if not isinstance(self.thetas, list):
+            self.thetas = [self.thetas,]
+        if not isinstance(self.phis, list):
+            self.phis = [self.phis,]
+        if not isinstance(self.polarizations, list):
+            self.polarizations = [self.polarizations,]
 
 class LumpedPort(PortBC, Saveable):
     
