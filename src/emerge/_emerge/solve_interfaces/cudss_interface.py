@@ -18,11 +18,18 @@
 # Last Cleanup: 2025-01-01
 import warnings
 from loguru import logger
-
+from packaging import version
 # Catch the Cuda warning and print it with Loguru.
 with warnings.catch_warnings(record=True) as w:
     warnings.simplefilter("always")
     import cupy as cp
+    cpsparse = None
+    if version.parse(cp.__version__) >= version.parse("14.0"):
+        import cupyx.scipy.sparse as cpsparse
+    elif version.parse(cp.__version__) >= version.parse("13.0"):
+        import cupy.sparse as cpsparse
+    else:
+        logger.warning(f"Unsupported CuPy version {cp.__version__}, sparse not available")
     for warn in w:
         logger.debug(f"{warn.category.__name__}: {warn.message}")
 
@@ -178,7 +185,7 @@ class CuDSSInterface(metaclass=Singleton):
         
         self.init_type()
 
-        self.A_cu = cp.sparse.csr_matrix(A).astype(self.c_dtype)
+        self.A_cu = cpsparse.csr_matrix(A).astype(self.c_dtype)
 
         self._INDPTR = cp.ascontiguousarray(self.A_cu.indptr.astype(cp.int32))
         self._IND = cp.ascontiguousarray(self.A_cu.indices.astype(cp.int32))
