@@ -37,7 +37,7 @@ if __name__=="__main__":
     # --- Create simulation object -------------------------------------------
     model = em.Simulation('PatchAntenna', loglevel='DEBUG')
 
-    model.check_version("2.5.1") # Checks version compatibility.
+    model.check_version("2.5.2") # Checks version compatibility.
 
     # --- Define geometry primitives -----------------------------------------
     # Substrate block centered at origin in XY, thickness in Z (negative down)
