@@ -174,7 +174,7 @@ class CuDSSInterface(metaclass=Singleton):
         self.N = A.shape[0]
 
         if self._csym:
-            self.MTYPE = cudss.MatrixType.SYMMETRIC
+            self.MTYPE = cudss.MatrixType.GENERAL
         else:
             self.MTYPE = cudss.MatrixType.GENERAL
         
