@@ -1679,10 +1679,10 @@ class AutomaticRoutine(SolveRoutine):
         if self.parallel=='SI':
             if _PARDISO_AVAILABLE:
                 return self._try_solver(EMSolver.PARDISO)
+            elif _AASDS_AVAILABLE:
+                return self._try_solver(EMSolver.AASDS)
             elif _MUMPS_AVAILABLE:
                 return self._try_solver(EMSolver.MUMPS)
-            if _AASDS_AVAILABLE:
-                return self._try_solver(EMSolver.AASDS)
             elif _UMFPACK_AVAILABLE:
                 return self._try_solver(EMSolver.UMFPACK)
             else:

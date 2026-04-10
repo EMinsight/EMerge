@@ -26,9 +26,8 @@ dependencies = [
 [project.scripts]
 emerge = "emerge.cli:main"
 
-[tool.hatch.build.targets.sdist.sources]
-"src/emerge"  = "emerge"
-"src/emerge_config" = "emerge_config"
+[tool.hatch.build.targets.wheel]
+packages = ["src/emerge", "src/emerge_config"]
 
 [project.optional-dependencies]
 umfpack = [
