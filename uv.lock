@@ -473,7 +473,7 @@ wheels = [
 
 [[package]]
 name = "emerge"
-version = "2.5.2"
+version = "2.5.3"
 source = { editable = "." }
 dependencies = [
     { name = "emsutil" },
@@ -493,9 +493,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-aasds = [
-    { name = "emerge-aasds" },
-]
 cudss = [
     { name = "cupy-cuda12x" },
     { name = "nvidia-cudss-cu12" },
@@ -518,7 +515,6 @@ umfpack = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "emerge-aasds" },
     { name = "pytest" },
     { name = "scikit-umfpack" },
     { name = "twine" },
@@ -528,7 +524,6 @@ dev = [
 requires-dist = [
     { name = "cupy-cuda12x", marker = "extra == 'cudss'" },
     { name = "cupy-cuda12x", marker = "extra == 'cudss12'" },
-    { name = "emerge-aasds", marker = "extra == 'aasds'", git = "https://github.com/FennisRobert/emerge-aasds.git?rev=v0.3.0" },
     { name = "emsutil", specifier = ">=0.6.0,<0.7.0" },
     { name = "ezdxf", marker = "extra == 'dxf'" },
     { name = "gmsh", specifier = ">=4.13.0,<4.15" },
@@ -550,24 +545,13 @@ requires-dist = [
     { name = "scikit-umfpack", marker = "sys_platform != 'win32' and extra == 'umfpack'" },
     { name = "scipy", specifier = ">=1.14.0" },
 ]
-provides-extras = ["umfpack", "cudss", "cudss12", "dxf", "gerber", "aasds"]
+provides-extras = ["umfpack", "cudss", "cudss12", "dxf", "gerber"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "emerge-aasds" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "scikit-umfpack", specifier = ">=0.4.2" },
     { name = "twine", specifier = ">=6.2.0" },
-]
-
-[[package]]
-name = "emerge-aasds"
-version = "0.3.0"
-source = { git = "https://github.com/FennisRobert/emerge-aasds.git?rev=v0.3.0#8c750443ac63daed4ab0306a0ab3caaabb2b0e2e" }
-dependencies = [
-    { name = "numpy" },
-    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
 
 [[package]]

@@ -50,16 +50,13 @@ dxf = [
 gerber = [
   "pygerber"
 ]
-aasds = [
-    "emerge-aasds @ git+https://github.com/FennisRobert/emerge-aasds.git@v0.3.0"
-]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
-    "emerge-aasds",
     "pytest>=9.0.2",
     "scikit-umfpack>=0.4.2",
     "twine>=6.2.0",
