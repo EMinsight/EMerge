@@ -21,7 +21,7 @@
 Apple Accelerate Sparse Solver Interface
 """
 
-from emerge_aasds import AccelerateInterface, Factorization, Symmetry, Scaling, Ordering
+from emerge_aasds import Factorization, Symmetry, Scaling, Ordering
 import time
 from loguru import logger
 
@@ -67,7 +67,17 @@ class AASDSInterface:
             return Symmetry.SYMMETRIC
         else:
             return Symmetry.NONSYMMETRIC
-        
+    
+    def initialize(self): 
+        from emerge_aasds.interface import AccelerateInterface
+        self._solver = AccelerateInterface(
+            factorization=self._factorization,
+            ordering=Ordering.MTMETIS,
+            pivot_tolerance=0.001,
+            symmetry=self._symmetry,
+            verbose=0  # We handle our own verbosity
+        )
+
     def analyse(self, A):
         """
         Symbolic factorization
@@ -77,14 +87,9 @@ class AASDSInterface:
         A : scipy.sparse matrix
             Sparse matrix to analyze
         """
+        self.initialize()
         t0 = time.time()
-        self._solver = AccelerateInterface(
-            factorization=self._factorization,
-            ordering=Ordering.MTMETIS,
-            pivot_tolerance=0.001,
-            symmetry=self._symmetry,
-            verbose=0  # We handle our own verbosity
-        )
+        
         self._solver.analyse(A)
         
         if self.verbose > 0:

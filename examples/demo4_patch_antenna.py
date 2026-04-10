@@ -84,7 +84,7 @@ dielectric.set_material(em.Material(3.38, color="#207020", opacity=0.9))
 model.mw.set_resolution(0.2)
 
 # Frequency sweep across the resonance
-model.mw.set_frequency_range(f1, f2, 5)
+model.mw.set_frequency_range(f1, f2, 7)
 
 # --- Combine geometry into simulation -----------------------------------
 model.commit_geometry()

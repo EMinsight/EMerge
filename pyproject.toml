@@ -28,6 +28,7 @@ emerge = "emerge.cli:main"
 
 [tool.hatch.build.targets.sdist.sources]
 "src/emerge"  = "emerge"
+"src/emerge_config" = "emerge_config"
 
 [project.optional-dependencies]
 umfpack = [
@@ -49,7 +50,9 @@ dxf = [
 gerber = [
   "pygerber"
 ]
-
+aasds = [
+    "emerge-aasds @ git+https://github.com/FennisRobert/emerge-aasds.git@v0.3.0"
+]
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -61,7 +64,6 @@ dev = [
     "scikit-umfpack>=0.4.2",
     "twine>=6.2.0",
 ]
-
 
 [tool.uv]
 no-build-isolation-package = ["cchardet"]
@@ -82,7 +84,6 @@ publish-url = "https://test.pypi.org/legacy"
 
 [tool.uv.sources]
 emerge-iron = { git = "https://github.com/FennisRobert/EMerge-IRON" }
-emerge-aasds = { git = "https://github.com/FennisRobert/emerge-aasds" }
 
 [tool.pytest.ini_options]
 addopts = [

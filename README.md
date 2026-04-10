@@ -48,9 +48,29 @@ EMerge solves all systems with direct solvers only. Some are faster than others.
 system and hardware you have, some might work better and/or are easier to install than others.
 
 ### MacOS (ARM)
-#### Single threaded UMFPACK
-On MacOS you can install it with the very fast UMFPACK through scikit-umfpack
+It is advised to use the Apple Accelerate sparse solver for all cases. On all versions before 2.5.3 install through
 
+```
+pip install https://github.com/FennisRobert/emerge-aasds@v0.2.0
+```
+
+By default the Accelrate solver will be limited to a single thread for frequency distributed sweeps. To allow for more threads either set the environment variable manually:
+```
+VECLIB_MAXIMUM_THREADS = 4
+```
+Or in Python before loading EMerge:
+```python
+import os
+os.environ['VECLIB_MAXIMUM_THREADS'] = '4'
+```
+Of from 2.5.3 onwards also through the config sister module
+```python
+from emerge_config import config
+config.set_acc_threads(4)
+```
+
+#### Single threaded UMFPACK
+There is also an UMFPACK interface but it is more difficult to install and not as fast as the Accelerate solver.
 ```
 brew install cmake swig suite-sparse pkg-config #MacOS
 sudo apt-get install libsuitesparse-dev #Linux
@@ -71,7 +91,7 @@ pip install --no-build-isolation --no-binary=scikit-umfpack scikit-umfpack
 **note**: If you have any corrections to these instructions (for any os) please let me know!
 
 #### Multi threaded MUMPS
-To install the MUMPS solver on MacOS, download the installer directory from my website and follow the instructions:
+To install the MUMPS solver on MacOS, download the installer directory from my website and follow the instructions. Please note that Accelerate is also faster than MUMPS in multi-core performance.
 
 https://www.emerge-software.com/resources
 
