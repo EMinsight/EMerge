@@ -112,7 +112,6 @@ gritted_data = sol.scalar.grid
 f = gritted_data.freq
 S11 = gritted_data.S(1,1)
 S21 = gritted_data.S(2,1)
-
 # This extracts the actual simulation data.
 plot_sp(f, [S11, S21], labels=['S11','S21'], dblim=[-40,6], logx=True)
 
@@ -135,3 +134,4 @@ m.display.animate().add_field(field.cutplane(1*mm, z=-0.75*th*mil).scalar('Ez','
 m.display.add_portmode(port1, k0=field.k0)
 m.display.add_portmode(port2, k0=field.k0)
 m.display.show()
+m.ping()

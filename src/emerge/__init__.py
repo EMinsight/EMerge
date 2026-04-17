@@ -63,7 +63,7 @@ import gmsh
 from ._emerge.simmodel import Simulation, SimulationBeta
 from ._emerge import bc
 from ._emerge.solver import SolverBicgstab, SolverGMRES, SolveRoutine, ReverseCuthillMckee, Sorter, SolverPardiso, SolverUMFPACK, SolverSuperLU, EMSolver
-from ._emerge.cs import CoordinateSystem, CS, GCS, Plane, Axis, XAX, YAX, ZAX, XYPLANE, XZPLANE, YZPLANE, YXPLANE, ZXPLANE, ZYPLANE, cs
+from ._emerge.cs import CoordinateSystem, CS, GCS, Plane, Axis, XAX, YAX, ZAX, XYPLANE, XZPLANE, YZPLANE, YXPLANE, ZXPLANE, ZYPLANE, cs, Anchor
 from ._emerge.coord import Line
 from ._emerge import geo
 from ._emerge.selection import Selection, FaceSelection, DomainSelection, EdgeSelection
@@ -82,7 +82,6 @@ import emsutil.plot as plot
 from emsutil import EMergeTheme
 from emsutil import themes
 from emsutil.lib import C0, MU0, EPS0, Z0
-
 howto = _HowtoClass()
 
 logger.debug('Importing complete!')

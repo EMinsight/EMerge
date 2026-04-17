@@ -26,6 +26,9 @@ from .operations import unite
 from pathlib import Path
 import numpy as np
 from typing import Callable
+from ._step_name_parser import get_volume_names
+from loguru import logger
+
 
 def _select_num(num1: float | None, num2: float | None) -> float:
     if num1 is None and num2 is None:
@@ -77,7 +80,44 @@ class StepVolume(GeoVolume):
         """
         names = [f'Face{num}' for num in numbers]
         return super().faces(*names)
+
+class STEPNameGenerator:
+    
+    def __init__(self, filename: str, string_parser: Callable | None):
+        self.filename: str = filename
+        self.parser: Callable | None = string_parser
+        self.names: list[str] = []
+        self.pulled: bool = None
+        self.counter: int = 0
+        if self.parser is None:
+            self.parser = lambda x: x
+            
         
+    def gen_new(self) -> str:
+        name = f'Obj{self.counter}'
+        self.counter += 1
+        return name
+    
+    def pull_from_file(self) -> None:
+        if self.pulled is None:
+            self.names = get_volume_names(self.filename)
+            if any(self.names):
+                self.pulled = True
+    
+    def get_from_file(self) -> str:
+        self.pull_from_file()
+        if not self.pulled or not self.names:
+            return ''
+        return self.names.pop(0)
+        
+    def get_name(self, dim: int, tag: int) -> str:
+        name = gmsh.model.getEntityName(dim,tag)
+        if not name:
+            name = self.get_from_file()
+        if not name:
+            name = self.gen_new()
+        return self.parser(name)
+            
 
 class STEPItems:
     """STEPItems imports geometries form a STEP file and exposes them to the user.
@@ -111,14 +151,10 @@ class STEPItems:
         self.surfaces: list[GeoSurface] = []
         self.volumes: list[GeoVolume] = []
         
-        i = 0
+        namegen = STEPNameGenerator(filename, string_parser)
+        
         for dim, tag in dimtags:
-            name = gmsh.model.getEntityName(dim, tag) 
-            if string_parser is not None:
-                name = string_parser(name)
-            if name == '':
-                name = f'Obj{i}'
-                i+=1
+            name = namegen.get_name(dim,tag)
             if dim == 0:
                 self.points.append(GeoPoint(tag, name=f'{self.name}_{name}'))
             elif dim == 1:

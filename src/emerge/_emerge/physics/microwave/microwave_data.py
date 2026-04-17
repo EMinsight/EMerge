@@ -1376,7 +1376,7 @@ class MWScalarNdim(Saveable):
                             Z0ref: float | None = None,
                             format: Literal['RI','MA','DB'] = 'RI',
                             custom_comments: list[str] | None = None,
-                            funit: Literal['HZ','KHZ','MHZ','GHZ'] = 'GHZ',
+                            funit: Literal['Hz','KHz','MHz','GHz'] = 'GHz',
                             dense_freq: np.ndarray | None = None):
         """Export the S-parameter data to a touchstone file
 
@@ -1425,7 +1425,7 @@ class MWScalarNdim(Saveable):
                         Z0ref: float | None = None,
                         format: Literal['RI','MA','DB'] = 'RI',
                         custom_comments: list[str] | None = None,
-                        funit: Literal['HZ','KHZ','MHZ','GHZ'] = 'GHZ') -> None:
+                        funit: Literal['Hz','KHz','MHz','GHz'] = 'GHz') -> None:
         """Save an S-parameter matrix to a touchstone file.
         
         Additionally, a reference impedance may be supplied. In this case, a port renormalization will be performed on the S-matrix.

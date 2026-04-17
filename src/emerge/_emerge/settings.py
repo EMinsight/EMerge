@@ -63,4 +63,6 @@ class Settings:
         self.check_ram: bool = True
         # If a RAM memory check should be done and halt the solver.
         
+        self.safe_mode: bool = False
+        # Executes extra diagnosis checks to ensure a proper matrix problem
 DEFAULT_SETTINGS = Settings()

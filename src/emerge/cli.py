@@ -201,7 +201,7 @@ class InstallSolverCommand(Command):
             )
             sys.exit(1)
         print("Installing emerge-aasds (Apple Accelerate solver)...")
-        _pip("install", "emerge-aasds")
+        _pip("install", "git+https://github.com/FennisRobert/emerge-aasds")
         print("Apple Accelerate solver installed.")
 
     @staticmethod

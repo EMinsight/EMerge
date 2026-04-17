@@ -273,6 +273,7 @@ def tet_mass_stiffness_matrices(field: Nedelec2,
 
 
     dataE, dataB, rows, cols = _matrix_builder(nodes, tets, tris, edges, field.mesh.edge_lengths, tet_to_field, tet_to_edge, ur, er)
+    
     if cscmap is None:
         cscmap = CSCMapping.from_rowcol(rows, cols, field.n_field)
     return dataE, dataB, cscmap
@@ -600,7 +601,6 @@ def _matrix_builder(nodes, tets, tris, edges, all_edge_lengths, tet_to_field, te
                                                 local_edge_map, 
                                                 local_tri_map, 
                                                 matinv(urt), ert)
-        
         indices = tet_to_field[:, itet]
         for ii in range(20):
             rows[p+20*ii:p+20*(ii+1)] = indices[ii]

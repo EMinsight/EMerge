@@ -21,6 +21,7 @@ dependencies = [
     "msgpack>=1.1.2",
     "msgpack-numpy>=0.4.8",
     "psutil>=7.2.2",
+    "emerge-aasds",
 ]
 
 [project.scripts]
@@ -56,6 +57,7 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
+    "emerge-iron",
     "pytest>=9.0.2",
     "scikit-umfpack>=0.4.2",
     "twine>=6.2.0",
@@ -79,6 +81,7 @@ url = "https://test.pypi.org/simple"
 publish-url = "https://test.pypi.org/legacy"
 
 [tool.uv.sources]
+emerge-aasds = { git = "https://github.com/FennisRobert/emerge-aasds" }
 emerge-iron = { git = "https://github.com/FennisRobert/EMerge-IRON" }
 
 [tool.pytest.ini_options]

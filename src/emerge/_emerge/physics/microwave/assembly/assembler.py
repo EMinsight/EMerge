@@ -35,24 +35,170 @@ _PBC_DSMAX = 1e-15
 #                         FUNCTIONS                        #
 ############################################################
 
-def diagnose_matrix(mat: np.ndarray) -> None:
 
-    if not isinstance(mat, np.ndarray):
-        logger.debug('Converting sparse array to flattened array')
-        mat = mat[mat.nonzero()].A1
-        #mat = np.array(nonzero_mat)
+def diagnose_matrix(mat: csc_matrix, basis: Nedelec2):
+    """
+    Performs high-fidelity diagnostics on the FEM system matrix.
+    Crashes with a detailed report if the matrix is numerically or structurally unfit.
+    """
+    print("--- Starting FEM Matrix Diagnostics ---")
     
-    ''' Prints all indices of Nan's and infinities in a matrix '''
-    ids = np.where(np.isnan(mat))
-    if len(ids[0]) > 0:
-        logger.error(f'Found NaN at {ids}')
-    ids = np.where(np.isinf(mat))
-    if len(ids[0]) > 0:
-        logger.error(f'Found Inf at {ids}')
-    ids = np.where(np.abs(mat) > 1e10)
-    if len(ids[0]) > 0:
-        logger.error(f'Found large values at {ids}')
-    logger.info('Diagnostics finished')
+    n_dofs = mat.shape[0]
+    report = []
+    failed = False
+
+    # 1. Structural Check: Dimensions
+    if mat.shape[0] != mat.shape[1]:
+        report.append(f"CRITICAL: Non-square matrix detected ({mat.shape})")
+        failed = True
+
+    if n_dofs != basis.nfield:
+        report.append(f"CRITICAL: DoF mismatch! Matrix size {n_dofs} != Basis nfield {basis.nfield}")
+        failed = True
+
+    # 2. Empty Column/Row Detection (Efficiency: O(nnz))
+    # For CSC, checking columns is fast via the 'indptr'
+    col_counts = np.diff(mat.indptr)
+    empty_cols = np.where(col_counts == 0)[0]
+    
+    # For Rows, we check the diagonal or convert to CSR (but sum is usually enough)
+    # A faster way to find empty rows in CSC is to check which indices never appear in 'indices'
+    row_present = np.zeros(n_dofs, dtype=bool)
+    row_present[mat.indices] = True
+    empty_rows = np.where(~row_present)[0]
+
+    if len(empty_cols) > 0 or len(empty_rows) > 0:
+        failed = True
+        report.append(f"CRITICAL: Found {len(empty_cols)} empty columns and {len(empty_rows)} empty rows.")
+        
+        # --- PHYSICAL MAPPING ---
+        # We identify if these DoFs belong to Edges or Triangles
+        nedges = basis.nedges
+        ntris = basis.ntris
+
+        def map_dof_to_entity(dofs):
+            edge_dofs = dofs[dofs < 2 * nedges]
+            # Note: Nedelec2 mapping usually shifts by nedges or ntris based on basis.tet_to_field logic
+            # Here we follow your nfield = 2*nedges + 2*ntris
+            # Logic: [EdgeGroup1][TriGroup1][EdgeGroup2][TriGroup2]
+            
+            e_idx = dofs[(dofs < nedges) | ((dofs >= (nedges+ntris)) & (dofs < (2*nedges+ntris)))]
+            t_idx = dofs[((dofs >= nedges) & (dofs < (nedges+ntris))) | (dofs >= (2*nedges+ntris))]
+            return e_idx, t_idx
+
+        e_empty, t_empty = map_dof_to_entity(empty_cols)
+        
+        if len(e_empty) > 0:
+            report.append(f" -> Problem involves {len(e_empty)} Edge DoFs. Check for unmeshed lines or duplicate STEP edges.")
+        if len(t_empty) > 0:
+            report.append(f" -> Problem involves {len(t_empty)} Triangle DoFs. Check for internal non-conformal faces.")
+
+    # 3. Numerical Check: Zero Diagonals
+    # In Nedelec, even if a column isn't empty, a zero diagonal is a death sentence for most solvers.
+    diag = mat.diagonal()
+    zero_diag = np.where(np.isclose(diag, 0, atol=1e-15))[0]
+    if len(zero_diag) > 0:
+        # Filter out those already caught as empty
+        true_zero_diag = np.setdiff1d(zero_diag, empty_cols)
+        if len(true_zero_diag) > 0:
+            failed = True
+            report.append(f"CRITICAL: {len(true_zero_diag)} non-empty columns have zero diagonal (Numerical Singularity).")
+
+    # 4. Symmetry Check (Optional but recommended for RF)
+    # RF matrices (S, M) should be symmetric unless using specific boundary conditions.
+    if (mat - mat.T).nnz > 0:
+        max_asym = np.max(np.abs((mat - mat.T).data)) if mat.nnz > 0 else 0
+        if max_asym > 1e-12:
+            report.append(f"WARNING: Matrix is asymmetric. Max diff: {max_asym}")
+
+    # 5. Summary and Crash
+    if failed:
+        print("\n" + "!"*50)
+        print("MATRIX DIAGNOSTICS FAILED")
+        print("!"*50)
+        for line in report:
+            print(line)
+        
+        # Specific hint for GMSH users:
+        print("\nHINT: Your 'nfield' is based on mesh.n_edges and n_tris.")
+        print("If parts aren't 'welded' with gmsh.model.mesh.removeDuplicateNodes(),")
+        print("you will have extra DoFs on the interface that never get assembled.")
+        print("!"*50)
+        identify_mesh_dead_zones(mat, basis)
+        raise RuntimeError("FEM Matrix is singular or improperly assembled.")
+    
+    print("Diagnostics Passed: Matrix is structurally sound.")
+
+def identify_mesh_dead_zones(mat, basis: 'Nedelec2'):
+    """
+    Identifies exactly which physical parts of the STEP file 
+    correspond to the empty matrix columns.
+    """
+    col_counts = np.diff(mat.indptr)
+    empty_indices = np.where(col_counts == 0)[0]
+    
+    if len(empty_indices) == 0:
+        print("No empty columns found spatially.")
+        return
+
+    nedges = basis.nedges
+    ntris = basis.ntris
+    
+    # We will track which physical tags are "dead"
+    dead_elements = {"edges": [], "tris": []}
+    dead_coords = []
+
+    for idx in empty_indices:
+        # Determine if this index refers to an edge or a triangle
+        # Based on your Nedelec2: [E_grp1][T_grp1][E_grp2][T_grp2]
+        if idx < nedges: # Edge Group 1
+            e_id = idx
+            dead_elements["edges"].append(e_id)
+            dead_coords.append(basis.mesh.edge_centers[:,e_id])
+        elif nedges <= idx < (nedges + ntris): # Tri Group 1
+            t_id = idx - nedges
+            dead_elements["tris"].append(t_id)
+            dead_coords.append(basis.mesh.tri_centers[:,t_id])
+        elif (nedges + ntris) <= idx < (2 * nedges + ntris): # Edge Group 2
+            e_id = idx - (nedges + ntris)
+            dead_elements["edges"].append(e_id)
+            dead_coords.append(basis.mesh.edge_centers[:,e_id])
+        else: # Tri Group 2
+            t_id = idx - (2 * nedges + ntris)
+            dead_elements["tris"].append(t_id)
+            dead_coords.append(basis.mesh.tri_centers[:,t_id])
+
+    np.save('dead_coords.npy', np.array(dead_coords).T)
+    # Convert to numpy for spatial analysis
+    dead_coords = np.array(dead_coords)
+    avg_pos = np.mean(dead_coords, axis=0)
+    spread = np.std(dead_coords, axis=0)
+
+    print("\n--- Spatial Autopsy Report ---")
+    print(f"Dead Zone Center of Mass: {avg_pos}")
+    print(f"Dead Zone Bounding Box Spread (std): {spread}")
+    
+    # Find which GMSH Physical Groups these belong to
+    # We use the ftag_to_tri/etag_to_edge maps in your Mesh3D
+    troubled_groups = set()
+    
+    for e_id in set(dead_elements["edges"]):
+        for tag, edges in basis.mesh.etag_to_edge.items():
+            if e_id in edges:
+                troubled_groups.add(f"Physical Curve (Tag {tag})")
+                
+    for t_id in set(dead_elements["tris"]):
+        for tag, tris in basis.mesh.ftag_to_tri.items():
+            if t_id in tris:
+                troubled_groups.add(f"Physical Surface (Tag {tag})")
+
+    if troubled_groups:
+        print("The following Physical Groups contain dead DoFs:")
+        for group in troubled_groups:
+            print(f" - {group}")
+    else:
+        print("HINT: Dead DoFs do not belong to any Physical Group.")
+        print("This means they are INTERIOR elements that your assembly loop is missing.")
 
 def plane_basis_from_points(points: np.ndarray) -> np.ndarray:
     """
@@ -483,6 +629,7 @@ class Assembler:
         logger.debug(f'Number of DoF: {K.shape[0]:,}')
         logger.debug(f'Number of non-zero: {K.nnz:,}')
         
+        #diagnose_matrix(K, field)
         simjob = SimJob(K, port_vectors, K0*299792458/(2*np.pi))
         
         simjob.solve_ids = solve_ids

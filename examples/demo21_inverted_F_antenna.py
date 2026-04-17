@@ -2,6 +2,8 @@ import emerge as em
 import numpy as np
 from emerge.plot import plot_sp, smith, plot_ff_polar, plot_ff
 
+from emerge_config import config
+config.set_acc_threads(10)
 """ PCB INVERTED-F ANTENNA (IFA) DEMO
 
 This design is modeled after Texas Instruments Application Note AN043
@@ -141,6 +143,7 @@ model.adaptive_mesh_refinement(frequency=2.45e9, max_steps=6)
 model.view(plot_mesh=True, volume_mesh=False)
 data = model.mw.run_sweep()
 
+data.scalar.grid.export_touchstone
 # --- Post-process S-parameters ------------------------------------------
 freqs = data.scalar.grid.freq
 freq_dense = np.linspace(f1, f2, 1001)

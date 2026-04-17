@@ -27,7 +27,7 @@ from ...cs import Anchor
 from emsutil.pyvista import EMergeDisplay, setdefault, cmap_names, _AnimObject
 import numpy as np
 from typing import Iterable, Literal
-
+from loguru import logger
 import pyvista as pv
 
 def _min_distance(xs, ys, zs):
@@ -87,12 +87,66 @@ class PVDisplay(EMergeDisplay):
     def __post_init__(self, state: SimState):
         self._state: SimState = state
         self._selector._set_encoder_function(encode_data)
-        self._plot.add_key_event("l", self._register_printer) # type: ignore
+        self._plot.add_key_event("l", self.activate_line_selector)
+        self._selectable_edges = []
+        self._selectable_faces = []
+        self._selectable_nodes = []
+        self._selectable_volumes = []
+
+    def _add_selectable_edges(self) -> None:
+        self._clear_selectable_objects()
+        mesh = self._state.mesh
+        self._plot._render = False
+        for edge_id, edge_tags in self._state.mesh.etag_to_edge.items():
+            # No tags in the edge, abort
+            if len(edge_tags) < 1:
+                continue
+            vertex_ids = mesh.edges[:,edge_tags].ravel()
+            edge_nodes = mesh.nodes[:,vertex_ids]
+            center = np.mean(edge_nodes, axis=1)
+            # Points are not on a straight line, not printable like this
+            if not np.linalg.svd(edge_nodes - edge_nodes.mean(axis=1, keepdims=True))[1][1] < 1e-6:
+                continue
+            vs = np.where(np.bincount(vertex_ids)==1)[0]
+            # No unique start and end point (loop line)
+            if len(vs) != 2:
+                logger.warning(f'Skipping edge {edge_id} with no start and end point.')
+                continue
+            
+            n1 = mesh.nodes[:,vs[0]]
+            n2 = mesh.nodes[:,vs[1]]
+            line = pv.Line(n1, n2)
+            line_mesh = self._plot.add_mesh(line, color='black', line_width=6, opacity=1.0, render=False)
+            line_mesh._seldata = (tuple([float(c) for c in n1]), tuple([float(c) for c in n2]), edge_id, center)
+            self._selectable_edges.append(line_mesh)
+        self._plot._render = True
+        self._plot.render()
+
+    def _clear_selectable_objects(self) -> None:
+        for obj in (self._selectable_edges + self._selectable_volumes + self._selectable_nodes + self._selectable_faces):
+            self._plot.remove_actor(obj)
+    
+    def activate_line_selector(self):
         
+        def callback(obj):
+            if '_seldata' in obj.__dict__:
+                n1, n2, edge_id, center = obj._seldata
+                ds = n2[0]-n1[0],n2[1]-n1[1],n2[2]-n1[2]
+                print(f'Edge tag [{edge_id}] data:')
+                print(f'    vertex[1] = {n1}')
+                print(f'    vertex[2] = {n2}')
+                print(f'    direction = {ds}')
+                print(f'    center = {center}')
+                print(f'    plane = em.geo.Plate(origin={n1},u={ds},v=(x,y,z))')
+        self._add_selectable_edges()
+        self._plot.disable_picking()
+        self._plot.enable_mesh_picking(callback, style='wireframe', show=True, left_clicking=True, use_actor=True, picker='hardware')
+        #self._plot.enable_element_picking(callback, mode='edge', show=True, tolerance=0.02, left_clicking=True, picker='cell')
+    
     def clean(self) -> None:
         del self._state
         self._state = None
-        
+    
     def _get_edge_length(self):
         return max(1e-3, min(self._mesh.edge_lengths))
     
@@ -212,7 +266,7 @@ class PVDisplay(EMergeDisplay):
         mesh_obj = self._volume_edges(_select(obj))
         
         if mesh_obj is not None:
-            self._plot.add_mesh(mesh_obj, line_width=self.set.theme.geo_edge_width, color=self.set.theme.geo_edge_color, pickable=True, show_edges=True)
+            self._plot.add_mesh(mesh_obj, line_width=self.set.theme.geo_edge_width, color=self.set.theme.geo_edge_color, pickable=False, show_edges=True)
         else:
             return
         
@@ -238,6 +292,8 @@ class PVDisplay(EMergeDisplay):
         for obj in self._state.current_geo_state:
             self.add_object(obj, opacity=opacity, **kwargs)
 
+    
+          
     def add_scatter(self, xs: np.ndarray, ys: np.ndarray, zs: np.ndarray):
         """Adds a scatter point cloud
 

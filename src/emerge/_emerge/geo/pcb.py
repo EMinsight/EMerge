@@ -50,10 +50,12 @@ SIZE_NAMES = Literal['0402','0603','1005','1608','2012','3216','3225','4532','50
 _SMD_SIZE_DICT = {x: (float(x[:2])*0.05, float(x[2:])*0.1) for x in ['0402','0603','1005','1608','2012','3216','3225','4532','5025','6332']}
 
 
-class _PCB_NAME_MANAGER:
+class PCB_MANAGER:
     """This manager class ensures that unique names are provided to instances of PCB objects."""
     def __init__(self):
         self.names: set[str] = set()
+        self.unit: float = 1.0
+        self.cs: CoordinateSystem = GCS
      
     def clear(self) -> None:
         self.names = set()
@@ -72,7 +74,7 @@ class _PCB_NAME_MANAGER:
                 return newname
                 
     
-_NAME_MANAGER = _PCB_NAME_MANAGER()
+_PCB_MANAGER = PCB_MANAGER()
 
 ############################################################
 #                         FUNCTIONS                        #
@@ -133,15 +135,19 @@ class Via:
 
     @property
     def pnt(self) -> Anchor:
-        return Anchor((self.x, self.y, 0))
+        unit = _PCB_MANAGER.unit
+        cs = _PCB_MANAGER.cs
+        x, y, z = _PCB_MANAGER.cs.in_global_cs(self.x*unit, self.y*unit, self.z1*unit)
+        return Anchor((x,y,z), cs.gx, cs.gy, cs.gz)
     
 class RouteElement:
     _DEFNAME: str = 'RouteElement'
-    
+    _UNIT: float = 1.0
     def __init__(self):
         self.width: float = None
         self.x: float = None
         self.y: float = None
+        self.z: float = None
         self.direction: np.ndarray = None
         self.dirright: np.ndarray = None
         self.rcutnext: bool = False
@@ -156,7 +162,13 @@ class RouteElement:
 
     @property
     def pnt(self) -> Anchor:
-        return Anchor((self.x, self.y, 0.0))
+        unit = _PCB_MANAGER.unit
+        cs = _PCB_MANAGER.cs
+        ux = np.array(_PCB_MANAGER.cs.in_local_basis(self.direction[0], self.direction[1], 0.0))
+        uy = np.array(_PCB_MANAGER.cs.in_local_basis(-self.dirright[0], -self.dirright[1], 0.0))
+        uz = np.array(_PCB_MANAGER.cs.in_local_basis(0.0, 0.0, 1.0))
+        gx, gy, gz = cs.in_global_cs(self.x*_PCB_MANAGER.unit, self.y*_PCB_MANAGER.unit, self.z)
+        return Anchor((gx, gy, gz), ux, uy, uz)
     
     @property
     def xy(self) -> tuple[float, float]:
@@ -186,11 +198,13 @@ class StripLine(RouteElement):
     def __init__(self,
                  x: float | Anchor,
                  y: float,
+                 z: float,
                  width: float,
                  direction: tuple[float, float]):
-        x, y, _ = argparse_xyz(x,y)
+        x, y, z = argparse_xyz(x,y,z)
         self.x = x
         self.y = y
+        self.z = z
         self.width = width
         self.direction = normalize(np.array(direction))
         self.dirright = np.array([self.direction[1], -self.direction[0]])
@@ -215,13 +229,14 @@ class StripTurn(RouteElement):
     def __init__(self,
                  x: float | Anchor,
                  y: float,
+                 z: float, 
                  width: float,
                  direction: tuple[float, float],
                  angle: float,
                  corner_type: str = 'round',
                  champher_distance: float | None = None,
                  dsratio: float = 1.0):
-        x, y, _ = argparse_xyz(x,y)
+        x, y, z = argparse_xyz(x,y,z)
         self.xold: float = x
         self.yold: float = y
         self.width: float = width
@@ -342,12 +357,13 @@ class StripCurve(StripTurn):
     def __init__(self,
                  x: float | Anchor,
                  y: float,
+                 z: float,
                  width: float,
                  direction: tuple[float, float],
                  angle: float,
                  radius: float,
                  dang: float = 10.0):
-        x, y, _ = argparse_xyz(x,y)
+        x, y, z = argparse_xyz(x,y,z)
         self.xold: float = x
         self.yold: float = y
         self.width: float = width
@@ -413,7 +429,7 @@ class PCBPoly:
         self.ys: list[float] = ys
         self.z: float = z
         self.material: Material = material
-        self.name: str = _NAME_MANAGER(name, self._DEFNAME)
+        self.name: str = _PCB_MANAGER(name, self._DEFNAME)
     
     @property
     def xys(self) -> list[tuple[float, float]]:
@@ -429,7 +445,7 @@ class PCBPoly:
         W = ((x2-x1)**2 + (y2-y1)**2)**(0.5)
         wdir = ((y2-y1)/W, -(x2-x1)/W)
         
-        return StripLine((x2+x1)/2, (y1+y2)/2, W, wdir)
+        return StripLine((x2+x1)/2, (y1+y2)/2, self.z, W, wdir)
     
     @staticmethod
     def circle(x: float, y: float, radius: float, z: float, NSegments: int = 12) -> PCBPoly:
@@ -449,7 +465,7 @@ class StripPath:
         self.pcb: PCB = pcb
         self.path: list[RouteElement] = []
         self.z: float = 0
-        self.name: str = _NAME_MANAGER(name, self._DEFNAME)
+        self.name: str = _PCB_MANAGER(name, self._DEFNAME)
         self._consume: float = 0
         
     
@@ -521,8 +537,8 @@ class StripPath:
              direction: tuple[float, float],
              z: float = 0) -> StripPath:
         """ Initializes the StripPath object for routing. """
-        x, y, _ = argparse_xyz(x,y)
-        self.path.append(StripLine(x, y, width, direction))
+        x, y, z = argparse_xyz(x,y,z)
+        self.path.append(StripLine(x, y, z, width, direction))
         self.z = z
         return self
     
@@ -568,9 +584,9 @@ class StripPath:
 
         if width is not None:
             if width != self.end.width:
-                self._add_element(StripLine(x, y, width, (dx_2, dy_2)))
+                self._add_element(StripLine(x, y, self.z, width, (dx_2, dy_2)))
 
-        self._add_element(StripLine(x1, y1, self.end.width, (dx_2, dy_2)))
+        self._add_element(StripLine(x1, y1, self.z, self.end.width, (dx_2, dy_2)))
         return self
     
     def taper(self, distance: float, 
@@ -600,7 +616,7 @@ class StripPath:
         x1 = x + distance * dx_2
         y1 = y + distance * dy_2
 
-        self._add_element(StripLine(x1, y1, width, (dx_2, dy_2)))
+        self._add_element(StripLine(x1, y1,self.z, width, (dx_2, dy_2)))
         
         return self
     
@@ -631,10 +647,10 @@ class StripPath:
             logger.warning('Small turn detected, defaulting to rectangular corners because chamfers would add to much detail.')
         if width is not None:
             if width != self.end.width:
-                self._add_element(StripLine(x, y, width, (dx, dy)))
+                self._add_element(StripLine(x, y, self.z, width, (dx, dy)))
         else:
             width=self.end.width
-        self._add_element(StripTurn(x, y, width, (dx, dy), angle, corner_type, dsratio=dsratio))
+        self._add_element(StripTurn(x, y, self.z, width, (dx, dy), angle, corner_type, dsratio=dsratio))
         return self
 
     def pturn(self, 
@@ -686,10 +702,10 @@ class StripPath:
         dx, dy = self.end.direction
         if width is not None:
             if width != self.end.width:
-                self._add_element(StripLine(x, y, width, (dx, dy)))
+                self._add_element(StripLine(x, y, self.z, width, (dx, dy)))
         else:
             width=self.end.width
-        self._add_element(StripCurve(x, y, width, (dx, dy), angle, radius, dang=dang))
+        self._add_element(StripCurve(x, y, self.z, width, (dx, dy), angle, radius, dang=dang))
         return self
     
     def store(self, name: str) -> StripPath:
@@ -1121,7 +1137,7 @@ class PCBLayer:
                  name: str | None = None):
         self.th: float = thickness
         self.mat: Material = material
-        self.name: str = _NAME_MANAGER(name, self._DEFNAME)
+        self.name: str = _PCB_MANAGER(name, self._DEFNAME)
         
 ############################################################
 #                     PCB DESIGN CLASS                     #
@@ -1217,12 +1233,12 @@ class PCBNew:
         self._poly_out: list[PCBPoly] = []
 
         self.stored_coords: dict[str,tuple[float, float]] = dict()
-        self.stored_striplines: dict[str, StripLine] = dict()
+        self.stored_striplines: dict[str, RouteElement] = dict()
         self._checkpoint: list[StripPath] = []
 
         self.calc: PCBCalculator = PCBCalculator(self._zs, [layer.mat for layer in self._stack], self.unit)
 
-        self.name: str = _NAME_MANAGER(name, self._DEFNAME)
+        self.name: str = _PCB_MANAGER(name, self._DEFNAME)
 
         if not self._thick_traces and self.trace_material is not PEC:
             DEBUG_COLLECTOR.add_report('Non PEC surface materials are used without thick traces. The SurfaceImpedance boundary condition will be used that is known to not be accurate.' +
@@ -1410,13 +1426,16 @@ class PCBNew:
         for x,y in coordinates:
             self.vias.append(Via(x,y,z1,z2,radius,segments))
         
-    def load(self, name: str) -> StripLine:
+    def load(self, name: str) -> RouteElement:
         """Acquire the x,y, coordinate associated with the label name.
         
         Args:
             name (str): The name of the x,y coordinate
             
         """
+        _PCB_MANAGER.unit = self.unit
+        _PCB_MANAGER.cs = self.cs
+
         name = str(name)
         if name in self.stored_striplines:
             return self.stored_striplines[name]

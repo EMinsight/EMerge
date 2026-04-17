@@ -669,6 +669,7 @@ class Simulation:
                     if geo.face(face_name).invalid:
                         continue
                     self.display.add_object(geo.face(face_name), color='yellow', opacity=0.1, label=face_name)
+
         if selections:
             [self.display.add_object(sel, color='red', opacity=0.6, label=sel.name) for sel in selections]
         if bc:
@@ -838,6 +839,8 @@ class Simulation:
         try:
             gmsh.logger.start()
             gmsh.model.mesh.generate(3)
+            gmsh.model.mesh.removeDuplicateNodes([])
+            gmsh.model.mesh.remove_duplicate_elements([])
             logs = gmsh.logger.get()
             gmsh.logger.stop()
             for log in logs:
@@ -850,7 +853,9 @@ class Simulation:
         
         logger.info('GMSH Meshing complete!')
         self.mesh._pre_update(self.mesher._get_periodic_bcs())
-
+        if self.settings.safe_mode:
+            self.mesh.diagnose()
+        
         self.mesh.exterior_face_tags = self.mesher.domain_boundary_face_tags
         gmsh.model.occ.synchronize()
         self.state.store_geometry_data()
@@ -1247,6 +1252,7 @@ class Simulation:
         
         return old
     
+
 class SimulationBeta(Simulation):
     
     

@@ -6,14 +6,14 @@ from .solver import DEFAULT_ROUTINE
 from .logsettings import LOG_CONTROLLER, DEBUG_COLLECTOR, _LOG_BUFFER
 from .geometry import _GEOMANAGER, _GENERATOR
 from loguru import logger
-from .geo.pcb import _NAME_MANAGER
+from .geo.pcb import _PCB_MANAGER
 def cleanup() -> None:
     """ Cleanup all global states used in EMerge."""
     logger.info('Cleaning up EMerge global states')
        
     
     _GEOMANAGER.clear()
-    _NAME_MANAGER.clear()
+    _PCB_MANAGER.clear()
     _CALC_INTERFACE.clear()
     SELECTOR_OBJ.clear()
     DEFAULT_ROUTINE.reset(hard=True)

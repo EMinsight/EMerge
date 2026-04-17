@@ -78,6 +78,7 @@ def remove(main: T, tool: T,
     GeoSurface | GeoVolume
         A new object that is the difference of the main and tool objects.
     '''
+    gmsh.model.occ.synchronize()
     out_dim_tags, out_dim_tags_map = gmsh.model.occ.cut(main.dimtags, tool.dimtags, removeObject=remove_object, removeTool=remove_tool)
     
     gmsh.model.occ.synchronize()

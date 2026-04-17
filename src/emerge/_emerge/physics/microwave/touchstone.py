@@ -23,17 +23,17 @@ import numpy as np
 from datetime import datetime
 from loguru import logger
 
-_F_UNIT = {'HZ': 1,
-           'KHZ': 1e3,
-           'MHZ': 1e6,
-           'GHZ': 1e9,
+_F_UNIT = {'hz': 1,
+           'khz': 1e3,
+           'mhz': 1e6,
+           'ghz': 1e9,
 }
 def generate_touchstone(filename: str,
                         freq: np.ndarray,
                         Smat: np.ndarray,
                         data_format: Literal['RI','MA','DB'],
                         custom_comments: list[str] | None = None,
-                        funit: Literal['HZ','KHZ','MHZ','GHZ'] = 'GHZ') -> None:
+                        funit: Literal['Hz','KHz','MHz','GHz'] = 'GHz') -> None:
     """
     Export S-parameter data to a Touchstone file
 
@@ -86,7 +86,7 @@ def generate_touchstone(filename: str,
 
         # Write data
         for i in range(M):
-            freq_ghz = freq[i] / _F_UNIT[funit]  # Convert Hz to GHz
+            freq_ghz = freq[i] / _F_UNIT[funit.strip().lower()]  # Convert Hz to GHz
             
             # Build all S-parameter values for this frequency
             s_values = []

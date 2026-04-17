@@ -68,8 +68,16 @@ class Nedelec2(FEMBasis, Saveable):
         self.n_tri_dofs = 8
         self._all_tet_ids = np.arange(self.ntets)
 
+        self.diagnose()
+
         self.empty_tri_rowcol()
     
+    def diagnose(self):
+        visited_field = np.zeros((self.n_field,), dtype=np.bool)
+        for i in range(self.mesh.n_tets):
+            visited_field[self.tet_to_field[:,i]] = True
+        assert np.all(visited_field)
+        
     def interpolate(self, field: np.ndarray, xs: np.ndarray, ys: np.ndarray, zs:np.ndarray, tetids: np.ndarray | None = None, usenan: bool = True) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         ''' 
         Interpolate the provided field data array at the given xs, ys and zs coordinates

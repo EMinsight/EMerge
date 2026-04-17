@@ -28,6 +28,9 @@ from emsutil import Saveable
 
 _MISSING_ID: int = -1234
 
+class MeshException(Exception):
+    pass
+
 def shortest_distance(point_cloud):
     """
     Compute the shortest distance between any two points in a 3D point cloud.
@@ -189,11 +192,11 @@ class Mesh3D(Mesh, Saveable):
     def get_edge(self, i1: int, i2: int, skip: bool = False) -> int:
         '''Return the edge index given the two node indices'''
         if i1==i2:
-            raise ValueError("Edge cannot be formed by the same node.")
+            raise MeshException("Edge cannot be formed by the same node.")
         search = (min(int(i1),int(i2)), max(int(i1),int(i2)))
         result =  self.inv_edges.get(search, _MISSING_ID)
         if result == _MISSING_ID and not skip:
-            raise ValueError(f'There is no edge with indices {i1}, {i2}')
+            raise MeshException(f'There is no edge with indices {i1}, {i2}')
         return result
         
     def get_tri(self, i1, i2, i3) -> int:
@@ -203,14 +206,14 @@ class Mesh3D(Mesh, Saveable):
         if output is None:
             DEBUG_COLLECTOR.add_report(f'Mesh3D: The program is crashed due to a non existing triangle {i11}, {i21}, {i31}. This occurs often if surfaces stick out of the 3D domain.\n' + 
                                        'Only 3D volumes can be meshed. Parts or entire simulations that are two dimensional will cause this problem.')
-            raise ValueError(f'There is no triangle with indices {i11}, {i21}, {i31}')
+            raise MeshException(f'There is no triangle with indices {i11}, {i21}, {i31}')
         return output
     
     def get_tet(self, i1, i2, i3, i4) -> int:
         '''Return the tetrahedron index given the four node indices'''
         output = self.inv_tets.get(tuple(sorted((int(i1), int(i2), int(i3), int(i4)))), None)
         if output is None:
-            raise ValueError(f'There is no tetrahedron with indices {i1}, {i2}, {i3}, {i4}')
+            raise MeshException(f'There is no tetrahedron with indices {i1}, {i2}, {i3}, {i4}')
         return output
         
     def get_tetrahedra(self, vol_tags: Union[int, list[int]]) -> np.ndarray:
@@ -343,7 +346,146 @@ class Mesh3D(Mesh, Saveable):
         
         return np.array(sorted(list(set(edges))))
     
+    def diagnose(self) -> None:
+        """Executes a diagnosis for the mesh to make sure that it is properly defined.
+       
+        """
+
+        # Check 1: Make sure that all i2t bindings are complete
+        for i in range(self.n_nodes):
+            if i not in self.n_i2t:
+                raise MeshException(f'Node {i} is not referenced in the node-to-tet mapping. '
+                                    f'This indicates an orphan node in the mesh.')
+        for i in range(self.n_tets):
+            if i not in self.tet_i2t:
+                raise MeshException(f'Tetrahedron {i} is not referenced in the tet-to-tet mapping. '
+                                    f'This indicates a disconnected element in the mesh.')
+
+        # Check if the mesh is densely connected
+        from scipy.sparse import csr_matrix
+        from scipy.sparse.csgraph import connected_components
+
+        row = self.edges[0,:]
+        col = self.edges[1,:]
+        data = np.ones(len(row))
+        adj_matrix = csr_matrix((data, (row, col)), shape=(self.n_nodes, self.n_nodes))
+        n_components, labels = connected_components(csgraph=adj_matrix, directed=False, return_labels=True)
+        if n_components != 1:
+            component_sizes = np.bincount(labels)
+            raise MeshException(f'Mesh is not densely connected: found {n_components} disconnected components '
+                                f'with sizes {component_sizes.tolist()}. '
+                                f'This may indicate gaps or disconnected regions in the geometry.')
+
+        # Check tet-to-edge and tet-to-tri
+        pointed_edges = np.zeros((self.n_edges,), dtype=np.bool_)
+        pointed_tris = np.zeros((self.n_tris,), dtype=np.bool_)
+        for itet in range(self.n_tets):
+            pointed_edges[self.tet_to_edge[:,itet]] = True
+            pointed_tris[self.tet_to_tri[:,itet]] = True
+        if not np.all(pointed_edges):
+            orphan_edges = np.where(~pointed_edges)[0]
+            raise MeshException(f'{len(orphan_edges)} edges in the mesh are not referenced by any tetrahedron. '
+                                f'First few orphan edge indices: {orphan_edges[:10].tolist()}. '
+                                f'This may indicate surface-only elements from the geometry import.')
+        if not np.all(pointed_tris):
+            orphan_tris = np.where(~pointed_tris)[0]
+            raise MeshException(f'{len(orphan_tris)} triangles in the mesh are not referenced by any tetrahedron. '
+                                f'First few orphan triangle indices: {orphan_tris[:10].tolist()}. '
+                                f'This may indicate surface-only elements from the geometry import.')
+
+        # Compute volumes and areas
+        from .mth.optimized import calc_volume, calc_area
+        for i in range(self.n_tets):
+            i1, i2, i3, i4 = self.tets[:,i]
+            V = calc_volume(self.nodes[:,i1], self.nodes[:,i2], self.nodes[:,i3], self.nodes[:,i4])
+            if V == 0.0:
+                logger.error(f'Zero volume tetrahedron at index {i}. This points to degenerate geometries.')
+                raise MeshException(f'Zero volume tetrahedron at index {i}. This points to degenerate geometries.')
+        for i in range(self.n_tris):
+            i1, i2, i3 = self.tris[:,i]
+            V = calc_area(self.nodes[:,i1], self.nodes[:,i2], self.nodes[:,i3])
+            if V == 0.0:
+                logger.error(f'Zero area triangle at index {i}. This points to degenerate geometries.')
+                raise MeshException(f'Zero area triangle at index {i}. This points to degenerate geometries.')
     
+    def fix_zero_volumes(self, tol: float = 1e-25, perturbation: float = 1e-12, respect_boundaries=True):
+        """Attempt to fix zero-volume tetrahedra by minimally perturbing a non-boundary node.
+
+        For each degenerate tet, finds a node that is not on any boundary (i.e. not in
+        ftag_to_node) and offsets it along the tet's normal direction by a small amount.
+
+        Args:
+            tol (float): Volume threshold below which a tet is considered degenerate.
+            perturbation (float): The displacement magnitude applied to the chosen node.
+
+        Raises:
+            MeshException: If a degenerate tet has all four nodes on boundaries.
+        """
+        from .mth.optimized import calc_volume
+
+        # Collect all boundary-constrained nodes into a set for fast lookup
+        boundary_nodes = set()
+        for node_list in self.ftag_to_node.values():
+            boundary_nodes.update(node_list)
+
+        n_fixed = 0
+
+        for itet in range(self.tets.shape[1]):
+            i1, i2, i3, i4 = self.tets[:, itet]
+            v1, v2, v3, v4 = self.nodes[:, i1], self.nodes[:, i2], self.nodes[:, i3], self.nodes[:, i4]
+            V = calc_volume(v1, v2, v3, v4)
+
+            if V >= tol:
+                continue
+
+            # Find a node we're allowed to move (not on any boundary)
+            tet_nodes = [i1, i2, i3, i4]
+            if respect_boundaries:
+                movable = [n for n in tet_nodes if n not in boundary_nodes]
+            else:
+                movable = tet_nodes
+            if len(movable) == 0:
+                raise MeshException(
+                    f'Zero-volume tetrahedron at index {itet} with nodes {tet_nodes}, '
+                    f'but all four nodes lie on boundary surfaces. '
+                    f'Cannot fix by perturbation — the geometry itself is degenerate.'
+                )
+
+            # Compute the normal of the plane formed by the other three nodes
+            target = movable[0]
+            others = [n for n in tet_nodes if n != target]
+            p0, p1, p2 = self.nodes[:, others[0]], self.nodes[:, others[1]], self.nodes[:, others[2]]
+
+            normal = np.cross(p1 - p0, p2 - p0)
+            norm = np.linalg.norm(normal)
+
+            if norm < 1e-30:
+                # The three other nodes are also degenerate (collinear) — perturb in an arbitrary direction
+                # Pick the axis along which the tet has the least extent
+                all_coords = np.column_stack([self.nodes[:, n] for n in tet_nodes])
+                extents = np.ptp(all_coords, axis=1)
+                axis = np.argmin(extents)
+                direction = np.zeros(3)
+                direction[axis] = 1.0
+            else:
+                direction = normal / norm
+
+            self.nodes[:, target] += direction * perturbation
+            n_fixed += 1
+
+            # Verify it actually worked
+            v1, v2, v3, v4 = (self.nodes[:, i1], self.nodes[:, i2],
+                            self.nodes[:, i3], self.nodes[:, i4])
+            V_new = calc_volume(v1, v2, v3, v4)
+            if V_new < tol:
+                logger.warning(f'Tetrahedron {itet} still degenerate after perturbation (V={V_new}). '
+                            f'Increasing perturbation.')
+                self.nodes[:, target] += direction * perturbation * 100
+                n_fixed  # already counted
+
+        if n_fixed > 0:
+            logger.warning(f'Fixed {n_fixed} zero-volume tetrahedra by perturbing non-boundary nodes '
+                        f'with magnitude {perturbation}.')
     def _pre_update(self, periodic_bcs: list[Periodic] | None = None):
         """Builds the mesh data properties
 
@@ -526,10 +668,14 @@ class Mesh3D(Mesh, Saveable):
         self.tri_i2t = {}
         _sorted_tri_nodes = np.sort(tri_nodes, axis=1)
 
-        for k, tag in enumerate(tri_tags):
-            tri_id = self.inv_tris[tuple(_sorted_tri_nodes[k,:].tolist())]
-            self.tri_i2t[tri_id] = int(tag)
-
+        try:
+            for k, tag in enumerate(tri_tags):
+                tri_id = self.inv_tris[tuple(_sorted_tri_nodes[k,:].tolist())]
+                self.tri_i2t[tri_id] = int(tag)
+        except KeyError as e:
+            logger.error(e)
+            DEBUG_COLLECTOR.add_report('A missing key error usually indicates that there are flat geometries sticking out of the simulation domain.\nEMerge can only deal with volumetric data. Please check the geometry using .view(use_gmsh=True) before meshing to make sure no surfaces are sticking out of the domain.')
+            raise e
         self.tri_t2i = {t: i for i, t in self.tri_i2t.items()}
 
         # -----------------------------------------------------------------------------
