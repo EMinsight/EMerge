@@ -15,7 +15,7 @@ For ARM MacOS users it is reccommended to install UMFPACK and run this using mul
 
 """
 
-m = em.Simulation('Vivaldi')
+m = em.Simulation('Vivaldi', loglevel="TRACE")
 m.check_version("2.5.4")
 
 mm = 0.001          # Millimeter

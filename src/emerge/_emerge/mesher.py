@@ -371,18 +371,24 @@ class Mesher:
         size_mapping = dict()
         
         for obj in sorted(self.objects, key=lambda x: x._priority):
+            if obj.dim != 3:
+                continue
             if obj._unset_constraints:
                 self.unset_constraints(obj.dimtags)
 
             size = discretizer(obj.material)*resolution*obj.mesh_multiplier
             size = min(size, obj.max_meshsize)
             
-            for tag in obj.tags:
-                size_mapping[tag] = size
+            for dimtag in obj.dimtags:
+                size_mapping[dimtag] = size
         
-        for tag, size in size_mapping.items():
-            logger.debug(f'Setting mesh size:{1000*size:.3f}mm in domains: {tag}')
-            self._set_size_in_domain([tag,], size)
+        for (dim, tag), size in size_mapping.items():
+            if dim == 2:
+                logger.debug(f'Somehow setting mesh size:{1000*size:.3f}mm on boundary: {tag}')
+                self._set_size_on_face([tag,], size)
+            if dim == 3:
+                logger.debug(f'Setting mesh size:{1000*size:.3f}mm in domains: {tag}')
+                self._set_size_in_domain([tag,], size)
 
         gmsh.model.mesh.field.setNumbers(mintag, "FieldsList", self.mesh_fields + self._amr_fields)
         
@@ -572,7 +578,7 @@ class Mesher:
             for t2, (p21, p22, e2) in edge_nodes.items():
                 if t1==t2:
                     continue
-                if np.abs(np.dot(e1,e2)) < 0.999:
+                if np.abs(np.dot(e1,e2)) < 0.99:
                     continue
                 # Lines are parallel
                 a = e1
@@ -621,6 +627,7 @@ class Mesher:
             if obj.dim==2:
                 logger.warning('Forwarding to set_face_size')
                 self.set_face_size(obj, size)
+                return
         logger.debug(f'Setting size {size*1000:.3f}mm for object {obj}')
         self._set_size_in_domain(obj.tags, size)
 
@@ -635,7 +642,8 @@ class Mesher:
             logger.warning('Provided object is not a surface.')
             if obj.dim==3:
                 logger.warning('Forwarding to set_domain_size')
-                self.set_face_size(obj, size)
+                self.set_domain_size(obj, size)
+                return
         
         logger.debug(f'Setting size {size*1000:.3f}mm for face {obj}')
         self._set_size_on_face(obj.tags, size)

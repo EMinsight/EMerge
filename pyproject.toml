@@ -56,6 +56,7 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
+    "emerge-aasds",
     "emerge-iron",
     "pytest>=9.0.2",
     "scikit-umfpack>=0.4.2",
@@ -81,6 +82,7 @@ publish-url = "https://test.pypi.org/legacy"
 
 [tool.uv.sources]
 emerge-iron = { git = "https://github.com/FennisRobert/EMerge-IRON" }
+emerge-aasds = { git = "https://github.com/FennisRobert/emerge-aasds" }
 
 [tool.pytest.ini_options]
 addopts = [

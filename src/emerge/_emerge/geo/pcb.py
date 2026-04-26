@@ -726,7 +726,8 @@ class StripPath:
         return self.store(name)
     
     def split(self, 
-              direction: tuple[float, float]  | None= None,
+              direction: tuple[float, float]  | None = None,
+              angle: float | None = None,
               width: float  | None= None) -> StripPath:
         """Split the current path in N new paths given by a new departure direction
 
@@ -741,9 +742,12 @@ class StripPath:
             width = self.end.width
         if direction is None:
             direction = self.end.direction
+        
         x = self.end.x
         y = self.end.y
         z = self.z
+        if angle is not None:
+            direction = _rot_mat(angle) @ np.array(direction)
         paths = self.pcb.new(x,y,width, direction, z)
         self.pcb._checkpoint.append(self)
         return paths

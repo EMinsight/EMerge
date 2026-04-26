@@ -808,9 +808,10 @@ class Simulation:
             if not self._defined_geometries:
                 self.commit_geometry()
             
-            logger.trace(' (1) Installing periodic boundaries in mesher.')
+            
             # Set the cell periodicity in GMSH
             if self._cell is not None:
+                logger.trace(' (1) Installing periodic boundaries in mesher.')
                 self.mesher.set_periodic_cell(self._cell)
             
             self.mw._initialize_bcs(self.state.manager.get_surfaces())
@@ -830,6 +831,12 @@ class Simulation:
         bb_volume = (x2-x1)*(y2-y1)*(z2-z1)
         wl = 299792458/self.mw.frequencies[-1]
         Nelem = int(5 * bb_volume / (wl**3))
+
+        # # debugging:
+        # for i in (0,1,2,3):
+        #     all_vols = gmsh.model.getEntities(dim=i)
+        #     print(f'Content for DIM={i}: ', all_vols)
+
         if Nelem > 100_000 and DEFAULT_SETTINGS.size_check:
             DEBUG_COLLECTOR.add_report(f'An estimated {Nelem} tetrahedra are required for the bounding box of the geometry. This may imply a simulation domain that is very large.' + 
                                        'To disable this message. Set the .size_check parameter in model.settings to False.')
@@ -839,8 +846,7 @@ class Simulation:
         try:
             gmsh.logger.start()
             gmsh.model.mesh.generate(3)
-            gmsh.model.mesh.removeDuplicateNodes([])
-            gmsh.model.mesh.remove_duplicate_elements([])
+            gmsh.fltk.run()
             logs = gmsh.logger.get()
             gmsh.logger.stop()
             for log in logs:
@@ -1019,27 +1025,38 @@ class Simulation:
         # N>1 Case
         # --------------------------------------------------------------------------
         
-        P_target = P_target*1.5
+        P_target = P_target * 1.5
         refine_multiplier = 1.0 / ratios
         change_percentage = percentages
-        
 
         line = np.polynomial.Polynomial.fit(refine_multiplier, change_percentage, deg=1)
         b, a = line.convert().coef
-        
+
+        # Use the full linear model only if it gives a sensible result
+        use_origin_model = False
         if a < 0:
-            logger.debug('Negative growth correlation, reverting to default behavior')
-            last_ratio = float(ratios[-1])
-            last_percentage = float(percentages[-1])
-            if last_percentage > P_target*2.0:
-                return last_ratio / 0.8
+            logger.debug('Negative growth correlation, reverting to origin model')
+            use_origin_model = True
+        else:
+            mult_target = (P_target - b) / a
+            if mult_target < 1.0:  # R > 1 makes no sense; model is extrapolating badly
+                logger.debug('Linear model extrapolates beyond valid range, reverting to origin model')
+                use_origin_model = True
             else:
-                return last_ratio * 0.8
-        
-        mult_target = (P_target - b)/a
-        Rnew = 1/mult_target
-        
-        return float(np.clip(Rnew, 1e-6, 1.0))
+                Rnew = 1.0 / mult_target
+
+        if use_origin_model:
+            # Through-origin fit: P = a * (1/R), so R = a / P_target
+            a_origin = np.dot(refine_multiplier, change_percentage) / np.dot(refine_multiplier, refine_multiplier)
+            if a_origin > 0:
+                Rnew = a_origin / P_target
+            else:
+                # Last resort: scale last ratio
+                last_ratio = float(ratios[-1])
+                last_percentage = float(percentages[-1])
+                Rnew = last_ratio * (P_target / last_percentage)
+
+        return float(np.clip(Rnew, 0.05, 1.0))  # 0.05 floor, not 1e-6
 
     def adaptive_mesh_refinement(self, 
                                  max_steps: int = 6,
@@ -1194,7 +1211,7 @@ class Simulation:
             refinement_ratios = []
             refinement_percentages = []
             
-            while True:
+            while False:
                 counter += 1
                 if counter == 10:
                     logger.warning('    More than 10 attempts at reaching the target refinement. Continuing with current.')

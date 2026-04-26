@@ -246,6 +246,7 @@ class PVDisplay(EMergeDisplay):
                    label_text: str | None = None, 
                    texture: str | None = None,
                    opacity: float = 1.0,
+                   draw_line: bool = True,
                    *args, **kwargs):
         
         if isinstance(obj, GeoObject):
@@ -263,12 +264,13 @@ class PVDisplay(EMergeDisplay):
                       color=obj.color_rgb, 
                       texture=texture)
 
-        mesh_obj = self._volume_edges(_select(obj))
+        if draw_line:
+            mesh_obj = self._volume_edges(_select(obj))
         
-        if mesh_obj is not None:
-            self._plot.add_mesh(mesh_obj, line_width=self.set.theme.geo_edge_width, color=self.set.theme.geo_edge_color, pickable=False, show_edges=True)
-        else:
-            return
+            if mesh_obj is not None:
+                self._plot.add_mesh(mesh_obj, line_width=self.set.theme.geo_edge_width, color=self.set.theme.geo_edge_color, pickable=False, show_edges=True)
+            else:
+                return
         
         if label:
             points = []

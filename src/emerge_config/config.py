@@ -46,7 +46,7 @@ class Config:
 
     def set_emerge_threads(self, n: int) -> None:
         """Tuned for EMerge assemblers and processors"""
-        self.set_threads(numba=n, numba_layer=n, rayon=n)
+        self.set_threads(numba=n, rayon=n)
 
     def set_logging(
         self,

@@ -1444,6 +1444,16 @@ class MWScalarNdim(Saveable):
         if Z0ref is not None:
             Z0s = self.Z0
             logger.debug(f'Renormalizing impedances {Z0s}Ω to {Z0ref}Ω')
+            # This can be the case if the S-matrix data is interpolated with vectorfitting
+            nz, nport = Z0s.shape
+            ns = Smatrix.shape[0]
+            if Z0s.shape[0] != Smatrix.shape[0]:
+                Z0s_out = np.empty((ns, nport), dtype=np.complex128)
+                sparse = np.linspace(0,1,nz)
+                dense = np.linspace(0,1,ns)
+                for i in range(nport):
+                    Z0s_out[:,i] = np.interp(dense, sparse, Z0s[:,i])
+                Z0s = Z0s_out
             Smatrix = renormalise_s(Smatrix, Z0s, Z0ref)
 
 
