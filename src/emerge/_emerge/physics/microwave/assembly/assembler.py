@@ -792,7 +792,7 @@ class Assembler:
                         for bf in bc._iter_fields(K0):
                             normals = field.mesh.outward_normals(tri_ids)
                             b_p = assemble_robin_bc_bvec_scat(field, tri_ids, bf.Uinc, bf.Uinc_curl, gauss_points, normals) # type: ignore
-                            if bf in background_fields:
+                            if bf in background_fields.items():
                                 background_fields[bf] += b_p
                             else:
                                 background_fields[bf] = b_p # type: ignore

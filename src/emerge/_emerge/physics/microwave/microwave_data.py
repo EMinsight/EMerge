@@ -575,7 +575,7 @@ class MWField(Saveable):
         Ex, Ey, Ez = self.basis.interpolate(self._field, xf, yf, zf, usenan=usenan)
         mask = ~np.isnan(Ex)
         if self._rel:
-            Eb = self.backE(xf,xf,xf,mask)
+            Eb = self.backE(xf,yf,zf,mask)
             Ex = Ex - Eb[0,:]
             Ey = Ey - Eb[1,:]
             Ez = Ez - Eb[2,:]
@@ -588,7 +588,7 @@ class MWField(Saveable):
         constants = 1/ (-1j*2*np.pi*self.freq*(self._dur*MU0) )
         Hx, Hy, Hz = self.basis.interpolate_curl(self._field, xf, yf, zf, constants, usenan=usenan)
         if self._rel:
-            Hb = self.backH(xf,xf,xf,mask)
+            Hb = self.backH(xf,yf,zf,mask)
             Hx = Hx - Hb[0,:]
             Hy = Hy - Hb[1,:]
             Hz = Hz - Hb[2,:]

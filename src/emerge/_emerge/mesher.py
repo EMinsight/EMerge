@@ -229,7 +229,6 @@ class Mesher:
             for dt in dom.dimtags: # type: ignore
                 dom_mapping[dt] = dom
         
-
         embedding_dimtags = unpack_lists([emb.dimtags for emb in embeddings])
 
         tag_mapping: dict[int, dict] = {0: dict(),

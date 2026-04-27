@@ -85,7 +85,6 @@ for stub in stubs:
     model.mesher.set_boundary_size(box.face('back', tool=stub), 0.25*mm)
 
 
-
 # We define our modal ports, assign the boundary condition and execute a modal analysis to solve for the
 # coaxial field mode.
 port1 = model.mw.bc.ModalPort(model.select.face.near(-lfeed, 0, h), 1, modetype='TEM')

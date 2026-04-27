@@ -11,11 +11,14 @@ Additionally, the narrow regions are a perfect opportunity to demonstrate the ef
 
 Due to the wind band nature of this simulation, it might take a while to simulate. 
 
-For ARM MacOS users it is reccommended to install UMFPACK and run this using multi-processing.
+The current version will consume up to 9GB of RAM with non SuperLU Solvers.
+
+For ARM MacOS users it is reccommended to install the Accelerate solver using:
+  - pip install git+https://github.com/FennisRobert/emerge-aasds
 
 """
 
-m = em.Simulation('Vivaldi', loglevel="TRACE")
+m = em.Simulation('Vivaldi', loglevel="INFO")
 m.check_version("2.5.4")
 
 mm = 0.001          # Millimeter

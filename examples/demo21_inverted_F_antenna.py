@@ -116,7 +116,7 @@ model.commit_geometry()
 # --- Mesh refinement settings --------------------------------------------
 # Refined mesh on port face for excitation accuracy
 model.mesher.set_face_size(port, 0.25 * mm)
-model.mesher.set_boundary_size(ant_element.face('-z'), 1*mm)
+#model.mesher.set_boundary_size(ant_element.face('-z'), 1*mm)
 # --- Generate mesh and preview ------------------------------------------
 model.generate_mesh()           # build the finite-element mesh
 model.view(selections=[port])   # show the mesh around the port
@@ -139,11 +139,10 @@ abc = model.mw.bc.AbsorbingBoundary(boundary_selection)
 # --- Run frequency-domain solver ----------------------------------------
 model.view(plot_mesh=True, volume_mesh=False)
 model.view(bc=True)
-model.adaptive_mesh_refinement(frequency=2.45e9, max_steps=6)
+model.adaptive_mesh_refinement(frequency=2.45e9)
 model.view(plot_mesh=True, volume_mesh=False)
 data = model.mw.run_sweep()
 
-data.scalar.grid.export_touchstone
 # --- Post-process S-parameters ------------------------------------------
 freqs = data.scalar.grid.freq
 freq_dense = np.linspace(f1, f2, 1001)

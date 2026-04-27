@@ -24,6 +24,7 @@ from loguru import logger
 from ...const import C0, MU0, EPS0
 
 
+DEPS = 1e-20
 ############################################################
 #                    OPTIMIZED FUNCTIONS                   #
 ############################################################
@@ -171,6 +172,8 @@ def circum_sphere_diam(v1: np.ndarray, v2: np.ndarray, v3: np.ndarray, v4: np.nd
 
     # Radius = distance to any vertex
     R = np.linalg.norm(c - p1)
+    if R > 1e10:
+        return 1e10
     return 2.0 * R  # diameter
 
 def print_sparam_matrix(pre: str, S: np.ndarray):
@@ -916,7 +919,7 @@ def compute_error_single(nodes, tets, tris, edges, centers,
         triids = tet_to_tri[:,itet]
         
         size_max = circum_sphere_diam(v1,v2,v3,v4)
-        #size_max = np.max(edge_lengths[tet_to_edge[:,itet]])
+        size_max = np.mean(edge_lengths[tet_to_edge[:,itet]])
         
         TET_VOLUME = compute_volume(vertices[0,:], vertices[1,:], vertices[2,:])
         Rt = size_max
@@ -940,10 +943,23 @@ def compute_error_single(nodes, tets, tris, edges, centers,
         Rv[2,:] = Rv[2,:]*WEIGHTS_VOL
         
         Jt = -TET_VOLUME*np.sum(1/(1j*W0*MU0) * Rv, axis=1)
-  
-        Gt = (1j*W0*np.exp(-1j*k0*Rt)/(4*np.pi*Rt))
-        alpha_t[itet] = - Gt/(erc*EPS0) * Qt*Qt - Gt*urc*MU0 * np.sum(Jt*Jt)
+
+        Gt = (1j*W0*np.exp(-1j*k0*Rt)/(4*np.pi*Rt+DEPS))
         
+        alpha_t[itet] = - Gt/(erc*EPS0 + DEPS) * Qt*Qt - Gt*urc*MU0 * np.sum(Jt*Jt)
+        if np.isnan(np.abs(- Gt/(erc * EPS0) * Qt*Qt - Gt*urc*MU0 * np.sum(Jt*Jt))):
+            print(f"tet {itet}:")
+            print(f"  W0={W0}, k0={k0}, Rt={Rt}")
+            print(f"  exp term={np.exp(-1j*k0*Rt)}")
+            print(f"  Gt={Gt}")
+            print(f"  erc={erc}, urc={urc}")
+            print(f"  Qt={Qt}")
+            print(f"  Jt={Jt}, sum(Jt*Jt)={np.sum(Jt*Jt)}")
+            print(f"  term1={- Gt/(erc * EPS0) * Qt*Qt}")
+            print(f"  term2={- Gt*urc*MU0 * np.sum(Jt*Jt)}")
+            print(f"  alpha_t={- Gt/(erc * EPS0) * Qt*Qt - Gt*urc*MU0 * np.sum(Jt*Jt)}")
+            raise ValueError(f"NaN detected at tet {itet}")
+
         # Face Residual computation
         
         all_face_coords = np.empty((3,4*N2D), dtype=np.float64)
@@ -1032,7 +1048,7 @@ def compute_error_single(nodes, tets, tris, edges, centers,
     Jf_int_y = np.sum(Jf_delta[:,1,:,:]*areas_face_residual*fWs, axis=1)
     Jf_int_z = np.sum(Jf_delta[:,2,:,:]*areas_face_residual*fWs, axis=1)
     
-    Gf = (1j*W0*np.exp(-1j*k0*Rf_face_residual)/(4*np.pi*Rf_face_residual))
+    Gf = (1j*W0*np.exp(-1j*k0*Rf_face_residual)/(4*np.pi*Rf_face_residual + DEPS))
     alpha_Df = - Gf/(er*EPS0)*(Qf_int*Qf_int) - Gf*(ur*MU0) * (Jf_int_x*Jf_int_x + Jf_int_y*Jf_int_y + Jf_int_z*Jf_int_z)
     
     alpha_Nf = np.zeros((4, N_TETS), dtype=np.complex128)
@@ -1043,7 +1059,7 @@ def compute_error_single(nodes, tets, tris, edges, centers,
                 continue
             alpha_Nf[iface,it] = alpha_t[it2]
     
-    alpha_f = np.sum((alpha_t/(alpha_t + alpha_Nf + 1e-21))*alpha_Df, axis=0)
+    alpha_f = np.sum((alpha_t/(alpha_t + alpha_Nf + DEPS))*alpha_Df, axis=0)
     
     error = (np.abs(alpha_t + alpha_f))**0.5
     
@@ -1088,7 +1104,6 @@ def compute_error_estimate(field: MWField, pec_tris: list[int]) -> tuple[np.ndar
                              centers, excitation, Ls, As, 
                              tet_to_edge, tet_to_tri, tri_centers,
                              tri_to_tet, tet_to_field, er, ur, pec_tris, field.k0)
-        
         errors.append(error)
     
     error = np.max(np.array(errors), axis=0)

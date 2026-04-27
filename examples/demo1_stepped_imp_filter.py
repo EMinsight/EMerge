@@ -80,6 +80,7 @@ m.mw.set_frequency_range(0.2e9, 8e9, 41)
 # With the set_boundary_size(method) we can define a meshing resolution for the edges of boundaries.
 # This is adviced for small stripline structures.
 # The growth_rate setting allows us to change how fast the mesh size will recover to the original size.
+
 m.mesher.set_boundary_size(polies, 1.2*mm)
 m.mesher.set_face_size(p1, 5*mm)
 m.mesher.set_face_size(p2, 5*mm)
@@ -134,4 +135,3 @@ m.display.animate().add_field(field.cutplane(1*mm, z=-0.75*th*mil).scalar('Ez','
 m.display.add_portmode(port1, k0=field.k0)
 m.display.add_portmode(port2, k0=field.k0)
 m.display.show()
-m.ping()

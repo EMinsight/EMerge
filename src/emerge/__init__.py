@@ -56,6 +56,7 @@ from ._emerge.logsettings import LOG_CONTROLLER
 from loguru import logger
 
 LOG_CONTROLLER.set_default()
+logger.info(f'EMerge v{__version__}')
 logger.debug('Importing modules')
 LOG_CONTROLLER._set_log_buffer()
 
@@ -82,9 +83,8 @@ import emsutil.plot as plot
 from emsutil import EMergeTheme
 from emsutil import themes
 from emsutil.lib import C0, MU0, EPS0, Z0
-howto = _HowtoClass()
 
-logger.debug('Importing complete!')
+howto = _HowtoClass()
 
 from ._emerge.install_check import run_installation_checks
 

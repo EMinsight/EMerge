@@ -95,7 +95,8 @@ class _GeometryManager:
     def all_names(self, model: str | None = None) -> set[str]:
         if model is None:
             model = self.active
-        return set([geo.name for geo in self.all_geometries(model)])
+        return set(self.geometry_list[model].keys())
+        #return set([geo.name for geo in self.all_geometries(model)])
     
     def get_name(self, suggestion: str, model: str | None = None) -> str:
         names = self.all_names(model)
@@ -110,7 +111,7 @@ class _GeometryManager:
         self.geometry_list[self.active][geo_obj.name] = geo_obj
         to_remove = []
         for key, obj in self.geometry_list[self.active].items():
-            if obj == geo_obj and key!=geo_obj.name:
+            if obj is geo_obj and key != geo_obj.name:
                 to_remove.append(key)
         for key in to_remove:
             del self.geometry_list[self.active][key]

@@ -832,10 +832,11 @@ class Simulation:
         wl = 299792458/self.mw.frequencies[-1]
         Nelem = int(5 * bb_volume / (wl**3))
 
-        # # debugging:
-        # for i in (0,1,2,3):
-        #     all_vols = gmsh.model.getEntities(dim=i)
-        #     print(f'Content for DIM={i}: ', all_vols)
+        gmsh.model.occ.synchronize()
+        for dim, tag in gmsh.model.getEntities(2):
+            up = gmsh.model.getAdjacencies(2, tag)[0]  # parent volumes
+            if len(up) == 0:
+                logger.debug(f"  Surface {tag} has no parent volume — orphan face!")
 
         if Nelem > 100_000 and DEFAULT_SETTINGS.size_check:
             DEBUG_COLLECTOR.add_report(f'An estimated {Nelem} tetrahedra are required for the bounding box of the geometry. This may imply a simulation domain that is very large.' + 
@@ -846,7 +847,6 @@ class Simulation:
         try:
             gmsh.logger.start()
             gmsh.model.mesh.generate(3)
-            gmsh.fltk.run()
             logs = gmsh.logger.get()
             gmsh.logger.stop()
             for log in logs:
@@ -1065,7 +1065,7 @@ class Simulation:
                                  magnitude_convergence: float = 2.0,
                                  phase_convergence: float = 180,
                                  max_tets: int = 1e6,
-                                 refinement_ratio: float = 0.6,
+                                 refinement_ratio: float = 0.60,
                                  growth_rate: float = 1.6,
                                  minimum_refinement_percentage: float = 20.0, 
                                  error_field_inclusion_percentage: float = 50.0,
@@ -1085,9 +1085,9 @@ class Simulation:
             convergence (float, optional): The S-paramerter convergence (1). Defaults to 0.02.
             magnitude_convergence (float, optional): The S-parameter magnitude convergence (2). Defaults to 2.0.
             phase_convergence (float, optional): The S-parameter Phase convergence (3). Defaults to 180.
-            refinement_ratio (float, optional): The size reduction of mesh elements by original length. Defaults to 0.75.
-            growth_rate (float, optional): The mesh size growth rate. Defaults to 3.0.
-            minimum_refinement_percentage (float, optional): The minimum mesh size increase . Defaults to 15.0.
+            refinement_ratio (float, optional): The size reduction of mesh elements by original length. Defaults to 0.60.
+            growth_rate (float, optional): The mesh size growth rate. Defaults to 1.6.
+            minimum_refinement_percentage (float, optional): (DEPRICATED) The minimum mesh size increase . Defaults to 15.0.
             error_field_inclusion_percentage (float, optional): A percentage of tet elements to be included for refinement. Defaults to 5.0.
             minimum_steps (int, optional): The minimum number of adaptive steps to execute. Defaults to 1.
             frequency (float, optional): The refinement frequency. Defaults to None.
@@ -1181,9 +1181,10 @@ class Simulation:
             # ------------------------------------------------------------------------------------------
 
             logger.debug('Selecting refinement indices.')
-            refine_tet_ids = select_refinement_indices(error, error_field_inclusion_percentage/100)
+            refine_tet_ids = select_refinement_indices(error, error_field_inclusion_percentage/100.0)
             refine_tet_ids = refine_tet_ids[::-1]
             
+            logger.info(f' - Tet refinement percentage = {(refine_tet_ids.shape[0]/self.mesh.n_tets)*100:.1f} %')
             # F1 = (arctan(5*(x-0.5))+pi/2)/pi from 0 to 1
             refinement_ratio = (np.arctan(5*(refinement_ratio-0.5))+np.pi/2)/np.pi
             #refinement_ratio = 0.5*original_ratio + 0.5*refinement_ratio
@@ -1198,7 +1199,7 @@ class Simulation:
             self.mesher._amrobj.add_refinement_points(coords, sizes, refinement_ratio*np.ones_like(sizes))
             
             # Try to reduce the point set if there are more than 500 points.
-            if self.mesher._amrobj.npts >= 500:
+            if self.mesher._amrobj.npts >= 500 and False:
                 new_ids = reduce_point_set(self.mesher._amrobj._amr_coords, growth_rate, self.mesher._amrobj._amr_sizes, refinement_ratio, 0.20)
                 nremoved = self.mesher._amrobj.npts - len(new_ids)    
                 logger.info(f'    Pass {step}: Added {len(sizes) - nremoved} new refinement points with ratio {refinement_ratio}.')
@@ -1206,51 +1207,62 @@ class Simulation:
             
             logger.debug(f'    Initial refinement ratio: {refinement_ratio}')
             
+            # Fixed refinement
+            self._reset_mesh()
+            self.mesher._amrobj.set_refinement_function(growth_rate, 2.0)
+            self.generate_mesh(True)
+
+            # Growth percentage
+            percentage = (self.mesh.n_tets/last_n_tets - 1) * 100
+            logger.info(f'    Pass {step}: New mesh has {self.mesh.n_tets} (+{percentage:.1f}%) tetrahedra.')  
+                
+
             # Mesh refinement loop. Only escapes if the mesh refined a certain set percentage.
-            counter = 0
-            refinement_ratios = []
-            refinement_percentages = []
+            # counter = 0
+            # refinement_ratios = []
+            # refinement_percentages = []
             
-            while False:
-                counter += 1
-                if counter == 10:
-                    logger.warning('    More than 10 attempts at reaching the target refinement. Continuing with current.')
-                    break
 
-                counter += 1
+            # while True:
+            #     counter += 1
+            #     if counter == 10:
+            #         logger.warning('    More than 10 attempts at reaching the target refinement. Continuing with current.')
+            #         break
 
-                # Regenerate the mesh
-                self._reset_mesh()
-                self.mesher._amrobj.set_refinement_function(growth_rate, 2.0)
-                self.generate_mesh(True)
+            #     counter += 1
 
-                # Growth percentage
-                percentage = (self.mesh.n_tets/last_n_tets - 1) * 100
-                logger.info(f'    Pass {step}: New mesh has {self.mesh.n_tets} (+{percentage:.1f}%) tetrahedra.')  
+            #     # Regenerate the mesh
+            #     self._reset_mesh()
+            #     self.mesher._amrobj.set_refinement_function(growth_rate, 2.0)
+            #     self.generate_mesh(True)
+
+            #     # Growth percentage
+            #     percentage = (self.mesh.n_tets/last_n_tets - 1) * 100
+            #     logger.info(f'    Pass {step}: New mesh has {self.mesh.n_tets} (+{percentage:.1f}%) tetrahedra.')  
                 
-                # Update the lists
-                refinement_ratios.append(refinement_ratio)
-                refinement_percentages.append(percentage)
+            #     # Update the lists
+            #     refinement_ratios.append(refinement_ratio)
+            #     refinement_percentages.append(percentage)
                 
-                if len(refinement_percentages) >= 2:
-                    if abs(refinement_percentages[-2]-refinement_percentages[-1]) == 0.0:
-                        logger.warning('No refinement realized, decreasing refinment ratio.')
-                        refinement_ratio = refinement_ratio * 0.5
-                        self.mesher._amrobj.set_ratio(refinement_ratio)
-                        continue
+            #     if len(refinement_percentages) >= 2:
+            #         if abs(refinement_percentages[-2]-refinement_percentages[-1]) == 0.0:
+            #             logger.warning('No refinement realized, decreasing refinment ratio.')
+            #             refinement_ratio = refinement_ratio * 0.5
+            #             self.mesher._amrobj.set_ratio(refinement_ratio)
+            #             continue
                 
-                if percentage < minimum_refinement_percentage or percentage > (minimum_refinement_percentage*2):
+            #     if percentage < minimum_refinement_percentage or percentage > (minimum_refinement_percentage*2):
                     
-                    refinement_ratio = self.compute_ratio(refinement_ratios, refinement_percentages, minimum_refinement_percentage)
-                    logger.info(f'    Refinement target not reached! New ratio = {refinement_ratio:.3f}')
-                    self.mesher._amrobj.set_ratio(refinement_ratio)
-                    if refinement_ratio >= 1.0:
-                        logger.warning('Refinement ratio pushed above 1.0... continuing with current percentage.')
-                        break
-                    continue
+            #         refinement_ratio = self.compute_ratio(refinement_ratios, refinement_percentages, minimum_refinement_percentage)
+            #         logger.info(f'    Refinement target not reached! New ratio = {refinement_ratio:.3f}')
+            #         self.mesher._amrobj.set_ratio(refinement_ratio)
+            #         if refinement_ratio >= 1.0:
+            #             logger.warning('Refinement ratio pushed above 1.0... continuing with current percentage.')
+            #             break
+            #         continue
                 
                 
-                break
+            #     break
             
             last_n_tets = self.mesh.n_tets
             if show_mesh:
