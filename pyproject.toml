@@ -56,8 +56,6 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
-    "emerge-aasds",
-    "emerge-iron",
     "pytest>=9.0.2",
     "scikit-umfpack>=0.4.2",
     "twine>=6.2.0",
