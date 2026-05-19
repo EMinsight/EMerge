@@ -242,38 +242,41 @@ class SparamModel:
                  n_poles: int | Literal['auto'] = 10,
                  inc_real: bool = False,
                  maxpoles: int = 40,
+                 minpoles: int = 1,
                  _warn: bool = True):
         self.f: np.ndarray = frequencies
         self.S: np.ndarray = Sparam
 
         s = 1j*frequencies
+        try:
+            if n_poles == 'auto':
+                fdense = np.linspace(min(self.f), max(self.f), max(201, 10*self.f.shape[0]))
+                success = False
+                for nps in range(minpoles, maxpoles):
+                    poles, residues, d, h, _ = vectfit_auto_rescale(Sparam, s, n_poles=nps, inc_real=inc_real)
+                    self.poles: np.ndarray = poles
+                    self.residues: np.ndarray = residues
+                    self.d = d
+                    self.h = h
 
-        if n_poles == 'auto':
-            fdense = np.linspace(min(self.f), max(self.f), max(201, 10*self.f.shape[0]))
-            success = False
-            for nps in range(1,maxpoles):
-                poles, residues, d, h, _ = vectfit_auto_rescale(Sparam, s, n_poles=nps, inc_real=inc_real)
+                    S = self(fdense)
+
+                    self.error = np.mean(np.abs(Sparam-self(self.f)))
+                    if all(np.abs(S) <= 1.0) and self.error < 1e-2:
+                        logger.debug(f'Using {nps} poles.')
+                        success = True
+                        break
+                if not success and _warn:
+                    logger.warning('Could not model S-parameters when calling model_S(i,j). Use .S(i,j) or try simulating at a denser grid of points to help the vetor fitting algorithm find the right interpolation function.')
+
+            else:
+                poles, residues, d, h, _ = vectfit_auto_rescale(Sparam, s, n_poles=n_poles, inc_real=inc_real)
                 self.poles: np.ndarray = poles
                 self.residues: np.ndarray = residues
                 self.d = d
                 self.h = h
-
-                S = self(fdense)
-
-                self.error = np.mean(np.abs(Sparam-self(self.f)))
-                if all(np.abs(S) <= 1.0) and self.error < 1e-2:
-                    logger.debug(f'Using {nps} poles.')
-                    success = True
-                    break
-            if not success and _warn:
-                logger.warning('Could not model S-parameters. Try simulating at a denser grid of poitns.')
-
-        else:
-            poles, residues, d, h, _ = vectfit_auto_rescale(Sparam, s, n_poles=n_poles, inc_real=inc_real)
-            self.poles: np.ndarray = poles
-            self.residues: np.ndarray = residues
-            self.d = d
-            self.h = h
-    
+        except np.linalg.LinAlgError as e:
+            logger.error('Singular Value Decomposition error during the call of model_S(). This happens when the resultant S-parameters cannot be modeled with Vector fitting. use the function .S(i,j) instead of .model_S(i,j) to view your S-parameters and make sure the simulation is set up correctly.')
+            raise e
     def __call__(self, f: np.ndarray) -> np.ndarray:
         return model(1j*f, self.poles, self.residues, self.d, self.h)

@@ -64,6 +64,10 @@ class SimState:
         self._stashed: SimulationDataset | None = None
         self.manager: _GeometryManager = _GEOMANAGER
         self.has_been_modified: bool = False
+
+
+        # --- STATES
+        self._geometry_committed: bool = False
         self.sign_on()
     
     def import_from(self, other: SimState) -> None:

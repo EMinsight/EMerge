@@ -58,7 +58,7 @@ class _GeometryManager:
     def __init__(self):
         self.geometry_list: dict[str, dict[str, GeoObject]] = dict()
         self.active: str = ''
-
+    
     def get_surfaces(self) -> list[GeoSurface]:
         """Return a list of all GeoSurface objects
 
@@ -544,7 +544,7 @@ class GeoObject(Saveable):
     """
     dim: int = -1
     _default_name: str = 'GeoObject'
-    
+    skip_fields = ['_aux_data',]
     def __init__(self, tags: list[int] | None = None, name: str | None = None, _submit_geometry: bool = True):
         if tags is None:
             tags = []
@@ -795,7 +795,7 @@ class GeoObject(Saveable):
         ''' Update the tag definition of a GeoObject after fragementation.'''
         self.replace_tags(tag_mapping[self.dim])
         return self
-    
+
     def _take_pointers(self: T, *others: GeoObject) -> T:
         for other in others:
             self._face_pointers.update(other._face_pointers)

@@ -240,7 +240,7 @@ def select_refinement_indices(errors: np.ndarray, refine: float) -> np.ndarray:
     for index in order:
         sum_error += ind[index]
         indices.append(index)
-        if sum_error >= refine*total and len(indices) >= 20:
+        if sum_error >= refine*total:
             break
     
     return np.array(indices)
@@ -919,7 +919,7 @@ def compute_error_single(nodes, tets, tris, edges, centers,
         triids = tet_to_tri[:,itet]
         
         size_max = circum_sphere_diam(v1,v2,v3,v4)
-        size_max = np.mean(edge_lengths[tet_to_edge[:,itet]])
+        size_max = min(size_max, np.max(edge_lengths[tet_to_edge[:,itet]]))
         
         TET_VOLUME = compute_volume(vertices[0,:], vertices[1,:], vertices[2,:])
         Rt = size_max

@@ -98,11 +98,22 @@ class Mesh3D(Mesh, Saveable):
     Relevant mesh data such as mappings between nodes(vertices), edges, triangles and tetrahedra
     are managed by the Mesh3D class. Specific information regarding to how actual field values
     are mapped to mesh elements is managed by the FEMBasis class.
+
+    The goal of this class is to take all information from GMSH and put it into EMerge so that in principle,
+    GMSH can be forgotton about after generating the mesh.
+
+    The reason is that reloading GMSH .msh files seems to be unreliable causing assignments of tags to be corrupted.
+
+    The Mesh3D class is thus called after GMSH is done meshing.
+
+    Mesh post-processing in Python is slow and because GMSH is needed, this is hard to delegate to external libraries.
+    As a consequence, EMerge opts to rely a lot on caching mappings between mesh entities which will increase RAM usage but save
+    time when requireing specific Mesh properties.
     
     """
     def __init__(self):
 
-        
+        # Because GMSH associates "tags" with each entity, in EMerge we link GMSH tag numbers with EMerge entiti indices in t2i and i2t notation.
         
         # All spatial objects
         self.nodes: np.ndarray = np.array([])
@@ -135,6 +146,10 @@ class Mesh3D(Mesh, Saveable):
         self.inv_tets: dict = dict()
 
         # Mappings
+
+        # These mapping where possible associate mesh entities such as triangles, tetrahedra and vertices
+        # with those attached/or contained by them. tet_to_edge tells you which edges are contained in a tet
+        # where edge_to_tet (not used) would tell you which tets contain any given edge.
         self.tet_to_edge: np.ndarray = np.array([])
         self.tet_to_tri: np.ndarray = np.array([])
         self.tri_to_tet: np.ndarray = np.array([])
@@ -143,15 +158,23 @@ class Mesh3D(Mesh, Saveable):
         self.node_to_edge: defaultdict | dict = defaultdict()
 
         # Physics mappings
+        # TODO: These should be removable.
         self.tet_to_field: np.ndarray = np.array([])
         self.edge_to_field: np.ndarray = np.array([])
         self.tri_to_field: np.ndarray = np.array([])
 
         ## States
+        # If the mesh is defined after GMSH meshing
         self.defined: bool = False
+        # If the mesh is only that of a quick mesh (in which case actual meshing should be done)
         self._quick_mesh: bool = False
 
         ## Memory
+        # These 
+        self.geonodes: list[int] = [] # All nodes that are characteristic of the geometry (excluding mesh nodes)
+
+        # These quantities link more abstract geometric entities such as boxes/faces etc to their
+        # respective triangles, nodes etc. They link GMSH tags to mesh indices
         self.ftag_to_tri: dict[int, list[int]] = dict()
         self.ftag_to_node: dict[int, list[int]] = dict()
         self.ftag_to_edge: dict[int, list[int]] = dict()
@@ -159,6 +182,8 @@ class Mesh3D(Mesh, Saveable):
         self.etag_to_edge: dict[int, list[int]] = dict()
         
         ## Dervied
+        
+        # These quanties link dimension tag pairs (dim,tag) to geometric quantities such as coordiantes and indices
         self.dimtag_to_center: dict[tuple[int, int], tuple[float, float, float]] = dict()
         self.dimtag_to_edges: dict[tuple[int, int], np.ndarray] = dict()
         self.dimtag_to_nodes: dict[tuple[int, int], np.ndarray] = dict()
@@ -166,6 +191,7 @@ class Mesh3D(Mesh, Saveable):
         self.ftag_to_normal: dict[int, np.ndarray] = dict()
         self.ftag_to_point: dict[int, np.ndarray] = dict()
         
+        # This list specifically contains those faces that form the exterior of the simulation domain.
         self.exterior_face_tags: list[int] = []
 
         
@@ -486,6 +512,7 @@ class Mesh3D(Mesh, Saveable):
         if n_fixed > 0:
             logger.warning(f'Fixed {n_fixed} zero-volume tetrahedra by perturbing non-boundary nodes '
                         f'with magnitude {perturbation}.')
+    
     def _pre_update(self, periodic_bcs: list[Periodic] | None = None):
         """Builds the mesh data properties
 
@@ -495,6 +522,10 @@ class Mesh3D(Mesh, Saveable):
         Returns:
             None: None
         """
+
+        # This function will take all GMSH information and build the mesh data properties.
+        # Specific algorithmic choices are made for performance reasons. Before making any changes
+        # tho this function, make sure to benchmark if the new code does not significantly slow down performance.
 
         # NEW VERSION
         logger.info('Generating internal mesh data.')
@@ -510,6 +541,7 @@ class Mesh3D(Mesh, Saveable):
         edge_dimtags = gmsh.model.get_entities(1)
         face_dimtags = gmsh.model.get_entities(2)
         vol_dimtags = gmsh.model.get_entities(3)
+
         entity_set = {
             0: point_dimtags,
             1: edge_dimtags,
@@ -520,6 +552,7 @@ class Mesh3D(Mesh, Saveable):
         _, tri_tags, tri_node_tags = gmsh.model.mesh.get_elements(2)
         _, tet_tags, tet_node_tags = gmsh.model.mesh.get_elements(3)
         _edge_entity_map = {t: gmsh.model.mesh.get_elements(1, t)[1] for d,t in gmsh.model.get_entities(1)}
+        _edge_entity_map_2 = {t: gmsh.model.mesh.get_elements(1, t)[2] for d,t in gmsh.model.get_entities(1)}
         _face_entity_map = {t: gmsh.model.mesh.get_elements(2, t)[2] for d,t in gmsh.model.get_entities(2)}
         _vol_entity_map = {t: gmsh.model.mesh.get_elements(3, t)[2] for d,t in gmsh.model.get_entities(3)}
 
@@ -539,6 +572,7 @@ class Mesh3D(Mesh, Saveable):
         self.n_t2i = {t: i for i, t in self.n_i2t.items()}
 
         logger.trace(f'Total of {self.nodes.shape[1]} nodes imported.')
+
         # -----------------------------------------------------------------------------
         # Tetrahedra
         # -----------------------------------------------------------------------------
@@ -582,6 +616,11 @@ class Mesh3D(Mesh, Saveable):
 
         edgeset = set()
         triset = set()
+
+        # As much as possible, the same loop is reused for as many properties.
+        # EMerge uses the ordered numbering logic. Edges and triangles
+        # can be hashed assuming that indices of their constituent vertices
+        # are always ordered, thus a triangle (10,5,1) is hashed as (1,5,10)
         for itet in range(self.tets.shape[1]):
             i1, i2, i3, i4 = sorted([int(ind) for ind in self.tets[:, itet]])
             edgeset.add((i1, i2))
@@ -691,7 +730,10 @@ class Mesh3D(Mesh, Saveable):
         self.tri_to_edge[1] = _edge_lookup_mat[_sorted_tris[1], _sorted_tris[2]]
         self.tri_to_edge[2] = _edge_lookup_mat[_sorted_tris[0], _sorted_tris[2]]
         
-        
+        # This algorithm is optimized with help of Claude code.
+        # Because each edge may be part of multiple triangles, an efficient algorithm
+        # using numpy optimized functions is needed
+
         flat_edges = self.tri_to_edge.ravel(order='F')
         flat_tris  = np.repeat(np.arange(nR, dtype=int), 3)
         sort_idx     = np.argsort(flat_edges, stable=True)
@@ -763,17 +805,22 @@ class Mesh3D(Mesh, Saveable):
         # -----------------------------------------------------------------------------
         # OpenCASCADE Domain to Mesh mappings
         # -----------------------------------------------------------------------------
-
+        
+                
         # -----------------------------------------------------------------------------
         # Geometry Edges to Mesh edges
         # -----------------------------------------------------------------------------
+        
         for _d, t in edge_dimtags:
             _edge_tags = _edge_entity_map[t]
             if not _edge_tags:
                 self.etag_to_edge[t] = []
                 continue
             self.etag_to_edge[t] = [int(self.edge_t2i.get(tag,None)) for tag in _edge_tags[0] if tag in self.edge_t2i]
+            self.geonodes.extend([int(i) for i in _edge_entity_map_2[t][0]])
         
+        # Geo nodes are all unique node ides that are characteirstic of the input geometry.
+        self.geonodes = sorted(list(set(self.geonodes)))
 
         # -----------------------------------------------------------------------------
         # Geometry Faces to Triangles/Nodes and Edges
@@ -800,6 +847,7 @@ class Mesh3D(Mesh, Saveable):
             self.vtag_to_tet[t] = [self.inv_tets[tuple(row)] for row in sorted_nodes.tolist()]
         self.defined = True
 
+        
         # -----------------------------------------------------------------------------
         # Final GMSH CACHE
         # -----------------------------------------------------------------------------
@@ -939,7 +987,19 @@ class Mesh3D(Mesh, Saveable):
         return groups
 
     def outward_normals(self, tri_ids: list[int]) -> np.ndarray:
-        """ Computes the outward facing normals for a list of triangles"""
+        """Computes strictly outward facing normals for given triangle indices.
+
+        Outwards is defined as pointing away from the simulation domain.
+        This assumes that the tri_ids are on the boundary of the simualtion domain.
+        It checks the centroid of the connected tetrahedron and then points the normal
+        away from that centroid.
+
+        Args:
+            tri_ids (list[int]): _description_
+
+        Returns:
+            np.ndarray: _description_
+        """
         v1s = self.nodes[:,self.tris[0,tri_ids]]
         v2s = self.nodes[:,self.tris[1,tri_ids]]
         v3s = self.nodes[:,self.tris[2,tri_ids]]
@@ -1002,7 +1062,12 @@ class Mesh3D(Mesh, Saveable):
 
 
 class SurfaceMesh(Mesh):
+    """The surface mesh class is used to assemble the Modal port matrix.
+    
 
+    Args:
+        Mesh (_type_): _description_
+    """
     def __init__(self,
                  original: Mesh3D,
                  tri_ids: np.ndarray,

@@ -285,7 +285,10 @@ def construct_pec_contour(mesh: 'Mesh3D',
 ############################################################
 #                      MICROWAVE CLASS                     #
 ############################################################
+"""
+The Microwave class is quite verbose and contains a lot of large business logic.
 
+"""
 class Microwave3D:
     """The Electrodynamics time harmonic physics class.
 
@@ -299,15 +302,15 @@ class Microwave3D:
         
         self.frequencies: list[float] = []
         self.current_frequency = 0
-        self.order: int = order
-        self.resolution: float = 0.33
+        self.order: int = order         # Discretization order. Is always 2 (legacy)
+        self.resolution: float = 0.33   # Resolution of the mesh as the fraction of the wavelength
         
-        self.mesher: Mesher = mesher
-        self._state: SimState = state
+        self.mesher: Mesher = mesher    # A reference to the Mesher object
+        self._state: SimState = state   # A reference to the Simulation stat object
 
-        self.assembler: Assembler = Assembler(self._settings)
-        self.bc: MWBoundaryConditionSet = MWBoundaryConditionSet(None)
-        self.basis: Nedelec2 | None = None
+        self.assembler: Assembler = Assembler(self._settings)  # The assembler class
+        self.bc: MWBoundaryConditionSet = MWBoundaryConditionSet(None) # The boundary condition set class.
+        self.basis: Nedelec2 | None = None # The Basis function class
         self.solveroutine: SolveRoutine = DEFAULT_ROUTINE
         self.cache_matrices: bool = True
 
@@ -325,17 +328,31 @@ class Microwave3D:
 
     @property
     def _params(self) -> dict[str, float]:
+        """ Returns a dict of string->float values of the current parameter sweep
+        variation set. Needed when storing the simulation solution to a specific point
+        
+        """
         return self._state.params
     
     @property
     def mesh(self) -> Mesh3D:
+        """ A shorthand alias for the Mesh. May be removed at some point"""
         return self._state.mesh
     
     @property
     def data(self) -> MWData:
+        """ A shorthand alias for the Microwave simulation data. May be removed at some point """
         return self._state.data.mw
     
     def reset(self, _reset_bc: bool = True):
+        """Resets the Boundary condition and Microwave physics state
+
+        Resets the Finite element basis definition, solveroutine settings and assembler settings.
+        Optionally also resets the boundary conditions.
+
+        Args:
+            _reset_bc (bool, optional): If the boundary conditions should be reset. Defaults to True.
+        """
         if _reset_bc:
             self.bc = MWBoundaryConditionSet(None)
         else:
@@ -463,7 +480,15 @@ class Microwave3D:
     ############################################################
 
     def _get_frequency_groups(self, n_groups: int) -> list[list[float]]:
+        """Returns the simulation frequencies in groups of n_groups frequency points.
+        Used by the solve functions to bundle frequencies to be pre-assembled before solving.
 
+        Args:
+            n_groups (int): The number of frequencies per group. 
+
+        Returns:
+            list[list[float]]: A list of List of simulation frequencies
+        """
         freq_groups: list[list[float]] = []
         
         if n_groups == -1:
@@ -479,6 +504,7 @@ class Microwave3D:
         """
         logger.debug('Initializing boundary conditions.')
 
+        # These tags are all faces that actually terminate the simulation domain.
         tags = self.mesher.domain_boundary_face_tags
         
         # Assigning surface impedance boundary condition
@@ -489,8 +515,8 @@ class Microwave3D:
                     self.bc.PEC(surf)
                 elif surf.material.cond.scalar(1e9) > self._settings.mw_2dbc_lim:
                     self.bc.SurfaceImpedance(surf, surf.material)
-                
         
+        # Assign PEC to all unassigned external boundaries.
         tags = [tag for tag in tags if tag not in self.bc.assigned(2)]
         
         self.bc.PEC(FaceSelection(tags))
@@ -505,14 +531,43 @@ class Microwave3D:
         ''' Initializes auxilliary required boundary condition information before running simulations.
         '''
         logger.debug('Initializing boundary conditions')
+        # Removes non-assigned boundary conditions.
+        # This happens for example if the initial boundary PEC gets overwritten.
         self.bc.cleanup()
+
         for port in self.bc.oftype(LumpedPort):
             self._define_lumped_port_integration_points(port)
-    
+
+        self.bc._selections_post_boolean_fragment()
+
+    def _check_meshed(self) -> None:
+        """Checks if a mesh is generated
+        """
+        if not self.mesh.defined:
+            raise SimulationError("Mesh is not defined. Call generate_mesh() first!")
+        
     def _check_physics(self) -> None:
-        """ Executes a physics check before a simulation can be run."""
+        """ Executes a physics check before a simulation can be run.
+        
+        Raises:
+           BoundaryConditionError: If any boundary condition is not setup correctly
+           
+        """
         self.bc._is_excited()
         self.bc._check_ports()
+        
+        # Check if lumped ports are inside the domain
+        exterior_tags = set(self.mesher.domain_boundary_face_tags)
+        for lumped_port in self.bc.oftype(LumpedPort):
+            if not set(lumped_port.selection.tags).isdisjoint(exterior_tags):
+                DEBUG_COLLECTOR.add_report(f'Lumped port {lumped_port} is assigned to face tags that are part of the exterior boundary. Lumped ports must be strictly inside the domain. Otherwise unexpected behavior may occur.')
+        
+        # Check if all ports are on the exterior
+        for port in self.bc.oftype(PortBC):
+            if isinstance(port, LumpedPort):
+                continue
+            if not set(port.selection.tags).issubset(exterior_tags):
+                DEBUG_COLLECTOR.add_report(f'Port {port} is partially not on the exterior boundary of the simulation domain. This may cause unexpected behavior. Ports should be strictly part of the exterior boundary.')
             
     def _define_lumped_port_integration_points(self, port: LumpedPort) -> None:
         """Sets the integration points on Lumped Port objects for voltage integration
@@ -545,6 +600,10 @@ class Microwave3D:
         ys = ys[start_id]
         zs = zs[start_id]
         
+        # multiple integration lines are used and eventually averaged over when computing the
+        # port voltage. A unique voltage is not guaranteed in the time-harmonic fomulation
+        # A multi line average numerically more accurate than a single arbitrary integration line.
+        # This also removes the potential problem of arbitrarily choosing a line.
 
         for x,y,z in zip(xs, ys, zs):
             start = np.array([x,y,z])
@@ -554,7 +613,7 @@ class Microwave3D:
         
         port.v_integration = True
 
-    def _find_tem_conductors(self, port: ModalPort, sigtri: np.ndarray) -> tuple[list[int], list[int]]:
+    def _find_two_pec_islands(self, port: ModalPort, sigtri: np.ndarray) -> tuple[list[int], list[int]]:
         ''' Returns two lists of global node indices corresponding to the TEM port conductors.
         
         This method is invoked during modal analysis with TEM modes. It looks at all edges
@@ -660,6 +719,10 @@ class Microwave3D:
     def _get_material_assignment(self, volumes: list[GeoVolume]) -> list[Material]:
         '''Retrieve the material properties of the geometry'''
         
+        # In order to make EMerge projects saveable, the Materials are told which
+        # geometries they have been assigned to. These material lists are stored in the final solution
+        # The reason is that per simulation and frequency, the material propery value may be different.
+
         # Reset index assingments
         for vol in volumes:
             vol.material.reset()
@@ -743,9 +806,13 @@ class Microwave3D:
         T0 = time.time()
         logger.info(f'Starting Mode Analysis for port {port}.')
         
-        if self.bc._initialized is False:
+        # First check if the boundary conditions are initialized.
+
+        if self.bc._initialized_with_defaults is False:
             raise SimulationError('Cannot run a modal analysis because no boundary conditions have been assigned.')
         
+        # Initialize the FEM field and boundary condition data
+        self._check_meshed()
         self._initialize_field()
         self._initialize_bc_data()
 
@@ -754,36 +821,57 @@ class Microwave3D:
 
         logger.debug(' - retreiving material properties.')
         
+        # If no simulation frequency is provided, use the lowest frequency
         if freq is None:
             freq = self.frequencies[0]
         
+        # Materials is now a list of materials and in the materials themselves
+        # They know what values are assigned to which index. This is not uniform
+        # because coordinate dependent material properties/materials are possible.
         materials = self._get_material_assignment(self.mesher.volumes)
+
+        # Er, Tand, ur, and conductivity parameters are always 3 by 3 full 
+        # material property tensors per tetrahedron.
+        # They are assumed constant within each tetrahedron.
 
         ertet = np.zeros((3,3,self.mesh.n_tets), dtype=np.complex128)
         tandtet = np.zeros((3,3,self.mesh.n_tets), dtype=np.complex128)
         urtet = np.zeros((3,3,self.mesh.n_tets), dtype=np.complex128)
         condtet = np.zeros((3,3,self.mesh.n_tets), dtype=np.complex128)
         
+        # Evaluating the relavant function er, tand etc on these functions automatically
+        # only assigned these material values to those arrays where they are valid.
+        # The materials know (high coupling, I know) which tet-indices they are assigned to.
         for mat in materials:
             ertet = mat.er(freq, ertet)
             tandtet = mat.tand(freq, tandtet)
             urtet = mat.ur(freq, urtet)
             condtet = mat.cond(freq, condtet)
         
+        # Compute the complex dielectric constant with the loss tangent.
         ertet = ertet * (1-1j*tandtet)
         
+        # For boundary modes we need to know the material properties on the surfaces instead of in the tets.
         er = np.zeros((3,3,self.mesh.n_tris,), dtype=np.complex128)
         ur = np.zeros((3,3,self.mesh.n_tris,), dtype=np.complex128)
         cond = np.zeros((self.mesh.n_tris,), dtype=np.complex128)
 
+        # We can use tri_to_tet to "ask" which tetrahedra are connected to the boundary triangle
+        # and then use that value for our material assignment
+        # Modal ports may only be connected to one tetrahedron so we can safely assume that the only
+        # Assigned tet index is in array index 0.
         for itri in range(self.mesh.n_tris):
             itet = self.mesh.tri_to_tet[0,itri]
             er[:,:,itri] = ertet[:,:,itet]
             ur[:,:,itri] = urtet[:,:,itet]
             cond[itri] = condtet[0,0,itet]
 
+        # A list of all the triangles that are part of the Port.
         itri_port = self.mesh.get_triangles(port.tags)
 
+        # Compute mean values for each material property. 
+        # These values are used to coarsely estimate what the
+        # out of plane propagation constant may be.
         ermean = np.mean(er[er>0].flatten()[itri_port])
         urmean = np.mean(ur[ur>0].flatten()[itri_port])
         ermax = np.max(er[:,:,itri_port].flatten())
@@ -791,21 +879,27 @@ class Microwave3D:
         ermin = np.min(er[:,:,itri_port].flatten())
         urmin = np.min(ur[:,:,itri_port].flatten())
 
+        # Compute k0
         k0 = 2*np.pi*freq/299792458
         
         logger.debug(f' - mean(max): εr = {ermean:.2f}({ermax:.2f}), μr = {urmean:.2f}({urmax:.2f})')
         
+        # Assemble matrix A and B for the generalized eigenvalue problem: Ax = λBx
         Amatrix, Bmatrix, solve_ids, nlf = self.assembler.assemble_bma_matrices(self.basis, er, ur, cond, k0, port, self.bc)
         
         logger.debug(f'Total of {Amatrix.shape[0]} Degrees of freedom.')
         logger.debug(f'Applied frequency: {freq/1e9:.2f}GHz')
         logger.debug(f'K0 = {k0} rad/m')
 
-        F = -1
-
+        # neff is the effective index for the port mode defined as kz = k0*neff
+        # If specified, the search kz is k0*neff
         if target_neff is not None:
             target_kz = k0*target_neff
         
+        # If no target kz is provided, we first ask the port. In case of prior
+        # Solves, the port can better estimate the port mote for this new frequency.
+        # If there is no estimate we use a different value for TEM modes than TE modes
+        # Which are fast modes as is the case with Waveguides for example.
         if target_kz is None:
             neff_estimate = port.neff_estimate(k0)
             if neff_estimate is not None:
@@ -817,29 +911,40 @@ class Microwave3D:
                 
         logger.debug(f'Solving for {solve_ids.shape[0]} degrees of freedom.')
 
+        # Only look at the real value
         target_kz = target_kz.real
+        # Execute a boundary mode eigenvalue calculation.
         eigen_values, eigen_modes, report = self.solveroutine.eig_boundary(Amatrix, Bmatrix, solve_ids, nmodes, direct, target_kz, sign=-1)
         
-        logger.debug(f'Eigenvalues: {np.sqrt(F*eigen_values)} rad/m')
+        logger.debug(f'Eigenvalues: {np.sqrt(-eigen_values)} rad/m')
 
-        port._er = er
-        port._ur = ur
+        # Store the material properties in the port.
+        # Can't remember where this was used again.
+        # I think nowhere.
+
+        # port._er = er
+        # port._ur = ur
 
         nmodes_found = eigen_values.shape[0]
 
+        # For each found mode
         for i in range(nmodes_found):
-            
+            # The E-field must 
             Emode = np.zeros((nlf.n_field,), dtype=np.complex128)
             eigenmode = eigen_modes[:,i]
             Emode[solve_ids] = np.squeeze(eigenmode)
+            # Phase correct for a phase of 0 degree at the port maximum.
             Emode = Emode * np.exp(-1j*np.angle(Emode[np.argmax(np.abs(Emode))]))
 
+            # Compute the out of plane propagation constant
             beta_base = np.emath.sqrt(-eigen_values[i])
             beta = min(k0*np.sqrt(ermax*urmax), beta_base)
 
             residuals = -1
 
+            # If alignement vectors are defined (ask the port to be aligned positively in some direction.)
             if port._get_alignment_vector(i) is not None:
+                # Compute the E-field, check in which direction it points on average and make sure the dot-product is positive.
                 vec = port._get_alignment_vector(i)
                 xyz_centers = self.mesh.tri_centers[:,self.mesh.get_triangles(port.tags)]
                 E_centers = np.mean(nlf.interpolate_Ef(Emode)(xyz_centers[0,:], xyz_centers[1,:], xyz_centers[2,:]), axis=1)
@@ -847,82 +952,90 @@ class Microwave3D:
                 if EdotVec.real < 0:
                     logger.debug(f'Mode polarization along alignment axis {vec} = {EdotVec.real:.3f}, inverting.')
                     Emode = -Emode
-                  
+            
+            # These return field interpolation class objects.
             portfE = nlf.interpolate_Ef(Emode)
             portfH = nlf.interpolate_Hf(Emode, k0, ur, beta)
-            P = compute_avg_power_flux(nlf, Emode, k0, ur, beta)
+            power = compute_avg_power_flux(nlf, Emode, k0, ur, beta)
 
+            # Finally add the mode to the port as a valid port mode.
             mode = port.add_mode(Emode, portfE, portfH, beta, k0, residuals, freq=freq)
             
+            # Mode is None if the mode energy is considered too.
             if mode is None:
                 continue
-            
+
             Efxy = Emode[:nlf.n_xy]
             Efz = Emode[nlf.n_xy:]
             Ez = np.max(np.abs(Efz))
             Exy = np.max(np.abs(Efxy))
             
+            # Final port post processing. If the port is to be considered a TEM mode port:
             if port.forced_modetype == 'TEM' or TEM:
                 mode.modetype = 'TEM'
                 
-                imp_type = port.impedance_definition
+                impedance_type = port.impedance_definition
 
-                intline1 = None
-                intline2 = None
-                V = 0
-                I = 0
+                voltage = 0.0
+                current = 0.0
 
-                G1 = None
-                G2 = None
+                # Find so called conductor islands. For TEM modes these are groups of vertices that make up the
+                # different port conductors.
+                island_group_1 = None
+                island_group_2 = None
 
-                if 'V' in imp_type:
-                    if len(port.vintline)>0:
-                        line = port.vintline[0]
+                if 'V' in impedance_type:
+                    # Voltage needs to be calculated. Either find an integration line or take the predefined one.
+                    if len(port.voltage_integration_line)>0:
+                        line = port.voltage_integration_line[0]
                     else:  
-                        G1, G2 = self._find_tem_conductors(port, sigtri=cond)
-                        if G1 is None or G2 is None:
+                        island_group_1, island_group_2 = self._find_two_pec_islands(port, sigtri=cond)
+                        if island_group_1 is None or island_group_2 is None:
                             logger.warning('Skipping characteristic impedance calculation.')
                             continue
                         
-                        nodes1 = self.mesh.nodes[:,G1]
-                        nodes2 = self.mesh.nodes[:,G2]
+                        nodes1 = self.mesh.nodes[:,island_group_1]
+                        nodes2 = self.mesh.nodes[:,island_group_2]
                         path = shortest_path(nodes1, nodes2, 2)
                         line = Line.from_points(path[:,0], path[:,1], 101)
-                        port.vintline.append(line)
+                        port.voltage_integration_line.append(line)
 
-                    cs = np.array(line.cmid)
+                    line_centers = np.array(line.cmid)
 
-                    logger.debug(f'Integrating portmode from {cs[:,0]} to {cs[:,-1]}')
-                    V = line.line_integral(portfE)
+                    logger.debug(f'Integrating portmode from {line_centers[:,0]} to {line_centers[:,-1]}')
+                    voltage = line.line_integral(portfE)
                 
-                if 'I' in imp_type:
-                    if len(port.iintline) > 0:
-                        intline = port.iintline[0]
+                # If the Current needs to be computed, either find the integration line or use the predefined one.
+                if 'I' in impedance_type:
+                    if len(port.current_integration_line) > 0:
+                        intline = port.current_integration_line[0]
                     else:
-                        if G1 is None or G2 is None:
-                            G1, G2 = self._find_tem_conductors(port, sigtri=cond)
-                        if G1 is None or G2 is None:
+                        if island_group_1 is None or island_group_2 is None:
+                            island_group_1, island_group_2 = self._find_two_pec_islands(port, sigtri=cond)
+                        if island_group_1 is None or island_group_2 is None:
                             logger.warning('Skipping characteristic impedance calculation.')
                             continue
-                        path = construct_pec_contour(self.mesh, itri_port, set(G1), nlf.cs.zax.np)
+                        path = construct_pec_contour(self.mesh, itri_port, set(island_group_1), nlf.cs.zax.np)
                         intline = Line(path[0,:], path[1,:], path[2,:]).subsample(20).smooth(5)
-                        port.iintline.append(intline)
-                    I = intline.line_integral(portfH)
+                        port.current_integration_line.append(intline)
+                    current = intline.line_integral(portfH)
                 
                 # Align mode polarity to positive voltage
-                if V < 0:
+                if voltage < 0:
                     mode.polarity = mode.polarity * -1
-                V = np.abs(V)
-                I = np.abs(I)
-                P = np.abs(P)
-                if imp_type=='PV':
-                    mode.Z0 = abs(V**2/(2*P))
-                elif imp_type=='PI':
-                    mode.Z0 = 2*np.abs(P)/(np.abs(I)**2)
-                elif imp_type=='VI':
-                    mode.Z0 = np.abs(V)/np.abs(I)
 
-                logger.debug(f'Port Z0 = {mode.Z0} Ω')
+                voltage = np.abs(voltage)
+                current = np.abs(current)
+
+                power = np.abs(power)
+                if impedance_type=='PV':
+                    mode.Z0 = abs(voltage**2/(2*power))
+                elif impedance_type=='PI':
+                    mode.Z0 = 2*np.abs(power)/(np.abs(current)**2)
+                elif impedance_type=='VI':
+                    mode.Z0 = np.abs(voltage)/np.abs(current)
+
+                logger.info(f'Port Z0 = {mode.Z0} Ω')
                 
             elif Ez/Exy < 1e-1 or port.forced_modetype=='TE':
                 logger.debug('Low Ez/Et ratio detected, assuming TE mode')
@@ -932,8 +1045,9 @@ class Microwave3D:
                 mode.modetype = 'TM'
             
 
-            mode.set_power(P*port._qmode(k0)**2)
+            mode.set_power(power*port._qmode(k0)**2)
         
+        # Sort the port modes on propagation constant.
         port.sort_modes()
 
         logger.info(f'Total of {port.nmodes} found')
@@ -990,7 +1104,7 @@ class Microwave3D:
         # Local Variables
         # --------------------------------------------------------------------
         
-        results: list[SimJob] = []
+        simulation_jobs: list[SimJob] = []
         material_set: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
         job_counter: int = 1
         harddisc_path = str(self._state.modelpath / harddisc_path)
@@ -1013,9 +1127,10 @@ class Microwave3D:
         # Checks
         # --------------------------------------------------------------------
         
-        if self.bc._initialized is False:
-            raise SimulationError('Cannot run a modal analysis because no boundary conditions have been assigned.')
+        if self.bc._initialized_with_defaults is False:
+            raise SimulationError('Cannot run a modal analysis because no default boundary conditions have been assigned.')
         
+        self._check_meshed()
         self._initialize_field()
         self._initialize_bc_data()
         self._check_physics()
@@ -1059,6 +1174,7 @@ class Microwave3D:
                 thread_local.routine = self.solveroutine.duplicate()._configure_routine('MT', thread_nr=worker_nr)
             return thread_local.routine
 
+        # Multi processing solves first need a SolveRoutine object to execute the solve. 
         def run_job(job: SimJob) -> SimJob:
             routine = get_routine()
             A, bmat, ids, aux = job.get_Ab()
@@ -1067,6 +1183,7 @@ class Microwave3D:
             job.submit_solution(solution, report)
             return job
         
+        # Single threaded does not need this routine as the class's own routine can be used. 
         def run_job_single(job: SimJob) -> SimJob:
             A, bmat, ids, aux = job.get_Ab()
             solution, report = self.solveroutine.solve(A, bmat, ids, id=job.id)
@@ -1078,7 +1195,10 @@ class Microwave3D:
         # Grouping solve frequencies
         # --------------------------------------------------------------------
         
+        # Frequency groups are the groups of frequencie that are assembled and then solved
+        # Less assembled problems reduces RAM usage.
         freq_groups = self._get_frequency_groups(frequency_groups) 
+
         for i, group in enumerate(freq_groups):
             group_GHz = [f'{f/1e9:.3f}GHz' for f in group]
             logger.trace(f'Frequency group ({i}): {group_GHz}')
@@ -1094,15 +1214,22 @@ class Microwave3D:
             for i_group, fgroup in enumerate(freq_groups):
                 logger.info(f'Precomputing group {i_group}.')
                 jobs = []
+
                 ## Assemble jobs
+                # for each frequency in the frequency group
                 for ifreq, freq in enumerate(fgroup):
                     logger.debug(f'Simulation frequency = {_format_freq(freq)}') 
+                    
+                    #Execute a new modal analysis if needed (only in cases where the propagation constant can't be predicted.)
                     if automatic_modal_analysis:
                         self._compute_modes(freq)
+
+                    # Assemble the FEM problem
                     job, mats = self.assembler.assemble_freq_matrix(self.basis, materials, 
                                                             self.bc.boundary_conditions, 
                                                             freq, 
                                                             cache_matrices=self.cache_matrices)
+                    # Cache to the harddrive if needed.
                     if cache_harddisk:
                         job.store_if_needed(harddisc_path)
                     
@@ -1110,10 +1237,10 @@ class Microwave3D:
                     job_counter += 1
                     jobs.append(job)
                     material_set.append(mats)
-                
+                # Finally solve the problems for each frequency individually.
                 logger.info(f'Starting single threaded solve of {len(jobs)} jobs.')
                 group_results = [run_job_single(job) for job in jobs]
-                results.extend(group_results)
+                simulation_jobs.extend(group_results)
         
         # --------------------------------------------------------------------
         # Multi-Threaded Solve
@@ -1128,12 +1255,16 @@ class Microwave3D:
                     ## Assemble jobs
                     for freq in fgroup:
                         logger.debug(f'Simulation frequency = {_format_freq(freq)}') 
+                        # Compute new port modes if needed.
                         if automatic_modal_analysis:
                             self._compute_modes(freq)
+                        
+                        # Assemble the problem Ax=b
                         job, mats = self.assembler.assemble_freq_matrix(self.basis, materials, 
                                                                 self.bc.boundary_conditions, 
                                                                 freq, 
                                                                 cache_matrices=self.cache_matrices)
+                        # Cache to the harddrive if needed
                         if cache_harddisk:
                             job.store_if_needed(harddisc_path)
 
@@ -1142,9 +1273,10 @@ class Microwave3D:
                         jobs.append(job)
                         material_set.append(mats)
                     
+                    # Solve all problems using the executor.
                     logger.info(f'Starting distributed solve of {len(jobs)} jobs with {n_workers} threads.')
                     group_results = list(executor.map(run_job, jobs))
-                    results.extend(group_results)
+                    simulation_jobs.extend(group_results)
                 executor.shutdown()
         
         # --------------------------------------------------------------------
@@ -1166,9 +1298,11 @@ class Microwave3D:
                     # Assemble jobs
                     for freq in fgroup:
                         logger.debug(f'Simulation frequency = {_format_freq(freq)}') 
+                        # Execute modal analysis if needed
                         if automatic_modal_analysis:
                             self._compute_modes(freq)
                         
+                        # Assemble the problem Ax=b
                         job, mats = self.assembler.assemble_freq_matrix(
                             self.basis, materials,
                             self.bc.boundary_conditions,
@@ -1176,6 +1310,7 @@ class Microwave3D:
                             cache_matrices=self.cache_matrices
                         )
 
+                        # Cache to the harddrive if needed
                         if cache_harddisk:
                             job.store_if_needed(harddisc_path)
 
@@ -1190,7 +1325,7 @@ class Microwave3D:
                     )
                     # Distribute taks
                     group_results = pool.map(run_job_multi, jobs)
-                    results.extend(group_results)
+                    simulation_jobs.extend(group_results)
         
         # --------------------------------------------------------------------
         # Cleanup
@@ -1208,7 +1343,7 @@ class Microwave3D:
         # Writing solve reports
         # --------------------------------------------------------------------
         
-        for freq, job in zip(self.frequencies, results):
+        for freq, job in zip(self.frequencies, simulation_jobs):
             self.data.setreport(job.reports, freq=freq, **self._params)
 
         for variables, data in self.data.sim.iterate():
@@ -1220,7 +1355,7 @@ class Microwave3D:
         # Post Processing
         # --------------------------------------------------------------------
         
-        self._post_process(results, material_set)
+        self._post_process(simulation_jobs, material_set)
         self._completed = True
         return self.data
     
@@ -1374,9 +1509,10 @@ class Microwave3D:
         # Checks
         # --------------------------------------------------------------------
         
-        if self.bc._initialized is False:
-            raise SimulationError('Cannot run a modal analysis because no boundary conditions have been assigned.')
+        if self.bc._initialized_with_defaults is False:
+            raise SimulationError('Cannot run a modal analysis because no default boundary conditions have been assigned.')
         
+        self._check_meshed()
         self._initialize_field()
         self._initialize_bc_data()
         self._check_physics()
@@ -1600,9 +1736,11 @@ class Microwave3D:
         """
         
         self._simstart = time.time()
-        if self.bc._initialized is False:
-            raise SimulationError('Cannot run a modal analysis because no boundary conditions have been assigned.')
+
+        if self.bc._initialized_with_defaults is False:
+            raise SimulationError('Cannot run a modal analysis because no default boundary conditions have been assigned.')
         
+        self._check_meshed()
         self._initialize_field()
         self._initialize_bc_data()
         self._check_physics()
@@ -1623,7 +1761,7 @@ class Microwave3D:
         ### COMPUTE WHICH TETS ARE CONNECTED TO PORT INDICES
 
         for port in all_ports:
-            port.active=False
+            port.active = False
     
     
         def run_job_single(job: SimJob):
@@ -1689,9 +1827,10 @@ class Microwave3D:
         """
         
         self._simstart = time.time()
-        if self.bc._initialized is False:
+        if self.bc._initialized_with_defaults is False:
             raise SimulationError('Cannot run a modal analysis because no boundary conditions have been assigned.')
         
+        self._check_meshed()
         self._initialize_field()
         self._initialize_bc_data()
         

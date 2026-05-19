@@ -26,20 +26,13 @@ from ...selection import Selection, FaceSelection
 from ...cs import CoordinateSystem, Axis, GCS, _parse_axis
 from ...coord import Line
 from ...geometry import GeoSurface, GeoObject
-from ...bc import BoundaryCondition, BoundaryConditionSet, Periodic
+from ...bc import BoundaryCondition, BoundaryConditionSet, Periodic, BoundaryConditionError
 from ...periodic import PeriodicCell, HexCell, RectCell
 from emsutil import Material, AIR, Saveable
 from ...const import Z0, C0, EPS0, MU0
 from ...logsettings import DEBUG_COLLECTOR
 from . import background_field as bf
 
-
-############################################################
-#                        EXCEPTIONS                       #
-############################################################
-
-class BoundaryConditionException(Exception):
-    pass
 
 ############################################################
 #                     UTILITY FUNCTIONS                    #
@@ -126,7 +119,7 @@ class MWBoundaryConditionSet(BoundaryConditionSet):
                 continue
             if bc._include_force:
                 return True
-        raise BoundaryConditionException('The simulation has no boundary conditions that insert energy. Make sure to include at least one Port into your simulation.')
+        raise BoundaryConditionError('The simulation has no boundary conditions that insert energy. Make sure to include at least one Port into your simulation.')
     
     def _check_ports(self) -> None:
         numbers = []
@@ -137,7 +130,7 @@ class MWBoundaryConditionSet(BoundaryConditionSet):
         
         # check subsequent numbers
         if not all([pa==pb for pa,pb in zip(range(1,N+1), numbers)]):
-            raise BoundaryConditionException(f'Port numbers are not subsequent integers. Values are {numbers} instead of {list(range(1,N+1))}')
+            raise BoundaryConditionError(f'Port numbers are not subsequent integers. Values are {numbers} instead of {list(range(1,N+1))}')
 
 ############################################################
 #                    BOUNDARY CONDITIONS                   #
@@ -194,9 +187,14 @@ class RobinBC(BoundaryCondition, Saveable):
             selection (GeoSurface | Selection): The boundary surface.
         """
         super().__init__(selection)
-        self.v_integration: bool = False
-        self.vintline: Line | None = None
+        self._assemble_matrix: bool = True
     
+    def dont_assemble(self) -> None:
+        """Prevent this port boundary condition from being assembled in the
+        matrix. This means only the imposed forcing vector gets included.
+        """
+        self._assemble_matrix = False
+        
     def get_basis(self) -> np.ndarray:
         raise NotImplementedError('This method is not implemented')
     
@@ -239,13 +237,14 @@ class PortBC(RobinBC, Saveable):
         self.active: bool | None = False
         self.driven: bool = True
         self.power: float = 1.0
+        self.v_integration: bool = False
         self.vintline: list[Line] = []
         self.iintline: list[Line] = []
         
     @property
     def voltage(self) -> complex | None:
         return None
-    
+
     def _gen_port_number(self, mode_nr: int) -> int | float:
         if len(self.port_modes) == 1:
             return self.port_number
@@ -406,7 +405,11 @@ class AbsorbingBoundary(RobinBC, Saveable):
     def get_beta(self, k0: float) -> float:
         ''' Return the out of plane propagation constant. βz.'''
         return k0
-
+    
+    def get_abccorr(self, k0: float) -> float:
+        f = k0*C0/(2*np.pi)
+        return 1j*self.o2coeffs[self.abctype][1]/(self.material.neff(f)*k0)
+    
     def get_gamma(self, k0: float) -> complex:
         """Computes the γ-constant for matrix assembly. This constant is required for the Robin boundary condition.
 
@@ -617,11 +620,11 @@ class ModalPort(PortBC, Saveable):
             self.cs = Axis(self.selection.normal).construct_cs() # type: ignore
         else:
             raise ValueError('No Coordinate System could be derived.')
-        self._er: np.ndarray | None = None
-        self._ur: np.ndarray | None = None
+        # self._er: np.ndarray | None = None
+        # self._ur: np.ndarray | None = None
         
-        self.vintline: list[Line] = []
-        self.iintline: list[Line] = []
+        self.voltage_integration_line: list[Line] = []
+        self.current_integration_line: list[Line] = []
         
     def neff_estimate(self, k0: float) -> float:
         if len(self.available_modes)==0:
@@ -643,7 +646,7 @@ class ModalPort(PortBC, Saveable):
             c2 (tuple[float, float, float]): The end coordinate
             N (int, optional): The number of integration points. Defaults to 21.
         """
-        self.vintline.append(Line.from_points(c1, c2, N))
+        self.voltage_integration_line.append(Line.from_points(c1, c2, N))
     
     def reset(self) -> None:
         self.available_modes: dict[float, list[PortMode]] = defaultdict(list)
@@ -727,7 +730,7 @@ class ModalPort(PortBC, Saveable):
                 DEBUG_COLLECTOR.add_report('A variation in port mode propagation constants (k0={k0:.1f}) is detected. Only multi mode ports with similar'+
                                 f'propagation constants are suppored. Betas are {str_betas}')
     def sort_modes(self) -> None:
-        """Sorts the port modes based on total energy
+        """Sorts the port modes based on propagation constant
         """
         
         if len(self.alignment_vectors) > 0:
@@ -1347,7 +1350,9 @@ class ScatteredField(RobinBC, Saveable):
         self.polarizations: list[float] = [0.0,]
         self.E0: float = (power_density*2*Z0)**0.5
         self.defintion: bf.DEFINITIONS = 'EA'
-        
+        self.bf: type[bf.BackgroundField] = bf.BackgroundField
+    
+
 
     def get_basis(self) -> np.ndarray:
         return self.cs._basis
@@ -1355,7 +1360,7 @@ class ScatteredField(RobinBC, Saveable):
     def get_inv_basis(self) -> np.ndarray:
         return self.cs._basis_inv
     
-    def modetype(self, k0):
+    def modetype(self, k0: float):
         return self.type
     
     def get_amplitude(self, k0: float) -> float:
@@ -1368,8 +1373,25 @@ class ScatteredField(RobinBC, Saveable):
     def _iter_fields(self, k0: float) -> Generator[bf.BackgroundField,None,None]:
         from itertools import product
         for (theta,phi,psi) in product(self.thetas, self.phis, self.polarizations):
-            yield bf.BackgroundField(k0, theta, phi, psi, self.cs.origin, self.E0, self.defintion)
+            yield self.bf(k0, theta, phi, psi, self.cs.origin, self.E0, self.defintion)
 
+    def set_backgroundfield_type(self, bftype: type[bf.BackgroundField]) -> None:
+        """Provide a manual background field type
+
+        Args:
+            bftype (type[bf.BackgroundField]): A class or subclass of BackgroundField
+
+        Returns:
+            _type_: _description_
+
+        Yields:
+            _type_: _description_
+        """
+        if isinstance(bftype, type) and issubclass(bftype, bf.BackgroundField):
+            self.bf = bftype
+        else:
+            raise TypeError(f'A custom backgroundfield must be provided as uninitialized class, not a class instance.')
+        
     @property
     def curvature(self) -> float:
         if self.radius is None:
@@ -1468,7 +1490,6 @@ class LumpedPort(PortBC, Saveable):
         logger.debug(f'Lumped port: width={1000*width:.1f}mm, height={1000*height:.1f}mm, direction={direction}') # type: ignore
         self.port_number: int= port_number
         self.active: bool = False
-
         self.power: float = power
         self.Z0: float = Z0
         
@@ -1577,6 +1598,7 @@ class LumpedElement(RobinBC, Saveable):
     _include_force: bool = False
     _color: str = "#e11c1c"
     _name: str = "LumpedElement"
+    skip_fields = ['Z0',]
     dim: int = 2
     def __init__(self, 
                  face: FaceSelection | GeoSurface,

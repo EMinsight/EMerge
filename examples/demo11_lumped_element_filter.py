@@ -102,6 +102,7 @@ for le in LEs:
 # --- Run frequency-domain simulation ------------------------------------
 data = m.mw.run_sweep(parallel=True, n_workers=4, frequency_groups=8)
 grid = data.scalar.grid
+
 # --- Post-processing: plot S-parameters ---------------------------------
 f = grid.freq
 fd = grid.dense_f(1001)

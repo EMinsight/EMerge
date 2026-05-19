@@ -22,6 +22,29 @@ import numpy as np
 from .cs import Axis, CoordinateSystem, _parse_vector, Plane
 from typing import Callable, TypeVar, Iterable, Any
 from emsutil import Saveable
+
+"""
+The Selection module handles geometry/face selections in EMerge.
+The current architecture is not something I am happy with.
+
+The biggest problem is associated with circular imports and the dependence
+with the geometry.py module. The problem is that selections inevitably are
+linked to geometries. But similarly, geometries can generate selections of their faces.
+
+For example a Box has the property .front which selects the front face.
+
+This means that Box imports from Select and that thus Select cannot import from Box.
+
+However, in some cases the Selection class likes to have more knowledge of the geometry it is selecting.
+That is why there is this incredibly ugly _CalculationInterface class which now allows Selection
+objects to gain access to the SimState class without ever needing to import it.
+
+Inside The simstate.py module, the _CALC_INTERFACE object gets imported and a link to the SimState
+object "links" itself to the _CALC_INTERFACE object. 
+
+This is absolutely horrendous and I'd like a better solution if you guys have one!
+"""
+
 # EXCEPTIONS
 
 class SelectionError(Exception):
@@ -82,6 +105,9 @@ class _CalculationInterface:
 
     def getArea(self, tag: int) -> float:
         return self._ifobj.getArea(tag)
+    
+    def is_post_fragment(self) -> bool:
+        return self._ifobj._geometry_committed
     
 _CALC_INTERFACE = _CalculationInterface()
 
@@ -159,7 +185,13 @@ def align_rectangle_frame(pts3d: np.ndarray, normal: np.ndarray) -> dict[str, An
       "corners": np.array(corners).reshape(4,3)
     }
 
+# --- Encoder functions
 
+"""These functions are not really actively used. Its an idea that is not really being used
+mutch. Basically it is a way to encode "selections" in short strings in order for the GUI 
+to generate FaceSelection object.
+
+"""
 def encode_data(values: tuple[float,...]) -> str:
     """
     Convert a tuple of floats into a custom base64-like encoded string
@@ -228,17 +260,24 @@ def decode_data(encoded: str) -> tuple[float,...]:
 
 
 class Selection(Saveable):
-    """A generalized class representing a slection of tags.
+    """A generalized class representing a slection of tags in some Dimension.
 
     """
     dim: int = -1
     def __init__(self, tags: list[int] | set[int] | tuple[int] | None = None):
         self.name: str = 'Selection'
         self._tags: set[int] = set()
+        
         if tags is not None:
             if not isinstance(tags, (list,set,tuple)):
                 raise TypeError(f'Argument tags must be of type list, tuple or set, instead its {type(tags)}')
             self._tags = set(tags)
+
+        # This flag gets set once and tells the Selection object if it was generated before
+        # or after a boolean fragment occured (commit_geometry()). This way, the simulation
+        # will crash if users assign port boundary conditions based on selections that are no longer valid.
+
+        self._valid_after_fragment: bool = _CALC_INTERFACE.is_post_fragment()
 
     @staticmethod
     def from_dim_tags(dim: int, tags: list[int] | set[int]) -> Selection:
@@ -252,8 +291,11 @@ class Selection(Saveable):
             return DomainSelection(tags)
         raise ValueError(f'Dimension must be 0,1,2 or 3. Not {dim}')
     
+    ####### PROPERTIES
+
     @property
     def invalid(self) -> bool:
+        """ Checked by graphing code to make sure selections are actually usable."""
         if len(self._tags)==0:
             return True
         return False
@@ -264,30 +306,54 @@ class Selection(Saveable):
     
     @property
     def color_rgb(self) -> tuple[float, float, float]:
-        return (0.5,0.5,1.0)
+        return (0.5, 0.5, 1.0)
     
     @property
     def centers(self) -> list[tuple[float, float, float],]:
+        """Generates the geometric centers for each of the tags of the selection object.
+
+        Returns:
+            list[tuple[float, float, float],]: A list of coordinate tuples (x,y,z),...
+        """
         return [_CALC_INTERFACE.getCenterOfMass(self.dim, tag) for tag in self.tags]
     
     @property
     def _metal(self) -> bool:
+        """A property needed for the graphic library in order to generally ask if something
+        should be rendered as a metal as it could be called on both Selection objects or Geometry objects.
+
+        Returns:
+            bool: Always false
+        """
         return False
     
     @property
     def opacity(self) -> float:
+        """The selection opacity for the graphicng library.
+
+        Returns:
+            float: Always 0.6
+        """
         return 0.6
-    ####### DUNDER METHODS
-    def __repr__(self) -> str:
-        return f'{type(self).__name__}({self.tags})'
     
-    ####### PROPERTIES
+    
     @property
     def dimtags(self) -> list[tuple[int,int]]:
+        """Return a list of dimension tag tuples (d,t)
+
+        Returns:
+            list[tuple[int,int]]: The list of dimension tag tuples
+        """
         return [(self.dim, tag) for tag in self.tags]
     
     @property
     def center(self) -> np.ndarray | list[np.ndarray]:
+        """Returns either the geometric center or list of geometric centers of this selection
+
+        TODO: I Think this is not used and can be removed.
+        Returns:
+            np.ndarray | list[np.ndarray]: _description_
+        """
         if len(self.tags)==1:
             return _CALC_INTERFACE.getCenterOfMass(self.dim, self.tags[0])
         else:
@@ -299,7 +365,12 @@ class Selection(Saveable):
         return _CALC_INTERFACE.getPoints(self.dimtags)
     
     @property
-    def bounding_box(self) -> tuple[Iterable, Iterable]:
+    def bounding_box(self) -> tuple[tuple[float, float, float],tuple[float, float, float]]:
+        """Return the bounding box of the selection
+
+        Returns:
+            tuple[tuple[float, float, float],tuple[float, float, float]]: (xmin, ymin, zmin), (xmax, ymax, zmax)
+        """
         if len(self.tags)==1:
             x1, y1, z1, x2, y2, z2 = _CALC_INTERFACE.getBoundingBox(self.dim, self.tags[0])
             return (x1, y1, z1), (x2, y2, z2)
@@ -316,6 +387,12 @@ class Selection(Saveable):
                 maxz = max(maxz, z1)
             return (minx, miny, minz), (maxx, maxy, maxz)
     
+    ####### DUNDER METHODS
+    def __repr__(self) -> str:
+        return f'{type(self).__name__}({self.tags})'
+    
+    # ---- Methods
+
     def remove_tags(self, tags: list[int]) -> Selection:
         """Removes a set of tags from the selection
 
@@ -383,23 +460,63 @@ class Selection(Saveable):
         return self
 
     def __operable__(self, other: Selection) -> None:
+        """Raises a value error if the two objects passed are not operable with a binary operator.
+
+        Args:
+            other (Selection): The other selection object.
+
+        Raises:
+            ValueError: _description_
+        """
         if not self.dim == other.dim:
             raise ValueError(f'Selection dimensions must be equal. Trying to operate on dim {self.dim} and {other.dim}')
         pass
 
     def __add__(self, other: Selection) -> Selection:
+        """Add two selections together
+
+        Args:
+            other (Selection): _description_
+
+        Returns:
+            Selection: _description_
+        """
         self.__operable__(other)
         return Selection.from_dim_tags(self.dim, self._tags.union(other._tags))
     
     def __and__(self, other: Selection) -> Selection:
+        """Create the Set intersection of two selections 
+
+        Args:
+            other (Selection): Selection object.
+
+        Returns:
+            Selection: _description_
+        """
         self.__operable__(other)
         return Selection.from_dim_tags(self.dim, self._tags.intersection(other._tags))
     
     def __or__(self, other: Selection) -> Selection:
+        """Create the Set Union of two selections
+
+        Args:
+            other (Selection): Selection object.
+
+        Returns:
+            Selection: _description_
+        """
         self.__operable__(other)
         return Selection.from_dim_tags(self.dim, self._tags.union(other._tags))
     
     def __sub__(self, other: Selection) -> Selection:
+        """Create the set difference of two selections.
+
+        Args:
+            other (Selection): Selection object.
+
+        Returns:
+            Selection: _description_
+        """
         self.__operable__(other)
         return Selection.from_dim_tags(self.dim, self._tags.difference(other.tags))
 
@@ -671,7 +788,16 @@ class Selector:
                 tags.append(t)
         return FaceSelection(tags)
     
-    def code(self, code: str):
+    def code(self, code: str) -> FaceSelection:
+        """Creates a FaceSelection from a decoded face pointer code.
+        Can be used with the PyVista interface when pressing "F" but not really used.
+
+        Args:
+            code (str): _description_
+
+        Returns:
+            FaceSelection: _description_
+        """
         nums1 = decode_data(code)
         
         dimtags = gmsh.model.getEntities(2)

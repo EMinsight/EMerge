@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Callable
 import re
 from loguru import logger
+from scipy.interpolate import interp1d
 
 _FUNIT = {
     'hz': 1,
@@ -262,3 +263,94 @@ class TouchstoneData:
             np.ndarray: The S-parameter array
         """
         return self.Sdata[:, i-1, j-1].squeeze()
+    
+    def RemoveSP(self, touchstoneClass: 'TouchstoneData', port: int) -> 'TouchstoneData':
+        """De-embed a 2-port fixture network from this touchstone measurement.
+
+        Supports both 1-port and 2-port DUTs:
+        - 1-port: solves Γ_dut from Γ_meas = S11 + S12*S21*Γ_dut / (1 - S22*Γ_dut)
+        - 2-port: uses T-parameter de-embedding T_dut = inv(T_fix) @ T_meas
+
+        Args:
+            touchstoneClass (TouchstoneData): A 2-port touchstone object representing
+                the fixture to de-embed (e.g. a female-female adapter).
+            port (int): The port number (1-based) from which to de-embed.
+
+        Returns:
+            TouchstoneData: self, with S-parameters updated after de-embedding.
+        """
+        if touchstoneClass.n_ports != 2:
+            raise ValueError('The fixture touchstone data must be a 2-port (s2p) file.')
+
+        if port < 1 or port > self.n_ports:
+            raise ValueError(f'Port {port} is out of range for a {self.n_ports}-port network.')
+
+        # Interpolate fixture data onto our frequency axis
+        fixture_S = np.zeros((self.n_frequencies, 2, 2), dtype=complex)
+        for i in range(2):
+            for j in range(2):
+                s_param = touchstoneClass.S(i + 1, j + 1)
+                f_fixture = touchstoneClass.f
+                re_interp = interp1d(f_fixture, s_param.real,
+                                    kind=self.interp_type, fill_value='extrapolate')
+                im_interp = interp1d(f_fixture, s_param.imag,
+                                    kind=self.interp_type, fill_value='extrapolate')
+                fixture_S[:, i, j] = re_interp(self.Fdata) + 1j * im_interp(self.Fdata)
+
+        if self.n_ports == 1:
+            # 1-port de-embedding using signal flow graph solution
+            for iif in range(self.n_frequencies):
+                S11f = fixture_S[iif, 0, 0]
+                S12f = fixture_S[iif, 0, 1]
+                S21f = fixture_S[iif, 1, 0]
+                S22f = fixture_S[iif, 1, 1]
+
+                gamma_meas = self.Sdata[iif, 0, 0]
+
+                denom = S22f * (gamma_meas - S11f) + S12f * S21f
+                if abs(denom) < 1e-30:
+                    raise ValueError(f'De-embedding denominator near zero at freq index {iif}.')
+
+                gamma_dut = (gamma_meas - S11f) / denom
+                self.Sdata[iif, 0, 0] = gamma_dut
+
+        elif self.n_ports == 2:
+            for iif in range(self.n_frequencies):
+                # Convert fixture S to T-parameters
+                S = fixture_S[iif, :, :]
+                if abs(S[1, 0]) < 1e-30:
+                    raise ValueError(f'Fixture S21 near zero at freq index {iif}.')
+                T_fix = np.array([
+                    [-(S[0,0]*S[1,1] - S[0,1]*S[1,0]) / S[1,0], S[0,0] / S[1,0]],
+                    [-S[1,1] / S[1,0], 1.0 / S[1,0]]
+                ])
+
+                # Convert measured S to T-parameters
+                Sm = self.Sdata[iif, :, :]
+                if abs(Sm[1, 0]) < 1e-30:
+                    raise ValueError(f'Measured S21 near zero at freq index {iif}.')
+                T_meas = np.array([
+                    [-(Sm[0,0]*Sm[1,1] - Sm[0,1]*Sm[1,0]) / Sm[1,0], Sm[0,0] / Sm[1,0]],
+                    [-Sm[1,1] / Sm[1,0], 1.0 / Sm[1,0]]
+                ])
+
+                # De-embed from the appropriate port
+                if port == 1:
+                    T_result = np.linalg.inv(T_fix) @ T_meas
+                else:
+                    T_result = T_meas @ np.linalg.inv(T_fix)
+
+                # Convert T back to S
+                if abs(T_result[0, 0]) < 1e-30:
+                    raise ValueError(f'T11 near zero at freq index {iif}.')
+                self.Sdata[iif, :, :] = np.array([
+                    [T_result[0,1] / T_result[0,0],
+                    (T_result[0,0]*T_result[1,1] - T_result[0,1]*T_result[1,0]) / T_result[0,0]],
+                    [1.0 / T_result[0,0],
+                    -T_result[1,0] / T_result[0,0]]
+                ])
+        else:
+            raise ValueError(f'De-embedding is only supported for 1-port and 2-port DUTs, '
+                            f'not {self.n_ports}-port.')
+
+        return self

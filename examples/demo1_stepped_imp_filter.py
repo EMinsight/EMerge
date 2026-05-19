@@ -1,5 +1,4 @@
 import emerge as em
-import numpy as np
 from emerge.plot import smith, plot_sp
 
 """ STEPPED IMPEDANCE FILTER

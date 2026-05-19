@@ -870,7 +870,10 @@ class MWField(Saveable):
         field.structure = DataStructure.GRID2D
         return field
     
-    def grid(self, ds: float | None = None, N: int = 10_000, usenan: bool = True) -> EHField:
+    def grid(self, ds: float | None = None, N: int = 10_000, usenan: bool = True,
+             x_range: tuple[float, float] | None = None,
+             y_range: tuple[float, float] | None = None,
+             z_range: tuple[float, float] | None = None) -> EHField:
         """Interpolate a uniform grid sampled at ds
 
         Args:
@@ -881,12 +884,18 @@ class MWField(Saveable):
             EHField: Storage container for data
         """
         xb, yb, zb = self.basis.bounds
+        if x_range is not None:
+            xb = x_range
+        if y_range is not None:
+            yb = y_range
+        if z_range is not None:
+            zb = z_range
         DX = xb[1]-xb[0]
         DY = yb[1]-yb[0]
         DZ = zb[1]-zb[0]
         if ds is None:
             ds = ((DX*DY*DZ)/N)**(1/3)
-            
+
         xs = np.linspace(xb[0], xb[1], int(DX/ds)+1)
         ys = np.linspace(yb[0], yb[1], int(DY/ds)+1)
         zs = np.linspace(zb[0], zb[1], int(DZ/ds)+1)
@@ -1186,6 +1195,33 @@ class MWScalarNdim(Saveable):
         self._dense_frequencies: np.ndarray = None
 
 
+    def renormalize(self, Z0ref: np.ndarray | float | complex) -> MWScalarNdim:
+        if isinstance(Z0ref, (float, complex, int)):
+            Z0ref = np.ones_like(self.Z0) * Z0ref
+
+        # Shape is (..., M, N, N) — last 3 axes are the core S-parameter array
+        leading_shape = self.Sp.shape[:-3]
+
+        if leading_shape:
+            Sout = np.empty_like(self.Sp)
+            for idx in np.ndindex(leading_shape):
+                Sout[idx] = renormalise_s(self.Sp[idx], self.Z0[idx], Z0ref[idx])
+        else:
+            # Simple (M, N, N) case — no sweep dimensions
+            Sout = renormalise_s(self.Sp, self.Z0, Z0ref)
+
+        newndim = MWScalarNdim()
+        newndim.freq = self.freq
+        newndim.k0 = self.k0
+        newndim.Sp = Sout
+        newndim.beta = self.beta
+        newndim.Z0 = Z0ref
+        newndim.Pout = self.Pout
+        newndim._portmap = self._portmap
+        newndim._portnumbers = self._portnumbers
+        newndim._dense_frequencies = self._dense_frequencies
+        return newndim
+    
     def dense_f(self, N: int | None = None, frequencies: list[float] | np.ndarray | None = None) -> np.ndarray:
         """Specify a frequency subsample point density or provide a list of denser frequency points.
 
@@ -1217,7 +1253,7 @@ class MWScalarNdim(Saveable):
         """
         return self.Sp[...,self._portmap[i], self._portmap[j]]
     
-    def combine_ports(self, p1: int, p2: int) -> MWScalarNdim:
+    def combine_ports(self, p1: int, p2: int, Z0renorm: np.ndarray | float | complex | None = None) -> MWScalarNdim:
         """Combine ports p1 and p2 into a differential and common mode port respectively.
 
         The p1 index becomes the differential mode port
@@ -1241,6 +1277,9 @@ class MWScalarNdim(Saveable):
             raise IndexError(f'Ports {p1+1} or {p2+1} are out of range {N}')
         
         Sout = self.Sp.copy()
+        if Z0renorm is not None:
+            Sout = renormalise_s(Sout, Z0renorm, self.Z0)
+        
         ii, jj = p1, p2
         idx = np.ones(N, dtype=np.bool)
         idx[[ii,jj]] = False
@@ -1307,6 +1346,7 @@ class MWScalarNdim(Saveable):
             Npoles: int | Literal['auto'] = 'auto', 
             inc_real: bool = False,
             maxpoles: int = 30,
+            minpoles: int = 1,
             _warn: bool = True) -> np.ndarray:
         """Returns an S-parameter model object at a dense frequency range.
         This method uses vector fitting inside the datasets frequency points to determine a model for the linear system.
@@ -1334,10 +1374,10 @@ class MWScalarNdim(Saveable):
             nf = len(freq)
             Sarray = np.zeros(tuple(dims) + (nf,), dtype=np.complex128)
             for ids in np.ndindex(*dims):
-                Sarray[ids,:] = SparamModel(np.squeeze(self.freq[(*ids,slice(None))]), np.squeeze(self.S(i,j)[(*ids,slice(None))]), n_poles=Npoles, inc_real=inc_real, maxpoles=maxpoles, _warn=_warn)(freq)
+                Sarray[ids,:] = SparamModel(np.squeeze(self.freq[(*ids,slice(None))]), np.squeeze(self.S(i,j)[(*ids,slice(None))]), n_poles=Npoles, inc_real=inc_real, maxpoles=maxpoles, minpoles=minpoles, _warn=_warn)(freq)
             return Sarray
         else:
-            return SparamModel(np.squeeze(self.freq), np.squeeze(self.S(i,j)), n_poles=Npoles, inc_real=inc_real, maxpoles=maxpoles, _warn=_warn)(freq)
+            return SparamModel(np.squeeze(self.freq), np.squeeze(self.S(i,j)), n_poles=Npoles, inc_real=inc_real, maxpoles=maxpoles, minpoles=minpoles, _warn=_warn)(freq)
 
     def model_Smat(self, frequencies: np.ndarray | None = None,
                         Npoles: int = 10,

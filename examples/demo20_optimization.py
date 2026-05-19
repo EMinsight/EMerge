@@ -1,6 +1,6 @@
 import emerge as em
 import numpy as np
-from emerge.plot import plot_sp, plot_ff_polar, smith
+from emerge.plot import plot_sp
 
 """ OPTIMIZATION
 

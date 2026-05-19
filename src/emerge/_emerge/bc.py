@@ -28,6 +28,8 @@ from emsutil import Saveable
 
 T = TypeVar('T')
 
+class BoundaryConditionError(Exception):
+    pass
 
 def _unique(input: list[int]) -> list:
     """ Returns a sorted list of all unique integers/floats in a list."""
@@ -63,6 +65,8 @@ class BoundaryCondition(Saveable):
     def _size_constraint(self) -> float | None:
         return None
     
+    def valid_after_fragment(self) -> bool:
+        return self.selection._valid_after_fragment
     
     def __repr__(self) -> str:
         return f'{type(self).__name__}{self.tags}'
@@ -111,7 +115,7 @@ class BoundaryConditionSet(Saveable):
     def __init__(self):
 
         self.boundary_conditions: list[BoundaryCondition] = []
-        self._initialized: bool = False
+        self._initialized_with_defaults: bool = False
     
     def cleanup(self) -> None:
         """ Removes non assigned boundary conditions"""
@@ -119,7 +123,17 @@ class BoundaryConditionSet(Saveable):
         toremove = [bc for bc in self.boundary_conditions if len(bc.tags)==0]
         logger.trace(f"Removing: {toremove}")
         self.boundary_conditions = [bc for bc in self.boundary_conditions if len(bc.tags)>0]
-        
+
+    # Checks
+    def _selections_post_boolean_fragment(self) -> None:
+        """ Perform BC Validation""" 
+
+        for bc in self.boundary_conditions:
+            
+            if not bc.valid_after_fragment():
+                raise BoundaryConditionError(f'Boundary condition {bc} is based on a selection that is made before commit_geometry().')
+            logger.debug(f'   BC {bc} Ok!')
+
     def _construct_bc(self, constructor: type) -> type:
         """ A helper function to construct boundary condition objects and assign them to this set.
 
@@ -189,7 +203,7 @@ class BoundaryConditionSet(Saveable):
         if bc in self.boundary_conditions:
             return
         
-        self._initialized = True
+        self._initialized_with_defaults = True
 
         bc.add_tags(bc.selection.dimtags)
 

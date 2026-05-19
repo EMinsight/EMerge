@@ -88,10 +88,16 @@ class PVDisplay(EMergeDisplay):
         self._state: SimState = state
         self._selector._set_encoder_function(encode_data)
         self._plot.add_key_event("l", self.activate_line_selector)
+        self._plot.add_key_event("n", self.activate_point_selector)
         self._selectable_edges = []
         self._selectable_faces = []
         self._selectable_nodes = []
         self._selectable_volumes = []
+        
+        # New Selector
+        self._selected_points = [(0,0,0), (0,0,0)]
+        self._selectable_points = []
+
 
     def _add_selectable_edges(self) -> None:
         self._clear_selectable_objects()
@@ -122,10 +128,27 @@ class PVDisplay(EMergeDisplay):
         self._plot._render = True
         self._plot.render()
 
+    def _add_selectable_points(self) -> None:
+        self._clear_selectable_objects()
+        mesh = self._state.mesh
+        self._plot._render = False
+
+        pointarray = mesh.nodes[:,mesh.geonodes]
+        pointcloud = pv.PolyData(pointarray.T)
+
+        pointmesh = self._plot.add_mesh(pointcloud, render_points_as_spheres=True, point_size=10, color='red', pickable=True)
+        self._selectable_nodes.append(pointmesh)
+
     def _clear_selectable_objects(self) -> None:
+        self._ruler.turn_off()
         for obj in (self._selectable_edges + self._selectable_volumes + self._selectable_nodes + self._selectable_faces):
             self._plot.remove_actor(obj)
     
+    def activate_point_selector(self):
+        self._add_selectable_points()
+        self._ruler.turn_on()
+
+
     def activate_line_selector(self):
         
         def callback(obj):

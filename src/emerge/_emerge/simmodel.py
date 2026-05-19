@@ -42,6 +42,7 @@ import os
 import inspect
 from pathlib import Path
 import joblib
+from pickle import PicklingError
 from atexit import register, _clear
 import signal
 from .. import __version__
@@ -108,6 +109,7 @@ class Simulation:
             save_file (bool, optional): if the simulation file should be stored to a file. Defaults to False.
             write_log (bool, optional): If a file should be created that contains the entire log of the simulation. Defaults to False.
             path_suffix (str, optional): The suffix that will be added to the results directory. Defaults to ".EMResults".
+            store_system: ("msgpack","joblib", optional): The serialization module to use. Uses Joblib by default for legacy reasons. Msgpack is safe.
         """
 
         base_path = _get_caller_dir()
@@ -130,7 +132,6 @@ class Simulation:
         
         ## STATES
         self.__active: bool = False
-        self._defined_geometries: bool = False
         self._cell: PeriodicCell | None = None
         self.save_file: bool = save_file
         self.load_file: bool = load_file
@@ -541,7 +542,7 @@ class Simulation:
         self.state.activate(_indx, **variables)
         return self
     
-    def save(self, _force_save: bool = True) -> None:
+    def save(self, _force_save: bool = True, screenshot: bool = True) -> None:
         """Saves the current model in the provided project directory."""
         # Ensure directory exists
         
@@ -567,9 +568,14 @@ class Simulation:
         if self.settings._save_method == 'msgpack':
             save_object(str(data_path), dataset)
         else:
-            joblib.dump(dataset, str(data_path))
+            try:
+                joblib.dump(dataset, str(data_path))
+            except PicklingError as e:
+                DEBUG_COLLECTOR.add_report('EMerge cannot save python functions. Set the save system to msgpack instead using em.Simulation(..., store_system="msgpack")')
+                raise e
         
-        self.view(screenshot=screenshot_path, off_screen=True)
+        if screenshot:
+            self.view(screenshot=screenshot_path, off_screen=True)
         
         if self._cache_run:
             cachepath = self.modelpath / 'pylines.txt'
@@ -722,7 +728,7 @@ class Simulation:
         for geo in self.all_geos():
             geo._cache_gmsh()
         
-        self._defined_geometries = True
+        self.state._geometry_committed = True
         self.display._facetags = [dt[1] for dt in gmsh.model.get_entities(2)]
     
     def all_geos(self) -> list[GeoObject]:
@@ -805,7 +811,7 @@ class Simulation:
             
         if not regenerate:
             
-            if not self._defined_geometries:
+            if not self.state._geometry_committed:
                 self.commit_geometry()
             
             
@@ -1071,6 +1077,7 @@ class Simulation:
                                  error_field_inclusion_percentage: float = 50.0,
                                  minimum_steps: int = 1,
                                  frequency: float | list[float] = None,
+                                 ensure_mesh_growth: bool = False,
                                  show_mesh: bool = False) -> SimulationDataset:
         """ A beta-version of adaptive mesh refinement.
 
@@ -1091,6 +1098,7 @@ class Simulation:
             error_field_inclusion_percentage (float, optional): A percentage of tet elements to be included for refinement. Defaults to 5.0.
             minimum_steps (int, optional): The minimum number of adaptive steps to execute. Defaults to 1.
             frequency (float, optional): The refinement frequency. Defaults to None.
+            ensure_mesh_growth (boo, optional): If the mesh generation should restart to ensure that the mesh growth per iteration is met. Defaults to False.
             show_mesh (bool, optional): If the intermediate meshes should be shown (freezes simulation). Defaults to False
 
         Returns:
@@ -1186,8 +1194,8 @@ class Simulation:
             
             logger.info(f' - Tet refinement percentage = {(refine_tet_ids.shape[0]/self.mesh.n_tets)*100:.1f} %')
             # F1 = (arctan(5*(x-0.5))+pi/2)/pi from 0 to 1
-            refinement_ratio = (np.arctan(5*(refinement_ratio-0.5))+np.pi/2)/np.pi
-            #refinement_ratio = 0.5*original_ratio + 0.5*refinement_ratio
+            #refinement_ratio = (np.arctan(5*(refinement_ratio-0.5))+np.pi/2)/np.pi
+            refinement_ratio = 0.5*original_ratio + 0.5*refinement_ratio
             
             included = np.zeros((self.mesh.n_tets, ), dtype=np.bool_)
             included[refine_tet_ids] = True
@@ -1217,52 +1225,54 @@ class Simulation:
             logger.info(f'    Pass {step}: New mesh has {self.mesh.n_tets} (+{percentage:.1f}%) tetrahedra.')  
                 
 
-            # Mesh refinement loop. Only escapes if the mesh refined a certain set percentage.
-            # counter = 0
-            # refinement_ratios = []
-            # refinement_percentages = []
+            # #Mesh refinement loop. Only escapes if the mesh refined a certain set percentage.
+            counter = 0
+            refinement_ratios = []
+            refinement_percentages = []
             
 
-            # while True:
-            #     counter += 1
-            #     if counter == 10:
-            #         logger.warning('    More than 10 attempts at reaching the target refinement. Continuing with current.')
-            #         break
+            while ensure_mesh_growth:
+                counter += 1
+                if counter == 10:
+                    logger.warning('    More than 10 attempts at reaching the target refinement. Continuing with current.')
+                    break
 
-            #     counter += 1
+                counter += 1
 
-            #     # Regenerate the mesh
-            #     self._reset_mesh()
-            #     self.mesher._amrobj.set_refinement_function(growth_rate, 2.0)
-            #     self.generate_mesh(True)
+                # Regenerate the mesh
+                self._reset_mesh()
+                self.mesher._amrobj.set_refinement_function(growth_rate, 2.0)
+                self.generate_mesh(True)
 
-            #     # Growth percentage
-            #     percentage = (self.mesh.n_tets/last_n_tets - 1) * 100
-            #     logger.info(f'    Pass {step}: New mesh has {self.mesh.n_tets} (+{percentage:.1f}%) tetrahedra.')  
+                # Growth percentage
+                percentage = (self.mesh.n_tets/last_n_tets - 1) * 100
+                logger.info(f'    Pass {step}: New mesh has {self.mesh.n_tets} (+{percentage:.1f}%) tetrahedra.')  
                 
-            #     # Update the lists
-            #     refinement_ratios.append(refinement_ratio)
-            #     refinement_percentages.append(percentage)
+                # Update the lists
+                refinement_ratios.append(refinement_ratio)
+                refinement_percentages.append(percentage)
                 
-            #     if len(refinement_percentages) >= 2:
-            #         if abs(refinement_percentages[-2]-refinement_percentages[-1]) == 0.0:
-            #             logger.warning('No refinement realized, decreasing refinment ratio.')
-            #             refinement_ratio = refinement_ratio * 0.5
-            #             self.mesher._amrobj.set_ratio(refinement_ratio)
-            #             continue
+                if len(refinement_percentages) >= 2:
+                    if abs(refinement_percentages[-2]-refinement_percentages[-1]) == 0.0:
+                        logger.warning('No refinement realized, decreasing refinment ratio.')
+                        refinement_ratio = refinement_ratio * 0.5
+                        self.mesher._amrobj.set_ratio(refinement_ratio)
+                        continue
                 
-            #     if percentage < minimum_refinement_percentage or percentage > (minimum_refinement_percentage*2):
+                if percentage < minimum_refinement_percentage or percentage > (minimum_refinement_percentage*2):
                     
-            #         refinement_ratio = self.compute_ratio(refinement_ratios, refinement_percentages, minimum_refinement_percentage)
-            #         logger.info(f'    Refinement target not reached! New ratio = {refinement_ratio:.3f}')
-            #         self.mesher._amrobj.set_ratio(refinement_ratio)
-            #         if refinement_ratio >= 1.0:
-            #             logger.warning('Refinement ratio pushed above 1.0... continuing with current percentage.')
-            #             break
-            #         continue
+                    refinement_ratio = self.compute_ratio(refinement_ratios, refinement_percentages, minimum_refinement_percentage)
+                    logger.info(f'    Refinement target not reached! New ratio = {refinement_ratio:.3f}')
+                    
+                    if refinement_ratio >= 0.9:
+                        logger.warning('Refinement ratio pushed above 0.9... continuing with current percentage.')
+                        break
+                    self.mesher._amrobj.set_ratio(refinement_ratio)
+                    continue
                 
                 
-            #     break
+                
+                break
             
             last_n_tets = self.mesh.n_tets
             if show_mesh:

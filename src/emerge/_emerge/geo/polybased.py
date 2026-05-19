@@ -590,6 +590,72 @@ class XYPolygon:
         vol._add_face_pointer('front',o1, self._cs.zax.np)
         vol._add_face_pointer('back', o2, other._cs.zax.np)
         return vol
+    
+    def shrink(self, distance: float) -> XYPolygon:
+        """Shrinks (inward offsets) the polygon by translating each edge inward
+        by the given distance, then recomputing vertices from adjacent edge intersections.
+
+        The polygon must have a consistent winding order. The inward direction is
+        determined from the signed area (positive area = CCW winding = inward normals
+        point left of each edge direction).
+
+        Args:
+            distance (float): The offset distance to shrink inward.
+
+        Returns:
+            XYPolygon: A new shrunk XYPolygon.
+        """
+        N = self.N
+        if N < 3:
+            raise ValueError("Need at least 3 points to shrink a polygon.")
+
+        # Signed area to determine winding direction
+        signed_area = 0.5 * (np.dot(self.x, np.roll(self.y, -1)) - np.dot(self.y, np.roll(self.x, -1)))
+        # If signed_area > 0, winding is CCW and inward normal is to the left of edge direction.
+        # If signed_area < 0, winding is CW and inward normal is to the right.
+        sign = 1.0 if signed_area > 0 else -1.0
+
+        # For each edge, compute the inward-offset line (stored as a point + direction,
+        # or equivalently two offset points).
+        # Edge i goes from vertex i to vertex (i+1) % N.
+        offset_edges = []  # Each entry: (x1, y1, x2, y2) of the offset edge
+        for i in range(N):
+            j = (i + 1) % N
+            dx = self.x[j] - self.x[i]
+            dy = self.y[j] - self.y[i]
+            length = np.sqrt(dx**2 + dy**2)
+            # Inward normal: for CCW, left normal is (-dy, dx)
+            nx = -dy / length * sign * distance
+            ny =  dx / length * sign * distance
+            offset_edges.append((
+                self.x[i] + nx, self.y[i] + ny,
+                self.x[j] + nx, self.y[j] + ny
+            ))
+
+        # Intersect consecutive offset edges to find new vertices
+        new_xs = np.empty(N)
+        new_ys = np.empty(N)
+        for i in range(N):
+            j = (i + 1) % N
+            # Line 1: offset_edges[i], Line 2: offset_edges[j]
+            x1, y1, x2, y2 = offset_edges[i]
+            x3, y3, x4, y4 = offset_edges[j]
+            # Intersect using parametric form:
+            #   P = (x1,y1) + t*(x2-x1, y2-y1)
+            #   Q = (x3,y3) + s*(x4-x3, y4-y3)
+            d1x, d1y = x2 - x1, y2 - y1
+            d2x, d2y = x4 - x3, y4 - y3
+            denom = d1x * d2y - d1y * d2x
+            if abs(denom) < 1e-15:
+                # Parallel edges — just use the shared endpoint of the offset edges
+                new_xs[j] = x2
+                new_ys[j] = y2
+            else:
+                t = ((x3 - x1) * d2y - (y3 - y1) * d2x) / denom
+                new_xs[j] = x1 + t * d1x
+                new_ys[j] = y1 + t * d1y
+
+        return XYPolygon(new_xs, new_ys, cs=self._cs, resolution=self.resolution)
             
 class Disc(GeoSurface):
     _default_name: str = 'Disc'

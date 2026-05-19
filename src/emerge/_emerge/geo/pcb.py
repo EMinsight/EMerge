@@ -1515,6 +1515,12 @@ class PCBNew:
         Returns:
             GeoSurface: The resultant GeoSurface of the plane
         """
+        if width is not None and height is not None:
+            self.xs.append(origin[0]/self.unit)
+            self.xs.append(origin[0]/self.unit+width)
+            self.ys.append(origin[1]/self.unit)
+            self.ys.append(origin[1]/self.unit+height)
+            
         if width is None or height is None or origin is None:
             if self.width is None or self.length is None or self.origin is None:
                 raise RouteException('Cannot define a plane with no possible definition of its size.')
@@ -1528,6 +1534,8 @@ class PCBNew:
             origin = (origin[0] - width*self.unit/2, 
                                                         origin[1] - height*self.unit/2, 
                                                         origin[2])
+
+        
 
         if self._thick_traces:
             plane = Box(width*self.unit, height*self.unit, self.trace_thickness, position=origin, name=name).set_material(self.trace_material)
