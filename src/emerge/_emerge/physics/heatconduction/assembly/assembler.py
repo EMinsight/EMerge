@@ -1,0 +1,219 @@
+# EMerge is an open source Python based FEM EM simulation module.
+# Copyright (C) 2025  Robert Fennis.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, see
+# <https://www.gnu.org/licenses/>.
+
+# Last Cleanup: 2025-01-01
+import numpy as np
+from ..heatconduction_bc import (
+    BoundaryCondition,
+    ThermalContact,
+    Convection,
+    FixedTemperatureBoundary,
+    FixedTemperatureVolume,
+    HeatFluxBoundary,
+    HeatFluxVolume,
+    ThinConductor,
+    BlackBodyRadiation,
+)
+from ....elements.leg2 import Legrange2
+from ....mth.csc_cast import CSCMapping
+from emsutil import Material
+from ....settings import Settings
+from scipy.sparse import coo_matrix
+from loguru import logger
+from ..simjob import SimJob
+from typing import TypeVar
+
+
+############################################################
+#                    THE ASSEMBLER CLASS                   #
+############################################################
+
+TBC = TypeVar("T")
+
+
+def filter_bc(listin: BoundaryCondition, bctype: type[TBC]) -> list[TBC]:
+    return [x for x in listin if isinstance(x, bctype)]
+
+
+class Assembler:
+    """The assembler class is responsible for FEM EM problem assembly.
+
+    It stores some cached properties to accellerate preformance.
+    """
+
+    def __init__(self, settings: Settings):
+
+        self.cached_matrices = None
+        self.cached_cscmap: CSCMapping | None = None
+        self.settings: Settings = settings
+        self.SELECT_INDEX: int = None
+
+    def assemble_stationary_matrix(
+        self,
+        field: Legrange2,
+        materials: list[Material],
+        bcs: list[BoundaryCondition],
+        T_initial_K: float | np.ndarray,
+    ) -> tuple[SimJob, tuple[np.ndarray,]]:
+
+        from .grad import tet_mass_matrix
+        from .heatflux import assemble_surface_flux, assemble_volume_source
+        from .convection import assemble_robin_bc, assemble_radiation_bc
+        from .thinconductor import assemble_conductive_sheet
+        from .thermalcontact import assemble_thermal_contact
+
+        density = np.zeros((3, 3, field.mesh.n_tets), dtype=np.float64)
+        cond_thermal = np.zeros((3, 3, field.mesh.n_tets), dtype=np.float64)
+        specific_heat = np.zeros((3, 3, field.mesh.n_tets), dtype=np.float64)
+
+        for mat in materials:
+            density = mat.density(1.0, density)
+            cond_thermal = mat.cond_thermal(1.0, cond_thermal)
+            specific_heat = mat.specific_heat(1.0, specific_heat)
+
+        density = density[0, 0, :].squeeze()
+        specific_heat = specific_heat[0, 0, :].squeeze()
+
+        # --- DOF partitioning for ThermalContact
+
+        thermal_contact = filter_bc(bcs, ThermalContact)
+
+        field.partition_dof([x.tags for x in thermal_contact])
+
+        NF = field.n_field
+
+        # --- Matrix Assembly
+
+        Amat_coo, cscmap = tet_mass_matrix(field, cond_thermal)
+        Amat = cscmap.to_csc(Amat_coo)
+
+        bvec = np.zeros((NF,), dtype=np.float64)
+        if isinstance(T_initial_K, (float, int)):
+            Tvec = np.ones((NF,), dtype=np.float64) * T_initial_K
+        else:
+            Tvec = T_initial_K
+
+        fixed_temp_bound = filter_bc(bcs, FixedTemperatureBoundary)
+        fixed_temp_volume = filter_bc(bcs, FixedTemperatureVolume)
+        heat_flux_bound = filter_bc(bcs, HeatFluxBoundary)
+        heat_flux_volume = filter_bc(bcs, HeatFluxVolume)
+        convection = filter_bc(bcs, Convection)
+        thinconductor = filter_bc(bcs, ThinConductor)
+        blackbody = filter_bc(bcs, BlackBodyRadiation)
+        prescribed = []
+        mesh = field.mesh
+
+        for bc in fixed_temp_bound:
+            logger.trace(f"Implementing: {bc}")
+            face_tags = bc.tags
+            tri_ids = mesh.get_triangles(face_tags)
+
+            edge_ids = list(mesh.tri_to_edge[:, tri_ids].flatten())
+            vertex_ids = list(mesh.tris[:, tri_ids].flatten())
+
+            prescribed.extend([(field.edge_to_field[ii], bc.T) for ii in edge_ids])
+            prescribed.extend([(field.node_to_field[ii], bc.T) for ii in vertex_ids])
+
+        for bc in fixed_temp_volume:
+            logger.trace(f"Implementing: {bc}")
+            face_tags = bc.tags
+            tet_ids = mesh.get_tetrahedra(face_tags)
+
+            edge_ids = list(mesh.tet_to_edge[:, tet_ids].flatten())
+            vertex_ids = list(mesh.tets[:, tet_ids].flatten())
+
+            prescribed.extend([(field.edge_to_field[ii], bc.T) for ii in edge_ids])
+            prescribed.extend([(field.node_to_ield[ii], bc.T) for ii in vertex_ids])
+
+        # --- Surface flux
+        for bc in heat_flux_bound:
+            logger.trace(f"Implementing: {bc}")
+            face_tags = bc.tags
+            tri_ids = mesh.get_triangles(face_tags)
+
+            out = assemble_surface_flux(field, mesh, face_tags, bc.qm)
+            bvec += out
+
+        # --- Volume Flux
+        for bc in heat_flux_volume:
+            logger.trace(f"Implementing: {bc}")
+            tet_ids = mesh.get_tetrahedra(bc.tags)
+            out = assemble_volume_source(field, tet_ids, bc.fqm)
+            bvec += out
+
+        # ---convection
+        for bc in convection:
+            logger.trace(f"Implementing: {bc}")
+
+            Kval, Krows, Kcols, out = assemble_robin_bc(field, bc.tags, bc.h, bc.Tamb)
+            K_robin = coo_matrix((Kval, (Krows, Kcols)), shape=Amat.shape).tocsc()
+            Amat = Amat + K_robin
+            bvec += out
+
+        # --- Black body radiation
+        for bc in blackbody:
+            logger.trace(f"Implementing: {bc}")
+            Kval, Krows, Kcols, out = assemble_radiation_bc(
+                field, bc.tags, bc.emissivity, bc.Tamb, Tvec
+            )
+            K_robin = coo_matrix((Kval, (Krows, Kcols)), shape=Amat.shape).tocsc()
+            Amat = Amat + K_robin
+            bvec += out
+
+        # --- Thermal Contact
+        for bc in thermal_contact:
+            logger.trace(f"Implementing: {bc}")
+            Kval, Krows, Kcols = assemble_thermal_contact(field, bc.tags, bc.h)
+
+            A_contact = coo_matrix((Kval, (Krows, Kcols)), shape=Amat.shape).tocsc()
+            Amat = Amat + A_contact
+
+        # --- Thin Conductor
+        for bc in thinconductor:
+            logger.trace(f"Implementing: {bc}")
+            Kval, Krows, Kcols = assemble_conductive_sheet(
+                field, bc.tags, bc.material.cond_thermal.value, bc.thickness
+            )
+            K_robin = coo_matrix((Kval, (Krows, Kcols)), shape=Amat.shape).tocsc()
+            Amat = Amat + K_robin
+
+        # --- Finalize
+        if len(prescribed) > 0:
+            prescribed = sorted(prescribed, key=lambda x: x[0])
+            arr = np.array(prescribed, dtype=np.float64)  # (N, 2)
+            ids_raw = arr[:, 0].astype(np.int64)
+            ts_raw = arr[:, 1]
+
+            # Keep first occurrence of each DOF
+            _, first_idx = np.unique(ids_raw, return_index=True)
+            first_idx.sort()  # preserve original order, then sorted by unique
+
+            ids = ids_raw[first_idx]
+            ts = ts_raw[first_idx]
+
+            # Sort by DOF index
+            order = np.argsort(ids)
+            ids = ids[order].tolist()
+            ts = ts[order].tolist()
+
+        else:
+            ids = []
+            ts = []
+
+        simjob = SimJob(Amat, bvec, ids, ts)
+
+        return simjob, [cond_thermal]

@@ -21,7 +21,7 @@
 
 from __future__ import annotations
 import numpy as np
-from numba import njit, prange, c16, i8, types
+from numba import njit, prange, c16, i8, types, f8
 from scipy.sparse import csc_matrix
 from dataclasses import dataclass
 
@@ -45,8 +45,10 @@ class CSCMapping:
         return CSCMapping(*precompute_csc_pattern(rows, cols, N), N)
     
     def to_csc(self, data: np.ndarray) -> csc_matrix:
-        return csc_matrix((scatter_to_csc(data, self.csc_map, self.nnz), self.indices, self.indptr), shape=(self.N,self.N))
-
+        if np.iscomplexobj(data):
+            return csc_matrix((scatter_to_csc(data, self.csc_map, self.nnz), self.indices, self.indptr), shape=(self.N,self.N))
+        else:
+            return csc_matrix((scatter_to_csc_real(data, self.csc_map, self.nnz), self.indices, self.indptr), shape=(self.N,self.N))
 
 @njit(types.Tuple((i8[:], i8[:], i8[:]))(i8[:], i8[:], i8), nogil=True, cache=True, parallel=False)
 def precompute_csc_pattern(rows, cols, N) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -174,6 +176,44 @@ def precompute_csc_pattern(rows, cols, N) -> tuple[np.ndarray, np.ndarray, np.nd
 
 @njit(c16[:](c16[:], i8[:], i8), nogil=True, cache=True, parallel=True)
 def scatter_to_csc(data_coo, csc_map, nnz):
+    """Scatter COO values into CSC data array, summing duplicates.
+    
+    Args:
+        data_coo: complex128 array of COO values
+        csc_map: precomputed mapping from COO index -> CSC data index
+        nnz: number of unique nonzeros (length of CSC data array)
+        
+    Returns:
+        data: CSC data array with duplicates summed
+
+    This function is written by Claude Code and checked by Robert Fennis
+    """
+    data = np.zeros(nnz, dtype=data_coo.dtype)
+    
+    # Parallel chunked scatter — each thread accumulates into a private
+    # array, then we reduce. This avoids write conflicts.
+    n = data_coo.shape[0]
+    n_threads = 8  # numba prange will clamp to available cores
+    chunk = (n + n_threads - 1) // n_threads
+    
+    # Allocate per-thread buffers
+    thread_data = np.zeros((n_threads, nnz), dtype=data_coo.dtype)
+    
+    for t in prange(n_threads):
+        start = t * chunk
+        end = min(start + chunk, n)
+        for k in range(start, end):
+            thread_data[t, csc_map[k]] += data_coo[k]
+    
+    # Reduce across threads
+    for t in range(n_threads):
+        for j in prange(nnz):
+            data[j] += thread_data[t, j]
+    
+    return data
+
+@njit(f8[:](f8[:], i8[:], i8), nogil=True, cache=True, parallel=True)
+def scatter_to_csc_real(data_coo, csc_map, nnz):
     """Scatter COO values into CSC data array, summing duplicates.
     
     Args:

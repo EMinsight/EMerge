@@ -19,6 +19,7 @@
 from __future__ import annotations
 from typing import TypeVar, Generic, Any
 from .physics.microwave.microwave_data import MWData
+from .physics.heatconduction.heatconduction_data import HCData
 from .simulation_data import DataContainer
 from .file import Saveable
 
@@ -33,6 +34,7 @@ class SimulationDataset(Saveable):
     
     def __init__(self):
         self.mw: MWData = MWData()
+        self.hc: HCData = HCData()
         # .mw contains all Microwave Physics related data
         self.globals: dict[str, Any] = dict()
         # .globals contains all global variables. Simple dict

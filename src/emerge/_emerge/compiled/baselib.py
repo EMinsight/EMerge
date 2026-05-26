@@ -33,6 +33,28 @@ class CompiledLib:
         return ned2_tet_interp(coords, solutions, tets, tris, edges, nodes, tet_to_field, tetids)
     
     @staticmethod
+    def leg2_tet_interp(coords: np.ndarray,
+                        solutions: np.ndarray,
+                        tets: np.ndarray,
+                        edges: np.ndarray,
+                        nodes: np.ndarray,
+                        tet_to_field: np.ndarray,
+                        tetids: np.ndarray) -> np.ndarray:
+        from .base.interp import leg2_tet_interp
+        return leg2_tet_interp(coords, solutions, tets, edges, nodes, tet_to_field, tetids)
+    
+    @staticmethod
+    def leg2_tet_interp_grad(coords: np.ndarray,
+                        solutions: np.ndarray,
+                        tets: np.ndarray,
+                        edges: np.ndarray,
+                        nodes: np.ndarray,
+                        tet_to_field: np.ndarray,
+                        tetids: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        from .base.interp import leg2_tet_interp_grad
+        return leg2_tet_interp_grad(coords, solutions, tets, edges, nodes, tet_to_field, tetids)
+    
+    @staticmethod
     def ned2_tet_interp_curl(coords: np.ndarray,
                          solutions: np.ndarray, 
                          tets: np.ndarray, 
@@ -74,6 +96,7 @@ class CompiledLib:
                     beta: float):
         from .base.interp import ned2_tri_interp_curl
         return ned2_tri_interp_curl(coords, solutions, tris, nodes, tri_to_field, diadic, beta)
+    
     
 
     @staticmethod

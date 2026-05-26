@@ -22,6 +22,7 @@ import numpy as np
 from typing import Callable
 from emsutil import Saveable
 
+
 class FEMBasis(Saveable):
 
     def __init__(self, mesh: Mesh3D):
@@ -33,59 +34,58 @@ class FEMBasis(Saveable):
         self.n_tet_dofs: int = -1
         self.n_tri_dofs: int = -1
 
-        self.n_field: int = 2*self.n_edges + 2*self.n_tris
+        self.n_field: int = 2 * self.n_edges + 2 * self.n_tris
 
         self.tet_to_field: np.ndarray = np.array([])
-        
+
         self.edge_to_field: np.ndarray = np.array([])
 
         self.tri_to_field: np.ndarray = np.array([])
 
         self._rows: np.ndarray = np.array([])
         self._cols: np.ndarray = np.array([])
-        
-    
+
     def empty_tet_matrix(self) -> np.ndarray:
-        nnz = self.n_tets*self.n_tet_dofs**2
+        nnz = self.n_tets * self.n_tet_dofs**2
         matrix = np.empty((nnz,), dtype=np.complex128)
         return matrix
-    
+
     def empty_tri_matrix(self) -> np.ndarray:
-        nnz = self.n_tris*self.n_tri_dofs**2
+        nnz = self.n_tris * self.n_tri_dofs**2
         matrix = np.zeros((nnz,), dtype=np.complex128)
         return matrix
-     
+
     def empty_tet_rowcol(self) -> tuple[np.ndarray, np.ndarray]:
         N = self.n_tet_dofs
         N2 = N**2
-        nnz = self.n_tets*N2
+        nnz = self.n_tets * N2
         rows = np.empty(nnz, dtype=np.int64)
         cols = np.empty(nnz, dtype=np.int64)
 
         for itet in range(self.n_tets):
-            p = itet*N2
-            
+            p = itet * N2
+
             indices = self.tet_to_field[:, itet]
             for ii in range(self.n_tet_dofs):
-                rows[p+N*ii:p+N*(ii+1)] = indices[ii]
-                cols[p+ii:p+N2:N] = indices[ii]
+                rows[p + N * ii : p + N * (ii + 1)] = indices[ii]
+                cols[p + ii : p + N2 : N] = indices[ii]
         self._rows = rows
-        self._cols = cols 
+        self._cols = cols
         return rows, cols
-    
+
     def empty_tri_rowcol(self) -> tuple[np.ndarray, np.ndarray]:
         N = self.n_tri_dofs
         N2 = N**2
-        nnz = self.n_tris*N2
+        nnz = self.n_tris * N2
         rows = np.empty(nnz, dtype=np.int64)
         cols = np.empty(nnz, dtype=np.int64)
 
         for itri in range(self.n_tris):
-            p = itri*N2
+            p = itri * N2
             indices = self.tri_to_field[:, itri]
             for ii in range(N):
-                rows[p+N*ii:p+N*(ii+1)] = indices[ii]
-                cols[p+ii:p+N2:N] = indices[ii]
+                rows[p + N * ii : p + N * (ii + 1)] = indices[ii]
+                cols[p + ii : p + N2 : N] = indices[ii]
 
         self._rows = rows
         self._cols = cols
@@ -93,70 +93,126 @@ class FEMBasis(Saveable):
 
     def tetslice(self, itet: int) -> slice:
         N = self.n_tet_dofs**2
-        return slice(itet*N,(itet+1)*N)
-    
+        return slice(itet * N, (itet + 1) * N)
+
     def trislice(self, itri: int) -> slice:
         N = self.n_tri_dofs**2
-        return slice(itri*N,(itri+1)*N)
-    
+        return slice(itri * N, (itri + 1) * N)
+
     def generate_csc(self, data: np.ndarray):
-        from scipy.sparse import csc_matrix # type: ignore
-        ids = np.argwhere(data!=0)[:,0]
-        return csc_matrix((data[ids], (self._rows[ids], self._cols[ids])), shape=(self.n_field, self.n_field))
-    
+        from scipy.sparse import csc_matrix  # type: ignore
+
+        ids = np.argwhere(data != 0)[:, 0]
+        return csc_matrix(
+            (data[ids], (self._rows[ids], self._cols[ids])),
+            shape=(self.n_field, self.n_field),
+        )
 
     ############################################################
     #                         INTERPOLATORS                    #
     ############################################################
 
-    def interpolate_Ef(self, field: np.ndarray, basis: np.ndarray | None = None, origin: np.ndarray | None = None, tetids: np.ndarray | None = None) -> Callable:
-        '''Generates the Interpolation function as a function object for a given coordiante basis and origin.'''
+    def interpolate_Ef(
+        self,
+        field: np.ndarray,
+        basis: np.ndarray | None = None,
+        origin: np.ndarray | None = None,
+        tetids: np.ndarray | None = None,
+    ) -> Callable:
+        """Generates the Interpolation function as a function object for a given coordiante basis and origin."""
         from ..mth.optimized import matmul
-        
+
         if basis is None:
             basis = np.eye(3)
 
         if origin is None:
             origin = np.zeros(3)
-        
+
         ibasis = np.linalg.pinv(basis)
+
         def func(xs: np.ndarray, ys: np.ndarray, zs: np.ndarray) -> np.ndarray:
             xyz = np.array([xs, ys, zs]) + origin[:, np.newaxis]
             xyzg = matmul(basis, xyz)
-            return matmul(ibasis, np.array(self.interpolate(field, xyzg[0,:], xyzg[1,:], xyzg[2,:], tetids, usenan=False)))
+            return matmul(
+                ibasis,
+                np.array(
+                    self.interpolate(
+                        field, xyzg[0, :], xyzg[1, :], xyzg[2, :], tetids, usenan=False
+                    )
+                ),
+            )
+
         return func
-    
-    def interpolate(self, field: np.ndarray, xs: np.ndarray, ys: np.ndarray, zs: np.ndarray, tetids: np.ndarray | None = None, usenan: bool = True) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+
+    def interpolate(
+        self,
+        field: np.ndarray,
+        xs: np.ndarray,
+        ys: np.ndarray,
+        zs: np.ndarray,
+        tetids: np.ndarray | None = None,
+        usenan: bool = True,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         raise NotImplementedError()
-    
-    def interpolate_curl(self, field: np.ndarray, xs: np.ndarray, ys: np.ndarray, zs: np.ndarray, constants: np.ndarray, tetids: np.ndarray | None = None, usenan: bool = True) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+
+    def interpolate_grad(
+        self,
+        field: np.ndarray,
+        xs: np.ndarray,
+        ys: np.ndarray,
+        zs: np.ndarray,
+        tetids: np.ndarray | None = None,
+        usenan: bool = True,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        raise NotImplementedError()
+
+    def interpolate_curl(
+        self,
+        field: np.ndarray,
+        xs: np.ndarray,
+        ys: np.ndarray,
+        zs: np.ndarray,
+        constants: np.ndarray,
+        tetids: np.ndarray | None = None,
+        usenan: bool = True,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Interpolates the curl of the field at the given points.
         """
         raise NotImplementedError()
-    
-    def interpolate_error(self, field: np.ndarray, xs: np.ndarray, ys: np.ndarray, zs: np.ndarray, tetids: np.ndarray | None = None, cs: tuple[float, float] = (1.0, 1.0)) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+
+    def interpolate_error(
+        self,
+        field: np.ndarray,
+        xs: np.ndarray,
+        ys: np.ndarray,
+        zs: np.ndarray,
+        tetids: np.ndarray | None = None,
+        cs: tuple[float, float] = (1.0, 1.0),
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         raise NotImplementedError()
-    
-    
-    
-    
+
     ####### INDEX MAPPINGS
-    def interpolate_index(self, xs: np.ndarray,
-                    ys: np.ndarray,
-                    zs: np.ndarray,
-                    tetids: np.ndarray | None = None,
-                    usenan: bool = True) -> np.ndarray:
+    def interpolate_index(
+        self,
+        xs: np.ndarray,
+        ys: np.ndarray,
+        zs: np.ndarray,
+        tetids: np.ndarray | None = None,
+        usenan: bool = True,
+    ) -> np.ndarray:
         raise NotImplementedError()
-    
+
     # ##### CUTS
 
     @property
-    def bounds(self) -> tuple[tuple[float, float], tuple[float, float],tuple[float, float]]:
-        xmin = np.min(self.mesh.nodes[0,:])
-        xmax = np.max(self.mesh.nodes[0,:])
-        ymin = np.min(self.mesh.nodes[1,:])
-        ymax = np.max(self.mesh.nodes[1,:])
-        zmin = np.min(self.mesh.nodes[2,:])
-        zmax = np.max(self.mesh.nodes[2,:])
+    def bounds(
+        self,
+    ) -> tuple[tuple[float, float], tuple[float, float], tuple[float, float]]:
+        xmin = np.min(self.mesh.nodes[0, :])
+        xmax = np.max(self.mesh.nodes[0, :])
+        ymin = np.min(self.mesh.nodes[1, :])
+        ymax = np.max(self.mesh.nodes[1, :])
+        zmin = np.min(self.mesh.nodes[2, :])
+        zmax = np.max(self.mesh.nodes[2, :])
         return (xmin, xmax), (ymin, ymax), (zmin, zmax)
