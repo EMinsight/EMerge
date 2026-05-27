@@ -2,7 +2,7 @@ import numpy as np
 from numba import njit, f8, i8, types, prange
 from .heatflux import TRI_DPTS, _local_tri_edge_map, assemble_surface_flux
 from ....elements.leg2 import Legrange2
-
+from ....mth.optimized import calc_area
 KC = 5.670374419e-8
 
 ############################################################
@@ -52,50 +52,36 @@ def _tri_surface_mass_element(local_edge_map):
 
 @njit(
     types.Tuple((f8[:], i8[:], i8[:]))(
-        f8[:, :], i8[:, :], i8[:, :], i8[:, :], i8[:, :], f8
+        f8[:, :], i8[:, :], i8[:, :], i8[:, :], f8
     ),
     cache=True,
     nogil=True,
     parallel=True,
 )
 def _robin_stiffness_builder(
-    nodes, tris, tri_to_field, tri_ids_2d, local_edge_maps, h_coeff
-):
-    n_sel = tri_ids_2d.shape[1]
-    nnz = n_sel * 36
+    nodes, tris, tri_to_field, tri_ids_2d, h_coeff
+):  
+    NDOF_TRI = 36
+    n_triangles = tri_ids_2d.shape[1]
+    nnz = n_triangles * NDOF_TRI
 
     values = np.empty(nnz, dtype=np.float64)
     rows = np.empty(nnz, dtype=np.int64)
     cols = np.empty(nnz, dtype=np.int64)
 
-    for idx in prange(n_sel):
-        p = idx * 36
+    M = _tri_surface_mass_element(np.array([[0,1,0],[1,2,2]]))
+    
+    for idx in prange(n_triangles):
+        p = idx * NDOF_TRI
         itri = tri_ids_2d[0, idx]
 
-        v0 = tris[0, itri]
-        v1 = tris[1, itri]
-        v2 = tris[2, itri]
+        iv1 = tris[0, itri]
+        iv2 = tris[1, itri]
+        iv3 = tris[2, itri]
 
-        e01x = nodes[0, v1] - nodes[0, v0]
-        e01y = nodes[1, v1] - nodes[1, v0]
-        e01z = nodes[2, v1] - nodes[2, v0]
-        e02x = nodes[0, v2] - nodes[0, v0]
-        e02y = nodes[1, v2] - nodes[1, v0]
-        e02z = nodes[2, v2] - nodes[2, v0]
-        cx = e01y * e02z - e01z * e02y
-        cy = e01z * e02x - e01x * e02z
-        cz = e01x * e02y - e01y * e02x
-        area = 0.5 * np.sqrt(cx * cx + cy * cy + cz * cz)
+        A = calc_area(nodes[:,iv1], nodes[:,iv2], nodes[:,iv3])
 
-        lem0 = local_edge_maps[2 * idx, :]
-        lem1 = local_edge_maps[2 * idx + 1, :]
-        lem = np.empty((2, 3), dtype=np.int64)
-        lem[0, :] = lem0
-        lem[1, :] = lem1
-
-        M = _tri_surface_mass_element(lem)
-
-        scale = h_coeff * 2.0 * area
+        scale = h_coeff * 2.0 * A
 
         field_ids = tri_to_field[:, itri]
 
@@ -111,7 +97,7 @@ def _robin_stiffness_builder(
 
 @njit(
     types.Tuple((f8[:], i8[:], i8[:], f8[:]))(
-        f8[:, :], i8[:, :], i8[:, :], i8[:, :], i8[:, :], f8[:], f8, f8, i8
+        f8[:, :], i8[:, :], i8[:, :], i8[:, :], f8[:], f8, f8, i8
     ),
     cache=True,
     nogil=True,
@@ -122,7 +108,6 @@ def _radiation_builder(
     tris,
     tri_to_field,
     tri_ids_2d,
-    local_edge_maps,
     T_dofs,
     emissivity,
     T_amb,
@@ -141,30 +126,23 @@ def _radiation_builder(
     nq = weights.shape[0]
     T_amb2 = T_amb * T_amb
 
+    EDGE_NODES_1 = np.array([0,1,0])
+    EDGE_NODES_2 = np.array([1,2,2])
+    
+    T_local = np.empty(6, dtype=np.float64)
+    
     for i_triangle in range(n_triangles):
         p = i_triangle * 36
         itri = tri_ids_2d[0, i_triangle]
 
-        v0 = tris[0, itri]
-        v1 = tris[1, itri]
-        v2 = tris[2, itri]
+        iv1 = tris[0, itri]
+        iv2 = tris[1, itri]
+        iv3 = tris[2, itri]
 
-        e01x = nodes[0, v1] - nodes[0, v0]
-        e01y = nodes[1, v1] - nodes[1, v0]
-        e01z = nodes[2, v1] - nodes[2, v0]
-        e02x = nodes[0, v2] - nodes[0, v0]
-        e02y = nodes[1, v2] - nodes[1, v0]
-        e02z = nodes[2, v2] - nodes[2, v0]
-        cx = e01y * e02z - e01z * e02y
-        cy = e01z * e02x - e01x * e02z
-        cz = e01x * e02y - e01y * e02x
-        area = 0.5 * np.sqrt(cx * cx + cy * cy + cz * cz)
-
-        lem0 = local_edge_maps[2 * i_triangle, :]
-        lem1 = local_edge_maps[2 * i_triangle + 1, :]
+        A = calc_area(nodes[:,iv1], nodes[:,iv2], nodes[:,iv3])
 
         field_ids = tri_to_field[:, itri]
-        T_local = np.empty(6, dtype=np.float64)
+        
         for i in range(6):
             T_local[i] = T_dofs[field_ids[i]]
 
@@ -183,40 +161,35 @@ def _radiation_builder(
             Ls[2] = L3
 
             N = np.empty(6, dtype=np.float64)
+            
             for iv in range(3):
                 N[iv] = Ls[iv] * (2.0 * Ls[iv] - 1.0)
+                
             for ie in range(3):
-                li = Ls[lem0[ie]]
-                lj = Ls[lem1[ie]]
+                li = Ls[EDGE_NODES_1[ie]]
+                lj = Ls[EDGE_NODES_2[ie]]
                 N[3 + ie] = 4.0 * li * lj
 
-            T_q = 0.0
-            for i in range(6):
-                T_q += N[i] * T_local[i]
-
-            T_q2 = T_q * T_q
-            h_rad = emissivity * sigma * (T_q2 + T_amb2) * (T_q + T_amb)
-            wh = w * h_rad
-
-            for i in range(6):
-                for j in range(6):
-                    K_local[i, j] += wh * N[i] * N[j]
-
+            T_q = np.sum(N*T_local)
+            
+            wh = w * emissivity * sigma * (T_q*T_q + T_amb2) * (T_q + T_amb)
             wht = wh * T_amb
             for i in range(6):
                 f_local[i] += wht * N[i]
+                for j in range(6):
+                    K_local[i, j] += wh * N[i] * N[j]
+                
 
-        scale = 2.0 * area
+        scale = 2.0 * A
 
         for i in range(6):
+            f_global[field_ids[i]] += f_local[i] * scale
             for j in range(6):
                 k = p + 6 * i + j
                 K_rows[k] = field_ids[i]
                 K_cols[k] = field_ids[j]
                 K_values[k] = K_local[i, j] * scale
-
-        for i in range(6):
-            f_global[field_ids[i]] += f_local[i] * scale
+            
 
     return K_values, K_rows, K_cols, f_global
 
@@ -252,33 +225,15 @@ def assemble_radiation_bc(
     """
     mesh = field.mesh
     tri_ids = mesh.get_triangles(face_tags)
-    n_sel = len(tri_ids)
-    nnodes = field.nnodes
-
-    # Precompute local edge maps
-    local_edge_maps = np.empty((2 * n_sel, 3), dtype=np.int64)
-    for i in range(n_sel):
-        itri = tri_ids[i]
-        vert_ids = mesh.tris[:, itri]
-        edge_field_ids = field.tri_to_field[3:6, itri]
-        edge_mesh_ids = edge_field_ids - nnodes
-        edge_verts = mesh.edges[:, edge_mesh_ids]
-        local_edge_maps[2 * i : 2 * i + 2, :] = _local_tri_edge_map(
-            vert_ids, edge_verts
-        )
-
+    
     tri_ids_2d = tri_ids.reshape(1, -1).astype(np.int64)
-
-    # Ensure T_solution is the right type
-    T_dofs = np.asarray(T_solution, dtype=np.float64)
 
     return _radiation_builder(
         mesh.nodes,
         mesh.tris,
         field.tri_to_field,
         tri_ids_2d,
-        local_edge_maps,
-        T_dofs,
+        T_solution,
         float(emissivity),
         float(T_amb),
         field.n_field,
@@ -298,19 +253,6 @@ def assemble_robin_bc(
     """
     mesh = field.mesh
     tri_ids = mesh.get_triangles(face_tags)
-    n_sel = len(tri_ids)
-    nnodes = field.nnodes
-
-    local_edge_maps = np.empty((2 * n_sel, 3), dtype=np.int64)
-    for i in range(n_sel):
-        itri = tri_ids[i]
-        vert_ids = mesh.tris[:, itri]
-        edge_field_ids = field.tri_to_field[3:6, itri]
-        edge_mesh_ids = edge_field_ids - nnodes
-        edge_verts = mesh.edges[:, edge_mesh_ids]
-        local_edge_maps[2 * i : 2 * i + 2, :] = _local_tri_edge_map(
-            vert_ids, edge_verts
-        )
 
     tri_ids_2d = tri_ids.reshape(1, -1).astype(np.int64)
 
@@ -319,7 +261,6 @@ def assemble_robin_bc(
         mesh.tris,
         field.tri_to_field,
         tri_ids_2d,
-        local_edge_maps,
         float(h_coeff),
     )
 

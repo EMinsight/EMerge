@@ -61,6 +61,7 @@ class Assembler:
         self.cached_cscmap: CSCMapping | None = None
         self.settings: Settings = settings
         self.SELECT_INDEX: int = None
+        self._partitioned: bool = False
 
     def assemble_stationary_matrix(
         self,
@@ -92,7 +93,10 @@ class Assembler:
 
         thermal_contact = filter_bc(bcs, ThermalContact)
 
-        field.partition_dof([x.tags for x in thermal_contact])
+        if len(thermal_contact) > 0 and not self._partitioned:
+            logger.info('Partitioning degrees of freedom on ThermalContact boundaries.')
+            field.partition_dof([x.tags for x in thermal_contact])
+            self._partitioned = True
 
         NF = field.n_field
 
@@ -118,7 +122,7 @@ class Assembler:
         mesh = field.mesh
 
         for bc in fixed_temp_bound:
-            logger.trace(f"Implementing: {bc}")
+            logger.debug(f"Implementing: {bc}")
             face_tags = bc.tags
             tri_ids = mesh.get_triangles(face_tags)
 
@@ -129,7 +133,7 @@ class Assembler:
             prescribed.extend([(field.node_to_field[ii], bc.T) for ii in vertex_ids])
 
         for bc in fixed_temp_volume:
-            logger.trace(f"Implementing: {bc}")
+            logger.debug(f"Implementing: {bc}")
             face_tags = bc.tags
             tet_ids = mesh.get_tetrahedra(face_tags)
 
@@ -141,7 +145,7 @@ class Assembler:
 
         # --- Surface flux
         for bc in heat_flux_bound:
-            logger.trace(f"Implementing: {bc}")
+            logger.debug(f"Implementing: {bc}")
             face_tags = bc.tags
             tri_ids = mesh.get_triangles(face_tags)
 
@@ -150,14 +154,14 @@ class Assembler:
 
         # --- Volume Flux
         for bc in heat_flux_volume:
-            logger.trace(f"Implementing: {bc}")
+            logger.debug(f"Implementing: {bc}")
             tet_ids = mesh.get_tetrahedra(bc.tags)
             out = assemble_volume_source(field, tet_ids, bc.fqm)
             bvec += out
 
         # ---convection
         for bc in convection:
-            logger.trace(f"Implementing: {bc}")
+            logger.debug(f"Implementing: {bc}")
 
             Kval, Krows, Kcols, out = assemble_robin_bc(field, bc.tags, bc.h, bc.Tamb)
             K_robin = coo_matrix((Kval, (Krows, Kcols)), shape=Amat.shape).tocsc()
@@ -166,7 +170,7 @@ class Assembler:
 
         # --- Black body radiation
         for bc in blackbody:
-            logger.trace(f"Implementing: {bc}")
+            logger.debug(f"Implementing: {bc}")
             Kval, Krows, Kcols, out = assemble_radiation_bc(
                 field, bc.tags, bc.emissivity, bc.Tamb, Tvec
             )
@@ -176,7 +180,7 @@ class Assembler:
 
         # --- Thermal Contact
         for bc in thermal_contact:
-            logger.trace(f"Implementing: {bc}")
+            logger.debug(f"Implementing: {bc}")
             Kval, Krows, Kcols = assemble_thermal_contact(field, bc.tags, bc.h)
 
             A_contact = coo_matrix((Kval, (Krows, Kcols)), shape=Amat.shape).tocsc()
@@ -184,10 +188,11 @@ class Assembler:
 
         # --- Thin Conductor
         for bc in thinconductor:
-            logger.trace(f"Implementing: {bc}")
-            Kval, Krows, Kcols = assemble_conductive_sheet(
-                field, bc.tags, bc.material.cond_thermal.value, bc.thickness
-            )
+            logger.debug(f"Implementing: {bc}")
+            
+            kappa_t = bc.get_kappa()
+            
+            Kval, Krows, Kcols = assemble_conductive_sheet(field, bc.tags, kappa_t)
             K_robin = coo_matrix((Kval, (Krows, Kcols)), shape=Amat.shape).tocsc()
             Amat = Amat + K_robin
 
@@ -216,4 +221,4 @@ class Assembler:
 
         simjob = SimJob(Amat, bvec, ids, ts)
 
-        return simjob, [cond_thermal]
+        return simjob, [cond_thermal], Tvec

@@ -17,14 +17,9 @@
 
 # Last Cleanup: 2026-03-04
 from ...mesher import Mesher
-from emsutil import Material
 from ...mesh3d import Mesh3D
-from ...coord import Line
-from ...geometry import GeoSurface, GeoVolume
 from ...elements.leg2 import Legrange2
-from ...solver import DEFAULT_ROUTINE, SolveRoutine
-from ...system import called_from_main_function
-from ...selection import FaceSelection
+from ...solver import DEFAULT_ROUTINE, SolveRoutine, MatrixType
 from ...settings import Settings
 from ...simstate import SimState
 from ...logsettings import DEBUG_COLLECTOR
@@ -34,17 +29,12 @@ from .heatconduction_data import HCData
 from .assembly.assembler import Assembler
 from .simjob import SimJob
 
-from concurrent.futures import ThreadPoolExecutor
 from loguru import logger
-from typing import Callable, Literal, Any
+from typing import Any
 import multiprocessing as mp
-from cmath import sqrt as csqrt
-from itertools import product
 import numpy as np
 import threading
 import time
-from collections import defaultdict
-import psutil
 
 from ..physics_generic import SimulationError, GenericPhysics3D
 
@@ -171,7 +161,20 @@ class HeatConduction3D(GenericPhysics3D):
 
     def run_steady_state(
         self, direct_solver: bool = True, preconditioner: bool = False
-    ):
+    ) -> HCData:
+        """ Run a steady state thermal analysis (Linear).
+        
+        This function can be used to just solve linear steady state heat conduction problems.
+        
+        For non-linear problems such as with black-body radiation boundary conditions you can use: run_steady_state_nl
+
+        Args:
+            direct_solver (bool, optional): If a direct solver is to be used. Defaults to True.
+            preconditioner (bool, optional): If a preconditioner is to be used in case of Iterative solvers. Defaults to False.
+
+        Returns:
+            HCData: The Heat Conduction Data object.
+        """
 
         self._completed = False
         self._simstart = time.time()
@@ -233,7 +236,7 @@ class HeatConduction3D(GenericPhysics3D):
             return job
 
         # Assemble the FEM problem
-        job, mats = self.assembler.assemble_stationary_matrix(
+        job, mats, T_current = self.assembler.assemble_stationary_matrix(
             self.basis, materials, self.bc.boundary_conditions, self.T_initial_K
         )
         material_set = mats
@@ -276,7 +279,22 @@ class HeatConduction3D(GenericPhysics3D):
         nonlinear_tol: float = 1e-6,
         anderson_m: int = 5,
     ):
+        """ Run a non linear steady state thermal analysis.
+        
+        This function can be used to just solve non linear steady state of heat conduction problems.
+        It uses Anderson Acceleration to converge faster to the steady state solution.
+        
+        Args:
+            direct_solver (bool, optional): If a direct solver is to be used. Defaults to True.
+            preconditioner (bool, optional): If a preconditioner is to be used in case of Iterative solvers. Defaults to False.
+            max_nonlinear_iter (int, optional): The maximum number of iterations
+            nonlinear_tol (float, optional): The tolerance before a solution is considered converged
+            anderson_m (int, optional): The window size for the Anderson update calculation.
 
+        Returns:
+            HCData: The Heat Conduction Data object.
+        """
+        
         self._completed = False
         self._simstart = time.time()
 
@@ -303,7 +321,7 @@ class HeatConduction3D(GenericPhysics3D):
         def run_job_single(job: SimJob) -> SimJob:
             A, bmat, ids, aux = job.get_Ab()
             solution, report = self.solveroutine.solve(
-                A, bmat, ids, id=job.id, direct=direct_solver
+                A, bmat, ids, id=job.id, direct=direct_solver, matrix_type=MatrixType.SPD
             )
             report.add(**aux)
             job.submit_solution(solution, report)
@@ -311,83 +329,64 @@ class HeatConduction3D(GenericPhysics3D):
 
         if preconditioner:
             self.solveroutine.use_preconditioner = True
+        
+        # Initial solve without radiation
+        T_current = self.T_initial_K
 
-        has_radiation = len(self.bc.oftype(BlackBodyRadiation)) > 0
+        T_history = []
+        R_history = []
 
-        if not has_radiation:
-            # ----------------------------------------------------------------
-            # Linear solve (existing path)
-            # ----------------------------------------------------------------
-            job, mats = self.assembler.assemble_stationary_matrix(
-                self.basis, materials, self.bc.boundary_conditions, self.T_initial_K
+        for nl_iter in range(max_nonlinear_iter):
+            logger.info(f"Nonlinear iteration {nl_iter + 1}/{max_nonlinear_iter}")
+            
+            # Assemble with current temperature for radiation linearization
+            job, mats, T_current = self.assembler.assemble_stationary_matrix(
+                self.basis, materials, self.bc.boundary_conditions, T_current
             )
             material_set = mats
 
-            logger.info("Starting single threaded solve.")
             job = run_job_single(job)
 
-        else:
-            # ----------------------------------------------------------------
-            # Nonlinear Picard iteration with Anderson acceleration
-            # ----------------------------------------------------------------
-            logger.info("Nonlinear radiation BC detected. Starting Picard iteration.")
+            T_new = job.solution.copy()
 
-            # Initial solve without radiation
-            T_current = np.full(self.basis.n_field, self.T_initial_K, dtype=np.float64)
+            # Fixed-point residual
+            R = T_new - T_current
+            res_norm = np.linalg.norm(R)
+            sol_norm = np.linalg.norm(T_new)
+            
+            rel_res = res_norm / sol_norm if sol_norm > 0 else res_norm
 
-            T_history = []
-            R_history = []
+            logger.info(
+                f"  |dT| = {res_norm:.4e}, |T| = {sol_norm:.4e}, "
+                f"rel = {rel_res:.4e}"
+            )
 
-            for nl_iter in range(max_nonlinear_iter):
-                logger.info(f"Nonlinear iteration {nl_iter + 1}/{max_nonlinear_iter}")
-
-                # Assemble with current temperature for radiation linearization
-                job, mats = self.assembler.assemble_stationary_matrix(
-                    self.basis, materials, self.bc.boundary_conditions, T_current
-                )
-                material_set = mats
-
-                job = run_job_single(job)
-
-                T_new = job.solution.copy()
-
-                # Fixed-point residual
-                R = T_new - T_current
-                res_norm = np.linalg.norm(R)
-                sol_norm = np.linalg.norm(T_new)
-                rel_res = res_norm / sol_norm if sol_norm > 0 else res_norm
-
+            if rel_res < nonlinear_tol:
                 logger.info(
-                    f"  |dT| = {res_norm:.4e}, |T| = {sol_norm:.4e}, "
-                    f"rel = {rel_res:.4e}"
+                    f"Nonlinear solver converged in {nl_iter + 1} iterations "
+                    f"(rel residual = {rel_res:.2e})"
                 )
+                break
 
-                if rel_res < nonlinear_tol:
-                    logger.info(
-                        f"Nonlinear solver converged in {nl_iter + 1} iterations "
-                        f"(rel residual = {rel_res:.2e})"
-                    )
-                    break
+            # Store history for Anderson mixing
+            T_history.append(T_current.copy())
+            R_history.append(R.copy())
 
-                # Store history for Anderson mixing
-                T_history.append(T_current.copy())
-                R_history.append(R.copy())
+            if len(T_history) > anderson_m + 1:
+                T_history.pop(0)
+                R_history.pop(0)
 
-                if len(T_history) > anderson_m + 1:
-                    T_history.pop(0)
-                    R_history.pop(0)
-
-                # Anderson acceleration or simple update
-                if len(T_history) >= 2:
-                    T_current = self._anderson_update(T_history, R_history, anderson_m)
-                else:
-                    T_current = T_new
-
+            # Anderson acceleration or simple update
+            if len(T_history) >= 2:
+                T_current = self._anderson_update(T_history, R_history, anderson_m)
             else:
-                logger.warning(
-                    f"Nonlinear solver did NOT converge in {max_nonlinear_iter} "
-                    f"iterations (rel residual = {rel_res:.2e})"
-                )
+                T_current = T_new
+
+        else:
+            logger.warning(
+                f"Nonlinear solver did NOT converge in {max_nonlinear_iter} "
+                f"iterations (rel residual = {rel_res:.2e})"
+            )
 
         self.solveroutine.reset()
         logger.info("Solving complete")
@@ -404,8 +403,17 @@ class HeatConduction3D(GenericPhysics3D):
         return self.data
 
     @staticmethod
-    def _anderson_update(T_history, R_history, m):
-        """Anderson mixing acceleration for fixed-point iteration."""
+    def _anderson_update(T_history: np.ndarray, R_history: np.ndarray, m: int) -> np.ndarray:
+        """Anderson mixing acceleration for fixed-point iteration.
+
+        Args:
+            T_history (np.ndarray): The Temperature solution history
+            R_history (np.ndarray): The Residual history
+            m (int): The window size of the anderson acceleration
+
+        Returns:
+            np.ndarray: The new temperature guess
+        """
         k = len(T_history)
         m_use = min(m, k - 1)
 

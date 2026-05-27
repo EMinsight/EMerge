@@ -210,7 +210,7 @@ def _conductive_sheet_builder(
     return values, rows, cols
 
 
-def assemble_conductive_sheet(field, face_tags, kappa, thickness):
+def assemble_conductive_sheet(field, face_tags, kappa_t):
     """Assemble thin conductive sheet stiffness matrix contribution.
 
     Models lateral heat conduction through a thin metallic layer
@@ -246,7 +246,6 @@ def assemble_conductive_sheet(field, face_tags, kappa, thickness):
         )
 
     tri_ids_2d = tri_ids.reshape(1, -1).astype(np.int64)
-    kappa_t = float(kappa * thickness)
 
     return _conductive_sheet_builder(
         mesh.nodes,

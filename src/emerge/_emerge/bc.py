@@ -46,6 +46,7 @@ class BoundaryCondition(Saveable):
     _name: str = "UnnamedBC"
     _texture: str = "None"
     dim: int = -1
+    _is_exclusive: bool = True
     
     def __init__(self, assignment: GeoObject | Selection):
         
@@ -207,10 +208,13 @@ class BoundaryConditionSet(Saveable):
 
         bc.add_tags(bc.selection.dimtags)
 
-        for existing_bc in self.boundary_conditions:
-            excluded = existing_bc.exclude_bc(bc)
-            if excluded:
-                logger.debug(f'Removed the {excluded} tags from object with dimension {bc.dim} BC {existing_bc}')
+        if bc._is_exclusive:
+            for existing_bc in self.boundary_conditions:
+                if existing_bc.dim != bc.dim:
+                    continue
+                excluded = existing_bc.exclude_bc(bc)
+                if excluded:
+                    logger.debug(f'Removed the {excluded} tags from object with dimension {bc.dim} BC {existing_bc}')
         self.boundary_conditions.append(bc)
 
 class Periodic(BoundaryCondition, Saveable):
