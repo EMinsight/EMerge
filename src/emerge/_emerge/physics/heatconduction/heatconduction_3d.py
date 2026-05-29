@@ -15,6 +15,10 @@
 # along with this program; if not, see
 # <https://www.gnu.org/licenses/>.
 
+# Minor restrictions to Copyright claims are added in specific functions:
+# - run_steady_state_nl
+# - _anderson_update
+
 # Last Cleanup: 2026-03-04
 from ...mesher import Mesher
 from ...mesh3d import Mesh3D
@@ -429,6 +433,11 @@ class HeatConduction3D(GenericPhysics3D):
             nonlinear_tol (float, optional): The tolerance before a solution is considered converged
             anderson_m (int, optional): The window size for the Anderson update calculation.
 
+        Copyright clarification:
+        The logic of the solve loop including the Anderson update is a mix of hand written code
+        And code suggestions by Claude Code. The code in this function is mostly modified by Claude from
+        the steady state solver to implement the non-linear solve loop. The code in this function is not entirely written by Claude code.
+
         Returns:
             HCData: The Heat Conduction Data object.
         """
@@ -560,6 +569,10 @@ class HeatConduction3D(GenericPhysics3D):
             R_history: The Residual history
             m: The window size of the anderson acceleration
             beta: Damping parameter (0 < beta <= 1), lower = more stable
+
+        Copyright Clarification:
+        The logic for this Anderson Update algorithm is generated with the help of Claude Code.
+        Later modifications are made to include the dampening factor beta for better stabilization.
 
         Returns:
             The new temperature guess

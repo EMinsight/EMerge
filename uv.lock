@@ -473,7 +473,7 @@ wheels = [
 
 [[package]]
 name = "emerge"
-version = "2.5.6"
+version = "2.6.0"
 source = { editable = "." }
 dependencies = [
     { name = "emsutil" },
@@ -525,7 +525,7 @@ dev = [
 requires-dist = [
     { name = "cupy-cuda12x", marker = "extra == 'cudss'" },
     { name = "cupy-cuda12x", marker = "extra == 'cudss12'" },
-    { name = "emsutil", specifier = ">=0.6.0,<0.7.0" },
+    { name = "emsutil", specifier = ">=0.7.0,<0.8.0" },
     { name = "ezdxf", marker = "extra == 'dxf'" },
     { name = "gmsh", specifier = ">=4.13.0,<4.15" },
     { name = "joblib", specifier = ">=1.5.1" },
@@ -568,7 +568,7 @@ dependencies = [
 
 [[package]]
 name = "emsutil"
-version = "0.6.0"
+version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "loguru" },
@@ -580,9 +580,9 @@ dependencies = [
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b5/ae/1abdb284e8aa96b7168c457bf5d7b4a9ce5267d3bdd62119989392d92cfc/emsutil-0.6.0.tar.gz", hash = "sha256:8a1cd5263076f15f85052cb07bdc22827a3aef8ce856abee860d5afc4859f8df", size = 7831409, upload-time = "2026-04-08T14:20:09.439Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c4/9a/c013a0411d9dd021500f652dfd2b27f3a67d1292f3ba6ebb44dc64a82ce1/emsutil-0.7.0.tar.gz", hash = "sha256:13d3cfc1f9a02b1f1b423c084e6195afae58c7224522272b234541c6a2495834", size = 7834097, upload-time = "2026-05-29T10:52:35.372Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c7/e1/9b258e6f0392dc5a52769f0ab6def9578ae6762a0d454473912c65742196/emsutil-0.6.0-py3-none-any.whl", hash = "sha256:3883fc50e203bef494f7c25ae6eb1658f4b13d14388dc60a76d39996eba137c2", size = 7740236, upload-time = "2026-04-08T14:20:07.744Z" },
+    { url = "https://files.pythonhosted.org/packages/fd/46/3b28fe47e5291e47cb74b90ef4489a37823335fa3ab584109a553e70e688/emsutil-0.7.0-py3-none-any.whl", hash = "sha256:a72227e8469f3bae68ea5d641b9b790ba7fb30fda090d27624657f7a9a367d14", size = 7742865, upload-time = "2026-05-29T10:52:33.549Z" },
 ]
 
 [[package]]
