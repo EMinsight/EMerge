@@ -19,18 +19,18 @@
 from ...mesher import Mesher
 from ...mesh3d import Mesh3D
 from ...elements.leg2 import Legrange2
-from ...solver import DEFAULT_ROUTINE, SolveRoutine, MatrixType
+from ...solver import DEFAULT_ROUTINE, SolveRoutine, MatrixType, SolveReport
 from ...settings import Settings
 from ...simstate import SimState
 from ...logsettings import DEBUG_COLLECTOR
 
-from .heatconduction_bc import HCBoundaryConditionSet, BlackBodyRadiation
+from .heatconduction_bc import HCBoundaryConditionSet
 from .heatconduction_data import HCData
 from .assembly.assembler import Assembler
 from .simjob import SimJob
 
 from loguru import logger
-from typing import Any
+from typing import Any, Literal
 import multiprocessing as mp
 import numpy as np
 import threading
@@ -162,10 +162,10 @@ class HeatConduction3D(GenericPhysics3D):
     def run_steady_state(
         self, direct_solver: bool = True, preconditioner: bool = False
     ) -> HCData:
-        """ Run a steady state thermal analysis (Linear).
-        
+        """Run a steady state thermal analysis (Linear).
+
         This function can be used to just solve linear steady state heat conduction problems.
-        
+
         For non-linear problems such as with black-body radiation boundary conditions you can use: run_steady_state_nl
 
         Args:
@@ -236,7 +236,7 @@ class HeatConduction3D(GenericPhysics3D):
             return job
 
         # Assemble the FEM problem
-        job, mats, T_current = self.assembler.assemble_stationary_matrix(
+        job, mats, T_current = self.assembler.assemble_hc_matrix(
             self.basis, materials, self.bc.boundary_conditions, self.T_initial_K
         )
         material_set = mats
@@ -244,6 +244,7 @@ class HeatConduction3D(GenericPhysics3D):
         # Solver configuration
         if preconditioner:
             self.solveroutine.use_preconditioner = True
+
         # Finally solve the problems for each frequency individually.
         logger.info("Starting single threaded solve.")
         job = run_job_single(job)
@@ -271,6 +272,142 @@ class HeatConduction3D(GenericPhysics3D):
         self._completed = True
         return self.data
 
+    def run_transient(
+        self,
+        run_time_s: float,
+        dt_s: float,
+        direct_solver: bool = True,
+        preconditioner: bool = False,
+        stepping_algorithm: Literal["BackwardEuler", "CrankNicolson"] = "CrankNicolson",
+    ) -> HCData:
+        """Run a transient simulation with a given total runtime and time step
+
+        This function runs a transient simulation of the linear thermal problem. Non linear transient simulations are not yet supported.
+        The transient solver currently supports two time stepping algorithms:
+            Backward-Euler: "BackwardEuler"
+            Crank-Nicolson: "CrankNicolson"
+
+        Please bear in mind that the Crank-Nicolson time stepping algorithm can have oscillations but it is more accurate than backward Euler.
+
+        Args:
+            run_time_s (float): The total run time in seconds
+            dt_s (float): The time step in seconds
+            direct_solver (bool, optional): If a direct solver is to be used. Defaults to True.
+            preconditioner (bool, optional): If a preconditioner is to be used in case of Iterative solvers. Defaults to False.
+            stepping_algorithm (Literal['BackwardEuler','CrankNicolson']): The time stepping algorithm to use
+
+        Returns:
+            HCData: The Heat Conduction Data object.
+        """
+        self._completed = False
+        self._simstart = time.time()
+
+        # --------------------------------------------------------------------
+        # Local Variables
+        # --------------------------------------------------------------------
+
+        material_set: tuple[np.ndarray,] = []
+
+        # --------------------------------------------------------------------
+        # Checks
+        # --------------------------------------------------------------------
+
+        if self.bc._initialized_with_defaults is False:
+            raise SimulationError(
+                "Cannot run a modal analysis because no default boundary conditions have been assigned."
+            )
+
+        self._check_meshed()
+        self._initialize_field()
+        self._initialize_bc_data()
+        self._check_physics()
+
+        if self.basis is None:
+            raise SimulationError(
+                "Cannot proceed, the simulation basis class is undefined."
+            )
+
+        # --------------------------------------------------------------------
+        # Material Assignments
+        # --------------------------------------------------------------------
+
+        logger.debug("Resolving material assingments.")
+        materials = self._get_material_assignment(self.mesher.volumes)
+
+        # --------------------------------------------------------------------
+        # Initializing solve functions
+        # --------------------------------------------------------------------
+
+        # Assemble the FEM problem
+        job, mats, T_current = self.assembler.assemble_hc_matrix(
+            self.basis,
+            materials,
+            self.bc.boundary_conditions,
+            self.T_initial_K,
+            transient=True,
+        )
+        material_set = mats
+
+        # Solver configuration
+        if preconditioner:
+            self.solveroutine.use_preconditioner = True
+
+        # --- Time Iteration Scheme
+        A_left, A_right, b, solve_ids, aux = job.get_ABb(dt_s, stepping_algorithm)
+        b = b.ravel()
+        jobs = []
+
+        T_full = T_current.copy()
+        T_free = T_full[job.i_free]
+        t_values = np.arange(0, run_time_s, dt_s)
+
+        for istep, tstep in enumerate(t_values):
+            if istep == 0:
+                jobs.append(
+                    job.submit_copy(T_free.reshape((job.n_dof, 1)), SolveReport())
+                )
+                continue
+
+            logger.info(f"Simulation time ({istep}) = {tstep:.2f} s")
+
+            rhs = A_right @ T_free + b
+            solution, report = self.solveroutine.solve(
+                A_left,
+                rhs,
+                solve_ids,
+                id=job.id,
+                direct=direct_solver,
+                matrix_type=MatrixType.SPD,
+            )
+
+            solution = solution.ravel()
+            report.add(**aux)
+            newjob = job.submit_copy(solution, report)
+            jobs.append(newjob)
+            T_free = solution
+        self.solveroutine.reset()
+
+        logger.info("Solving complete")
+
+        # --------------------------------------------------------------------
+        # Writing solve reports
+        # --------------------------------------------------------------------
+        for job in jobs:
+            self.data.setreport(job.reports, **self._params)
+
+        for variables, data in self.data.sim.iterate():
+            logger.trace(f"Sim variable: {variables}")
+            for item in data["report"]:
+                item.logprint(logger.trace)
+
+        # --------------------------------------------------------------------
+        # Post Processing
+        # --------------------------------------------------------------------
+
+        self._post_process_transient(jobs, t_values, material_set)
+        self._completed = True
+        return self.data
+
     def run_steady_state_nl(
         self,
         direct_solver: bool = True,
@@ -278,12 +415,13 @@ class HeatConduction3D(GenericPhysics3D):
         max_nonlinear_iter: int = 50,
         nonlinear_tol: float = 1e-6,
         anderson_m: int = 5,
+        anderson_beta: float = 1.0,
     ):
-        """ Run a non linear steady state thermal analysis.
-        
+        """Run a non linear steady state thermal analysis.
+
         This function can be used to just solve non linear steady state of heat conduction problems.
         It uses Anderson Acceleration to converge faster to the steady state solution.
-        
+
         Args:
             direct_solver (bool, optional): If a direct solver is to be used. Defaults to True.
             preconditioner (bool, optional): If a preconditioner is to be used in case of Iterative solvers. Defaults to False.
@@ -294,7 +432,7 @@ class HeatConduction3D(GenericPhysics3D):
         Returns:
             HCData: The Heat Conduction Data object.
         """
-        
+
         self._completed = False
         self._simstart = time.time()
 
@@ -321,7 +459,12 @@ class HeatConduction3D(GenericPhysics3D):
         def run_job_single(job: SimJob) -> SimJob:
             A, bmat, ids, aux = job.get_Ab()
             solution, report = self.solveroutine.solve(
-                A, bmat, ids, id=job.id, direct=direct_solver, matrix_type=MatrixType.SPD
+                A,
+                bmat,
+                ids,
+                id=job.id,
+                direct=direct_solver,
+                matrix_type=MatrixType.SYMMETRIC,
             )
             report.add(**aux)
             job.submit_solution(solution, report)
@@ -329,7 +472,7 @@ class HeatConduction3D(GenericPhysics3D):
 
         if preconditioner:
             self.solveroutine.use_preconditioner = True
-        
+
         # Initial solve without radiation
         T_current = self.T_initial_K
 
@@ -338,9 +481,9 @@ class HeatConduction3D(GenericPhysics3D):
 
         for nl_iter in range(max_nonlinear_iter):
             logger.info(f"Nonlinear iteration {nl_iter + 1}/{max_nonlinear_iter}")
-            
+
             # Assemble with current temperature for radiation linearization
-            job, mats, T_current = self.assembler.assemble_stationary_matrix(
+            job, mats, T_current = self.assembler.assemble_hc_matrix(
                 self.basis, materials, self.bc.boundary_conditions, T_current
             )
             material_set = mats
@@ -353,12 +496,11 @@ class HeatConduction3D(GenericPhysics3D):
             R = T_new - T_current
             res_norm = np.linalg.norm(R)
             sol_norm = np.linalg.norm(T_new)
-            
+
             rel_res = res_norm / sol_norm if sol_norm > 0 else res_norm
 
             logger.info(
-                f"  |dT| = {res_norm:.4e}, |T| = {sol_norm:.4e}, "
-                f"rel = {rel_res:.4e}"
+                f"  |dT| = {res_norm:.4e}, |T| = {sol_norm:.4e}, rel = {rel_res:.4e}"
             )
 
             if rel_res < nonlinear_tol:
@@ -378,7 +520,9 @@ class HeatConduction3D(GenericPhysics3D):
 
             # Anderson acceleration or simple update
             if len(T_history) >= 2:
-                T_current = self._anderson_update(T_history, R_history, anderson_m)
+                T_current = self._anderson_update(
+                    T_history, R_history, anderson_m, anderson_beta
+                )
             else:
                 T_current = T_new
 
@@ -403,43 +547,83 @@ class HeatConduction3D(GenericPhysics3D):
         return self.data
 
     @staticmethod
-    def _anderson_update(T_history: np.ndarray, R_history: np.ndarray, m: int) -> np.ndarray:
+    def _anderson_update(
+        T_history: list[np.ndarray],
+        R_history: list[np.ndarray],
+        m: int,
+        beta: float = 0.5,
+    ) -> np.ndarray:
         """Anderson mixing acceleration for fixed-point iteration.
 
         Args:
-            T_history (np.ndarray): The Temperature solution history
-            R_history (np.ndarray): The Residual history
-            m (int): The window size of the anderson acceleration
+            T_history: The Temperature solution history
+            R_history: The Residual history
+            m: The window size of the anderson acceleration
+            beta: Damping parameter (0 < beta <= 1), lower = more stable
 
         Returns:
-            np.ndarray: The new temperature guess
+            The new temperature guess
         """
-        k = len(T_history)
-        m_use = min(m, k - 1)
+        n_temp_solutions = len(T_history)
+        avg_win_length = min(m, n_temp_solutions - 1)
 
-        if m_use == 0:
-            return T_history[-1] + R_history[-1]
+        if avg_win_length == 0:
+            return (1 - beta) * T_history[-1] + beta * (T_history[-1] + R_history[-1])
 
-        dR = np.column_stack(
-            [R_history[-m_use + i + 1] - R_history[-m_use + i] for i in range(m_use)]
+        residual_stack = np.column_stack(
+            [
+                R_history[-avg_win_length + i + 1] - R_history[-avg_win_length + i]
+                for i in range(avg_win_length)
+            ]
         )
 
-        alpha, _, _, _ = np.linalg.lstsq(dR, R_history[-1], rcond=None)
+        alpha, *_ = np.linalg.lstsq(residual_stack, R_history[-1], rcond=None)
 
-        T_new = T_history[-1] + R_history[-1]
-        for i in range(m_use):
-            idx = -m_use + i
-            dT = T_history[idx + 1] - T_history[idx]
-            dRi = R_history[idx + 1] - R_history[idx]
-            T_new -= alpha[i] * (dT + dRi)
+        # Damped Anderson update
+        T_new = T_history[-1] + beta * R_history[-1]
+        for i in range(avg_win_length):
+            solution_id = i - avg_win_length
+            dT = T_history[solution_id + 1] - T_history[solution_id]
+            dRi = R_history[solution_id + 1] - R_history[solution_id]
+            T_new -= alpha[i] * (dT + beta * dRi)
 
         return T_new
 
     def _post_process(self, job: SimJob, materialset: list[tuple[np.ndarray,]]):
+        """Post Processes the heat transfer solution data
 
+        Args:
+            job (SimJob): _description_
+            materialset (list[tuple[np.ndarray,]]): _description_
+        """
+        # Scalar data is currently not used for anything
         scalardata = self.data.scalar.new(**self._params)
         fielddata = self.data.field.new(**self._params)
 
         fielddata.T = job.solution
         fielddata._dcond_thermal = materialset[0]
         fielddata.basis = self.basis
+
+    def _post_process_transient(
+        self,
+        jobs: list[SimJob],
+        times: np.ndarray,
+        materialset: list[tuple[np.ndarray,]],
+    ):
+        """Post Processes the transient heat transfer solution data
+
+        Args:
+            job (SimJob): _description_
+            times: (np.ndarray): The simuliation time moments.
+            materialset (list[tuple[np.ndarray,]]): _description_
+        """
+
+        # Scalar data is currently not used for anything
+        for job, time in zip(jobs, times):
+            scalardata = self.data.scalar.new(time=time, **self._params)
+            fielddata = self.data.field.new(time=time, **self._params)
+
+            fielddata.T = job.solution
+            fielddata.time = time
+            fielddata._dcond_thermal = materialset[0]
+            fielddata.basis = self.basis

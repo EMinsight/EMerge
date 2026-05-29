@@ -1,8 +1,26 @@
+# EMerge is an open source Python based FEM EM simulation module.
+# Copyright (C) 2025  Robert Fennis.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, see
+# <https://www.gnu.org/licenses/>.
+
 import numpy as np
 from numba import njit, f8, i8, types, prange
-from .heatflux import TRI_DPTS, _local_tri_edge_map, assemble_surface_flux
+from .heatflux import TRI_DPTS, assemble_surface_flux
 from ....elements.leg2 import Legrange2
 from ....mth.optimized import calc_area
+
 KC = 5.670374419e-8
 
 ############################################################
@@ -10,11 +28,14 @@ KC = 5.670374419e-8
 ############################################################
 
 
-@njit(f8[:, :](i8[:, :]), cache=True, nogil=True)
-def _tri_surface_mass_element(local_edge_map):
+@njit(f8[:, :](), cache=True, nogil=True)
+def _tri_surface_mass_element():
     weights = TRI_DPTS[0, :]
     nq = weights.shape[0]
 
+    # Local edge map
+    edge_vertex_1 = np.array([0, 1, 0])
+    edge_vertex_2 = np.array([1, 2, 2])
     M = np.zeros((6, 6), dtype=np.float64)
 
     for iq in range(nq):
@@ -34,14 +55,13 @@ def _tri_surface_mass_element(local_edge_map):
             N[iv] = Ls[iv] * (2.0 * Ls[iv] - 1.0)
 
         for ie in range(3):
-            li = Ls[local_edge_map[0, ie]]
-            lj = Ls[local_edge_map[1, ie]]
+            li = Ls[edge_vertex_1[ie]]
+            lj = Ls[edge_vertex_2[ie]]
             N[3 + ie] = 4.0 * li * lj
 
         for i in range(6):
             for j in range(6):
                 M[i, j] += w * N[i] * N[j]
-
     return M
 
 
@@ -51,16 +71,12 @@ def _tri_surface_mass_element(local_edge_map):
 
 
 @njit(
-    types.Tuple((f8[:], i8[:], i8[:]))(
-        f8[:, :], i8[:, :], i8[:, :], i8[:, :], f8
-    ),
+    types.Tuple((f8[:], i8[:], i8[:]))(f8[:, :], i8[:, :], i8[:, :], i8[:, :], f8),
     cache=True,
     nogil=True,
     parallel=True,
 )
-def _robin_stiffness_builder(
-    nodes, tris, tri_to_field, tri_ids_2d, h_coeff
-):  
+def _robin_stiffness_builder(nodes, tris, tri_to_field, tri_ids_2d, h_coeff):
     NDOF_TRI = 36
     n_triangles = tri_ids_2d.shape[1]
     nnz = n_triangles * NDOF_TRI
@@ -69,8 +85,8 @@ def _robin_stiffness_builder(
     rows = np.empty(nnz, dtype=np.int64)
     cols = np.empty(nnz, dtype=np.int64)
 
-    M = _tri_surface_mass_element(np.array([[0,1,0],[1,2,2]]))
-    
+    M = _tri_surface_mass_element()
+
     for idx in prange(n_triangles):
         p = idx * NDOF_TRI
         itri = tri_ids_2d[0, idx]
@@ -79,7 +95,7 @@ def _robin_stiffness_builder(
         iv2 = tris[1, itri]
         iv3 = tris[2, itri]
 
-        A = calc_area(nodes[:,iv1], nodes[:,iv2], nodes[:,iv3])
+        A = calc_area(nodes[:, iv1], nodes[:, iv2], nodes[:, iv3])
 
         scale = h_coeff * 2.0 * A
 
@@ -126,11 +142,11 @@ def _radiation_builder(
     nq = weights.shape[0]
     T_amb2 = T_amb * T_amb
 
-    EDGE_NODES_1 = np.array([0,1,0])
-    EDGE_NODES_2 = np.array([1,2,2])
-    
+    EDGE_NODES_1 = np.array([0, 1, 0])
+    EDGE_NODES_2 = np.array([1, 2, 2])
+
     T_local = np.empty(6, dtype=np.float64)
-    
+
     for i_triangle in range(n_triangles):
         p = i_triangle * 36
         itri = tri_ids_2d[0, i_triangle]
@@ -139,10 +155,10 @@ def _radiation_builder(
         iv2 = tris[1, itri]
         iv3 = tris[2, itri]
 
-        A = calc_area(nodes[:,iv1], nodes[:,iv2], nodes[:,iv3])
+        A = calc_area(nodes[:, iv1], nodes[:, iv2], nodes[:, iv3])
 
         field_ids = tri_to_field[:, itri]
-        
+
         for i in range(6):
             T_local[i] = T_dofs[field_ids[i]]
 
@@ -161,24 +177,23 @@ def _radiation_builder(
             Ls[2] = L3
 
             N = np.empty(6, dtype=np.float64)
-            
+
             for iv in range(3):
                 N[iv] = Ls[iv] * (2.0 * Ls[iv] - 1.0)
-                
+
             for ie in range(3):
                 li = Ls[EDGE_NODES_1[ie]]
                 lj = Ls[EDGE_NODES_2[ie]]
                 N[3 + ie] = 4.0 * li * lj
 
-            T_q = np.sum(N*T_local)
-            
-            wh = w * emissivity * sigma * (T_q*T_q + T_amb2) * (T_q + T_amb)
+            T_q = np.sum(N * T_local)
+
+            wh = w * emissivity * sigma * (T_q * T_q + T_amb2) * (T_q + T_amb)
             wht = wh * T_amb
             for i in range(6):
                 f_local[i] += wht * N[i]
                 for j in range(6):
                     K_local[i, j] += wh * N[i] * N[j]
-                
 
         scale = 2.0 * A
 
@@ -189,7 +204,6 @@ def _radiation_builder(
                 K_rows[k] = field_ids[i]
                 K_cols[k] = field_ids[j]
                 K_values[k] = K_local[i, j] * scale
-            
 
     return K_values, K_rows, K_cols, f_global
 
@@ -205,7 +219,7 @@ def assemble_radiation_bc(
     emissivity: float,
     T_amb: float,
     T_solution: np.ndarray,
-):
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Assemble blackbody radiation boundary condition.
 
     Linearized as Robin BC with temperature-dependent coefficient:
@@ -225,7 +239,7 @@ def assemble_radiation_bc(
     """
     mesh = field.mesh
     tri_ids = mesh.get_triangles(face_tags)
-    
+
     tri_ids_2d = tri_ids.reshape(1, -1).astype(np.int64)
 
     return _radiation_builder(
@@ -264,6 +278,6 @@ def assemble_robin_bc(
         float(h_coeff),
     )
 
-    f_robin = assemble_surface_flux(field, mesh, face_tags, float(h_coeff * T_amb))
+    f_robin = assemble_surface_flux(field, face_tags, float(h_coeff * T_amb))
 
     return K_values, K_rows, K_cols, f_robin

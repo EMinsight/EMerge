@@ -1,8 +1,23 @@
+# EMerge is an open source Python based FEM EM simulation module.
+# Copyright (C) 2025  Robert Fennis.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, see
+# <https://www.gnu.org/licenses/>.
+
 import numpy as np
 from ....elements.leg2 import Legrange2
-from scipy.sparse import csr_matrix
-from ....mth.optimized import local_mapping, matinv, compute_distances, gaus_quad_tet
-from numba import c16, types, f8, i8, njit, prange
+from numba import types, f8, i8, njit, prange
 from ....mth.csc_cast import CSCMapping
 
 ############################################################
@@ -158,6 +173,7 @@ def grad_n2(coeff, coord):
 ############################################################
 #                  GAUSS QUADRATURE POINTS                 #
 ############################################################
+
 # fmt: off
 LOCAL_EDGE_MAP = np.array([[0, 0, 0, 1, 1, 2], [1, 2, 3, 2, 3, 3]])
 DPTS = np.array([
@@ -180,8 +196,18 @@ DPTS = np.array([
 
 
 @njit(f8[:, :](f8[:, :], f8[:, :]), cache=True, nogil=True)
-def leg2_tet_mass(tet_vertices, cond_tet):
+def leg2_tet_stiff(tet_vertices, cond_tet):
+    """Compute the 10x10 thermal stiffness matrix for one tetrahedron.
 
+    M_ij = k * integral ∇N_i . ∇N_j dV
+
+    Args:
+        tet_vertices: (3, 4) vertex coordinates
+        cond_tet: thermal bulk conductivity
+
+    Returns:
+        (10, 10) element mass matrix
+    """
     Amat = np.empty((10, 10), dtype=np.float64)
 
     txs, tys, tzs = tet_vertices
@@ -235,6 +261,83 @@ def leg2_tet_mass(tet_vertices, cond_tet):
     return Amat * V
 
 
+@njit(f8[:, :](f8[:, :], f8), cache=True, nogil=True)
+def leg2_tet_mass(tet_vertices: np.ndarray, rho_cp):
+    """Compute the 10x10 thermal mass matrix for one tetrahedron.
+
+    M_ij = rho_cp * integral N_i N_j dV
+
+    Args:
+        tet_vertices: (3, 4) vertex coordinates
+        rho_cp: density * specific heat [J/(m^3K)]
+
+    Returns:
+        (10, 10) element mass matrix
+    """
+    Mmat = np.empty((10, 10), dtype=np.float64)
+
+    txs, tys, tzs = tet_vertices
+    aas, bbs, ccs, dds, V = tet_coefficients(txs, tys, tzs)
+
+    coeff = np.empty((4, 4), dtype=np.float64)
+    coeff[0, :] = aas / (6 * V)
+    coeff[1, :] = bbs / (6 * V)
+    coeff[2, :] = ccs / (6 * V)
+    coeff[3, :] = dds / (6 * V)
+
+    WEIGHTS = DPTS[0, :]
+    DPTS1 = DPTS[1, :]
+    DPTS2 = DPTS[2, :]
+    DPTS3 = DPTS[3, :]
+    DPTS4 = DPTS[4, :]
+
+    xs = txs[0] * DPTS1 + txs[1] * DPTS2 + txs[2] * DPTS3 + txs[3] * DPTS4
+    ys = tys[0] * DPTS1 + tys[1] * DPTS2 + tys[2] * DPTS3 + tys[3] * DPTS4
+    zs = tzs[0] * DPTS1 + tzs[1] * DPTS2 + tzs[2] * DPTS3 + tzs[3] * DPTS4
+
+    nq = WEIGHTS.shape[0]
+
+    a = coeff[0, :]
+    b = coeff[1, :]
+    c = coeff[2, :]
+    d = coeff[3, :]
+
+    for iv1 in range(10):
+        for iv2 in range(iv1, 10):
+            val = 0.0
+            for iq in range(nq):
+                x = xs[iq]
+                y = ys[iq]
+                z = zs[iq]
+
+                Ls = np.empty(4, dtype=np.float64)
+                for i_node in range(4):
+                    Ls[i_node] = (
+                        a[i_node] + b[i_node] * x + c[i_node] * y + d[i_node] * z
+                    )
+
+                if iv1 < 4:
+                    N1 = Ls[iv1] * (2.0 * Ls[iv1] - 1.0)
+                else:
+                    e1 = LOCAL_EDGE_MAP[0, iv1 - 4]
+                    e2 = LOCAL_EDGE_MAP[1, iv1 - 4]
+                    N1 = 4.0 * Ls[e1] * Ls[e2]
+
+                if iv2 < 4:
+                    N2 = Ls[iv2] * (2.0 * Ls[iv2] - 1.0)
+                else:
+                    e1 = LOCAL_EDGE_MAP[0, iv2 - 4]
+                    e2 = LOCAL_EDGE_MAP[1, iv2 - 4]
+                    N2 = 4.0 * Ls[e1] * Ls[e2]
+
+                val += WEIGHTS[iq] * N1 * N2
+
+            Mmat[iv1, iv2] = val
+            Mmat[iv2, iv1] = val
+
+    return Mmat * rho_cp * V
+
+
 ############################################################
 #                  MAIN ASSEMBLER ROUTINE                 #
 ############################################################
@@ -246,7 +349,7 @@ def leg2_tet_mass(tet_vertices, cond_tet):
     nogil=True,
     parallel=True,
 )
-def _matrix_builder(nodes, tets, tet_to_field, cond_termal):
+def _stiff_matrix_builder(nodes, tets, tet_to_field, cond_termal):
     nT = tets.shape[1]
 
     nnz = nT * 100
@@ -259,7 +362,7 @@ def _matrix_builder(nodes, tets, tet_to_field, cond_termal):
         p = itet * 100
         cond_tet = cond_termal[:, :, itet]
 
-        Asub = leg2_tet_mass(nodes[:, tets[:, itet]], cond_tet)
+        Asub = leg2_tet_stiff(nodes[:, tets[:, itet]], cond_tet)
 
         indices = tet_to_field[:, itet]
         for ii in range(10):
@@ -271,7 +374,47 @@ def _matrix_builder(nodes, tets, tet_to_field, cond_termal):
     return Amatrix, rows, cols
 
 
-def tet_mass_matrix(
+@njit(
+    types.Tuple((f8[:], i8[:], i8[:]))(f8[:, :], i8[:, :], i8[:, :], f8[:]),
+    cache=True,
+    nogil=True,
+    parallel=True,
+)
+def _mass_matrix_builder(nodes, tets, tet_to_field, rho_cp_per_tet):
+    """Parallel assembly of the global mass matrix in COO format.
+
+    Args:
+        nodes: (3, n_nodes)
+        tets: (4, n_tets)
+        tet_to_field: (10, n_tets)
+        rho_cp_per_tet: (n_tets,) density * specific heat per element
+
+    Returns:
+        values, rows, cols: COO triplets
+    """
+    nT = tets.shape[1]
+    nnz = nT * 100
+
+    rows = np.empty(nnz, dtype=np.int64)
+    cols = np.empty_like(rows)
+    Mmatrix = np.empty_like(rows, dtype=np.float64)
+
+    for itet in prange(nT):
+        p = itet * 100
+
+        Msub = leg2_tet_mass(nodes[:, tets[:, itet]], rho_cp_per_tet[itet])
+
+        indices = tet_to_field[:, itet]
+        for ii in range(10):
+            rows[p + 10 * ii : p + 10 * (ii + 1)] = indices[ii]
+            cols[p + ii : p + 100 + ii : 10] = indices[ii]
+
+        Mmatrix[p : p + 100] = Msub.ravel()
+
+    return Mmatrix, rows, cols
+
+
+def tet_stiffness_matrix(
     field: Legrange2, cond_termal: np.ndarray
 ) -> tuple[np.ndarray, CSCMapping]:
     """Main assembly function of the mass matrix for stationary heat transfer
@@ -288,7 +431,32 @@ def tet_mass_matrix(
 
     tet_to_field = field.tet_to_field
 
-    Amatrix, rows, cols = _matrix_builder(nodes, tets, tet_to_field, cond_termal)
+    Amatrix, rows, cols = _stiff_matrix_builder(nodes, tets, tet_to_field, cond_termal)
 
     cscmap = CSCMapping.from_rowcol(rows, cols, field.n_field)
     return Amatrix, cscmap
+
+
+def tet_mass_matrix(
+    field: Legrange2, rho_cp: np.ndarray
+) -> tuple[np.ndarray, CSCMapping]:
+    """Assemble the global mass (capacity) matrix for transient heat transfer.
+
+    M_ij = integral rho * cp * N_i * N_j dV
+
+    Args:
+        field: Legrange2 field
+        rho_cp: (n_tets,) array of density * specific heat per element [J/(m³·K)]
+
+    Returns:
+        M_coo: COO values
+        cscmap: CSCMapping for conversion to CSC
+    """
+    tets = field.mesh.tets
+    nodes = field.mesh.nodes
+    tet_to_field = field.tet_to_field
+
+    Mmatrix, rows, cols = _mass_matrix_builder(nodes, tets, tet_to_field, rho_cp)
+
+    cscmap = CSCMapping.from_rowcol(rows, cols, field.n_field)
+    return Mmatrix, cscmap

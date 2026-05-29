@@ -1,16 +1,29 @@
+# EMerge is an open source Python based FEM EM simulation module.
+# Copyright (C) 2025  Robert Fennis.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, see
+# <https://www.gnu.org/licenses/>.
+
 from __future__ import annotations
 from ...simulation_data import BaseDataset, DataContainer
 from ...elements.femdata import FEMBasis
 from dataclasses import dataclass, field
 import numpy as np
-from typing import Literal, Callable
+from typing import Literal
 from loguru import logger
-from ...cs import Axis, _parse_axis
-from ...selection import FaceSelection, DomainSelection
-from ...geometry import GeoSurface
+from ...selection import FaceSelection
 from ...mesh3d import Mesh3D
-from ...const import MU0
-from ...coord import Line
 from ...file import Saveable
 from emsutil import DataStructure
 from emsutil.emdata import FieldPlotData
@@ -41,7 +54,6 @@ class HCData(Saveable):
 
 
 class HCScalar(Saveable):
-
     _fields: list[str] = []
     _copy: list[str] = []
 
@@ -149,13 +161,13 @@ class TField:
 
 
 class HCField(Saveable):
-
     def __init__(self):
         self._ddensity: np.ndarray = None
         self._dcond_thermal: np.ndarray = []
         self._dspecific_heat: np.ndarray = []
         self.T: np.ndarray = None
         self.basis: FEMBasis = None
+        self.time: float = None
 
     @property
     def mesh(self) -> Mesh3D:
@@ -323,7 +335,6 @@ class HCField(Saveable):
 
     def boundary(self, selection: FaceSelection) -> TField:
         """Interpolate the field on the node coordinates of the surface."""
-        boundary = self.mesh.boundary_surface(selection.tags)
         tris = self.mesh.tris[:, self.mesh.get_triangles(selection.tags)]
 
         # Get unique node indices and remap triangles to dense 0..N-1
@@ -335,7 +346,17 @@ class HCField(Saveable):
         zs = self.mesh.nodes[2, unique_nodes]
         T_surf = self.T[unique_nodes]
 
-        tfield = TField(T_surf, xs, ys, zs, DataStructure.TRISURF)
+        tfield = TField(
+            T_surf,
+            0 * T_surf,
+            0 * T_surf,
+            0 * T_surf,
+            xs,
+            ys,
+            zs,
+            0 * xs,
+            structure=DataStructure.TRISURF,
+        )
         tfield.aux["tris"] = tris_dense
         tfield.aux["boundary"] = True
         return tfield

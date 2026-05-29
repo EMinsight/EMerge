@@ -33,7 +33,7 @@ from .cacherun import get_build_section, get_run_section
 from .settings import DEFAULT_SETTINGS, Settings
 from .solver import EMSolver, Solver
 from .simstate import SimState
-from .selection import Selector, Selection
+from .selection import Selector, Selection, FaceSelection
 from .optim import Optimizer
 from typing import Literal, Generator, Any
 from loguru import logger
@@ -98,7 +98,6 @@ def _get_caller_dir() -> Path:
 
 
 class Simulation:
-
     def __init__(
         self,
         modelname: str,
@@ -571,7 +570,7 @@ class Simulation:
         self.state.activate(_indx, **variables)
         return self
 
-    def save(self, _force_save: bool = True, screenshot: bool = True) -> None:
+    def save(self, _force_save: bool = True, screenshot: bool = False) -> None:
         """Saves the current model in the provided project directory."""
         # Ensure directory exists
 
@@ -812,6 +811,18 @@ class Simulation:
         """
         return self.state.current_geo_state
 
+    def all_boundaries(self) -> FaceSelection:
+        """Returns a selection of all geometry boundaries
+
+        Returns:
+            FaceSelection: A selection of all boundaries
+        """
+        geos = self.all_geos()
+        sel = geos[0].boundary()
+        for geo in geos[1:]:
+            sel = sel + geo.boundary()
+        return sel
+
     def find_geo(self, name: str) -> GeoObject:
         """Searches first for an exact match and then the first partial match for the provided geometry name
 
@@ -885,7 +896,6 @@ class Simulation:
             self._reset_mesh()
 
         if not regenerate:
-
             if not self.state._geometry_committed:
                 self.commit_geometry()
 
@@ -997,7 +1007,6 @@ class Simulation:
         logger.trace("Starting parameter sweep.")
 
         for i_iter in range(dims_flat[0].shape[0]):
-
             if clear_mesh and i_iter > 0:
                 logger.info("Cleaning up mesh.")
                 self.reset(geometry=True, physics=True, mesh=True)
@@ -1236,7 +1245,6 @@ class Simulation:
         logger.info("Stating adaptive mesh refinement process...")
         self.mesher._amrobj.reset()
         for step in range(1, max_steps + 1):
-
             self.data.sim.new(iter_step=step)
 
             datas = []
@@ -1312,7 +1320,7 @@ class Simulation:
             refine_tet_ids = refine_tet_ids[::-1]
 
             logger.info(
-                f" - Tet refinement percentage = {(refine_tet_ids.shape[0]/self.mesh.n_tets)*100:.1f} %"
+                f" - Tet refinement percentage = {(refine_tet_ids.shape[0] / self.mesh.n_tets) * 100:.1f} %"
             )
             # F1 = (arctan(5*(x-0.5))+pi/2)/pi from 0 to 1
             # refinement_ratio = (np.arctan(5*(refinement_ratio-0.5))+np.pi/2)/np.pi
@@ -1406,7 +1414,6 @@ class Simulation:
                 if percentage < minimum_refinement_percentage or percentage > (
                     minimum_refinement_percentage * 2
                 ):
-
                     refinement_ratio = self.compute_ratio(
                         refinement_ratios,
                         refinement_percentages,
@@ -1447,7 +1454,6 @@ class Simulation:
 
 
 class SimulationBeta(Simulation):
-
     def __post_init__(self):
         pass
         # self.mesher.set_algorithm(Algorithm3D.HXT)
@@ -1655,7 +1661,6 @@ class SimulationBeta(Simulation):
         logger.info("Stating adaptive mesh refinement process...")
 
         for step in range(1, max_steps + 1):
-
             self.data.sim.new(iter_step=step)
 
             datas = []
@@ -1791,7 +1796,6 @@ class SimulationBeta(Simulation):
                 if percentage < minimum_refinement_percentage or percentage > (
                     minimum_refinement_percentage * 2
                 ):
-
                     refinement_ratio = self.compute_ratio(
                         rine_points_percentage,
                         Ratios,

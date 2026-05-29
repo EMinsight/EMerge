@@ -1,23 +1,33 @@
+# EMerge is an open source Python based FEM EM simulation module.
+# Copyright (C) 2025  Robert Fennis.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, see
+# <https://www.gnu.org/licenses/>.
+
 from __future__ import annotations
 import numpy as np
 from loguru import logger
-from typing import Callable, Literal, Generator
-from dataclasses import dataclass
-from collections import defaultdict
+from typing import Callable, Literal
 from ...selection import Selection, FaceSelection, DomainSelection
-from ...cs import CoordinateSystem, Axis, GCS, _parse_axis
-from ...coord import Line
 from ...geometry import GeoSurface, GeoVolume
 from ...bc import (
     BoundaryCondition,
     BoundaryConditionSet,
-    Periodic,
     BoundaryConditionError,
 )
-from ...periodic import PeriodicCell, HexCell, RectCell
-from emsutil import Material, AIR, Saveable
-from ...const import Z0, C0, EPS0, MU0
-from ...logsettings import DEBUG_COLLECTOR
+from ...periodic import PeriodicCell
+from emsutil import Material, Saveable
 
 
 class HCBoundaryConditionSet(BoundaryConditionSet):
@@ -40,6 +50,12 @@ class HCBoundaryConditionSet(BoundaryConditionSet):
         self.BlackBodyRadiation: type[BlackBodyRadiation] = self._construct_bc(
             BlackBodyRadiation
         )
+        self.InitialTemperatureVolume: type[InitialTemperatureVolume] = (
+            self._construct_bc(InitialTemperatureVolume)
+        )
+        self.InitialTemperatureBoundary: type[InitialTemperatureBoundary] = (
+            self._construct_bc(InitialTemperatureBoundary)
+        )
 
     def get_type(
         self,
@@ -60,13 +76,13 @@ class HCBoundaryConditionSet(BoundaryConditionSet):
         excitation_W: list[float] | None = None,
     ):
         """Couples the volumetric heat dissipation into the thermal domain.
-        
+
         To couple heating from RF losses, provide a domain selection.
-        
+
         The excitation in W is a list of floats of port excitations in Watts.
-         
+
         The mwfield object follows from the resultant dataset:
-        
+
         Example:
         >>> data = sim.mw.run_sweep(...)
         >>> mwfield = data.field.find(freq=...)
@@ -103,7 +119,7 @@ class FixedTemperatureBoundary(BoundaryCondition, Saveable):
         """Initializes a fixed temperature volumetric boundary condition.
 
         This boundary condition prescribes a temperature at a given volume
-        
+
         Args:
             face (FaceSelection | GeoSurface): The Face assignment
             temperature_K (float): The fixed temperature.
@@ -120,7 +136,45 @@ class FixedTemperatureVolume(BoundaryCondition, Saveable):
 
     def __init__(self, domain: DomainSelection | GeoVolume, temperature_K: float):
         """Initializes a fixed temperature volumetric boundary condition.
-        
+
+        This boundary condition prescribes a temperature at a given volume
+
+        Args:
+            domain (DomainSelection | GeoVolume): The volume to apply the boundary condition to
+            temperature_K (float): The temperature
+        """
+        super().__init__(domain)
+        self.T: float = temperature_K
+
+
+class InitialTemperatureBoundary(BoundaryCondition, Saveable):
+    _color: str = "#f70a80"
+    _name: str = "InitialTemperatureBoundary"
+    _texture: str = "tex2.png"
+    dim: int = 2
+
+    def __init__(self, face: FaceSelection | GeoSurface, temperature_K: float):
+        """Initializes an initial temperature volumetric boundary condition.
+
+        This boundary condition prescribes a temperature at a given volume
+
+        Args:
+            face (FaceSelection | GeoSurface): The Face assignment
+            temperature_K (float): The fixed temperature.
+        """
+        super().__init__(face)
+        self.T: float = temperature_K
+
+
+class InitialTemperatureVolume(BoundaryCondition, Saveable):
+    _color: str = "#f70a80"
+    _name: str = "InitialTemperatureVolume"
+    _texture: str = "tex2.png"
+    dim: int = 3
+
+    def __init__(self, domain: DomainSelection | GeoVolume, temperature_K: float):
+        """Initializes an initial temperature volumetric boundary condition.
+
         This boundary condition prescribes a temperature at a given volume
 
         Args:
@@ -137,11 +191,12 @@ class HeatFluxBoundary(BoundaryCondition, Saveable):
     _texture: str = "tex2.png"
     dim: int = 2
     _is_exclusive = False
+
     def __init__(self, face: FaceSelection | GeoSurface, heatflux: float):
         """Initializes a boundary heat flux boundary condition.
-        
+
         This boundary condition uses a constant heat injected per square meter on the boundary.
-        
+
         Args:
             face (FaceSelection | GeoSurface): The boundary to apply this heat flux to
             heatflux (float, optional): The constant heat flux
@@ -156,6 +211,7 @@ class HeatFluxVolume(BoundaryCondition, Saveable):
     _texture: str = "tex2.png"
     dim: int = 3
     _is_exclusive = False
+
     def __init__(
         self,
         face: DomainSelection | GeoVolume,
@@ -163,10 +219,10 @@ class HeatFluxVolume(BoundaryCondition, Saveable):
         heatflux_func: Callable | None = None,
     ):
         """Initializes a volumetric heat flux boundary condition.
-        
+
         This boundary condition either uses a constant heat injected per cubic meter or
         a heat flux defined by a function of x,y,z.
-        
+
 
         Args:
             face (DomainSelection | GeoVolume): The domains to apply this heat flux to
@@ -174,15 +230,16 @@ class HeatFluxVolume(BoundaryCondition, Saveable):
             heatflux_func (Callable | None, optional): The spatially dependent heat flux. Defaults to None.
         """
         super().__init__(face)
-        
+
         self.qm: float = heatflux
         if heatflux_func is not None:
             self.fqm: callable = heatflux_func
         elif heatflux is not None:
             self.fqm: Callable = lambda x, y, z: np.ones_like(x) * self.qm
         else:
-            raise BoundaryConditionError("No heat flux provided for the HeatFluxVolume boundary condition.")
-            
+            raise BoundaryConditionError(
+                "No heat flux provided for the HeatFluxVolume boundary condition."
+            )
 
 
 class ThermalContact(BoundaryCondition, Saveable):
@@ -191,9 +248,7 @@ class ThermalContact(BoundaryCondition, Saveable):
     _texture: str = "tex2.png"
     dim: int = 2
 
-    def __init__(self, 
-                 face: FaceSelection | GeoSurface, 
-                 heat_transfer_coeff: float):
+    def __init__(self, face: FaceSelection | GeoSurface, heat_transfer_coeff: float):
         super().__init__(face)
         """Initializes a Thermal contact boundary condition.
         
@@ -212,16 +267,17 @@ class ThinConductor(BoundaryCondition, Saveable):
     _texture: str = "tex2.png"
     dim: int = 2
     _is_exclusive = False
+
     def __init__(
-        self, 
-        face: FaceSelection | GeoSurface, 
-        material: Material = None, 
+        self,
+        face: FaceSelection | GeoSurface,
+        material: Material = None,
         thickness: float = None,
     ):
         """Initializes a Thin Conductor boundary condition.
-        
+
         This boundary condition can be used to model thin thermal conductors like copper traces on PCBs.
-        
+
         Args:
             face (FaceSelection | GeoSurface): The surface to assign the
             material (Material): The material of the thin conductor layer
@@ -238,13 +294,15 @@ class ThinConductor(BoundaryCondition, Saveable):
             float: _description_
         """
         return self.thickness * self.material.cond_thermal.value
-        
+
+
 class Convection(BoundaryCondition, Saveable):
     _color: str = "#0effa7"
     _name: str = "ThermalContact"
     _texture: str = "tex2.png"
     dim: int = 2
     _is_exclusive = False
+
     def __init__(
         self,
         face: FaceSelection | GeoSurface,
@@ -252,7 +310,7 @@ class Convection(BoundaryCondition, Saveable):
         Tamb_K: float,
     ):
         """Initializes a Convection boundary condition.
-        
+
         The convection boundary condition models a thermal transfer coefficient h (W/m2K) to some ambient temperature Tamb_K in Kelvin
 
         Args:
@@ -271,6 +329,7 @@ class BlackBodyRadiation(BoundaryCondition, Saveable):
     _texture: str = "tex2.png"
     dim: int = 2
     _is_exclusive = False
+
     def __init__(
         self,
         face: FaceSelection | GeoSurface,
@@ -278,7 +337,7 @@ class BlackBodyRadiation(BoundaryCondition, Saveable):
         Tamb_K: float,
     ):
         """Initializes a black-body radiation boundary condition to the simulation.
-        
+
         It is defined by an ambient temperature Tamb_K in Kelvin and a surface emissivity.
         Notice that multiple black-body radiation boundary condition do not communicate energy with each other.
 

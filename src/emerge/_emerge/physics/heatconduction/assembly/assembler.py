@@ -27,6 +27,8 @@ from ..heatconduction_bc import (
     HeatFluxVolume,
     ThinConductor,
     BlackBodyRadiation,
+    InitialTemperatureVolume,
+    InitialTemperatureBoundary,
 )
 from ....elements.leg2 import Legrange2
 from ....mth.csc_cast import CSCMapping
@@ -63,15 +65,16 @@ class Assembler:
         self.SELECT_INDEX: int = None
         self._partitioned: bool = False
 
-    def assemble_stationary_matrix(
+    def assemble_hc_matrix(
         self,
         field: Legrange2,
         materials: list[Material],
         bcs: list[BoundaryCondition],
         T_initial_K: float | np.ndarray,
+        transient: bool = False,
     ) -> tuple[SimJob, tuple[np.ndarray,]]:
 
-        from .grad import tet_mass_matrix
+        from .grad import tet_stiffness_matrix, tet_mass_matrix
         from .heatflux import assemble_surface_flux, assemble_volume_source
         from .convection import assemble_robin_bc, assemble_radiation_bc
         from .thinconductor import assemble_conductive_sheet
@@ -94,7 +97,7 @@ class Assembler:
         thermal_contact = filter_bc(bcs, ThermalContact)
 
         if len(thermal_contact) > 0 and not self._partitioned:
-            logger.info('Partitioning degrees of freedom on ThermalContact boundaries.')
+            logger.info("Partitioning degrees of freedom on ThermalContact boundaries.")
             field.partition_dof([x.tags for x in thermal_contact])
             self._partitioned = True
 
@@ -102,15 +105,26 @@ class Assembler:
 
         # --- Matrix Assembly
 
-        Amat_coo, cscmap = tet_mass_matrix(field, cond_thermal)
+        # --- Stiffness Matrix
+        Amat_coo, cscmap = tet_stiffness_matrix(field, cond_thermal)
         Amat = cscmap.to_csc(Amat_coo)
 
+        # --- Mass Matrix
+        Bmat = None
+        if transient:
+            Bmat_coo, cscmap = tet_mass_matrix(field, density * specific_heat)
+            Bmat = cscmap.to_csc(Bmat_coo)
+
+        # --- Forcing vector
         bvec = np.zeros((NF,), dtype=np.float64)
+
+        # --- Initial Temperature
         if isinstance(T_initial_K, (float, int)):
             Tvec = np.ones((NF,), dtype=np.float64) * T_initial_K
         else:
             Tvec = T_initial_K
 
+        # --- Boundary condition pre-filtering
         fixed_temp_bound = filter_bc(bcs, FixedTemperatureBoundary)
         fixed_temp_volume = filter_bc(bcs, FixedTemperatureVolume)
         heat_flux_bound = filter_bc(bcs, HeatFluxBoundary)
@@ -118,9 +132,35 @@ class Assembler:
         convection = filter_bc(bcs, Convection)
         thinconductor = filter_bc(bcs, ThinConductor)
         blackbody = filter_bc(bcs, BlackBodyRadiation)
+        init_volume = filter_bc(bcs, InitialTemperatureVolume)
+        init_boundary = filter_bc(bcs, InitialTemperatureBoundary)
         prescribed = []
+
+        # --- Extract the mesh
         mesh = field.mesh
 
+        # --- Boundary condition parsing
+
+        # --- Initial Temperature
+        for bc in init_volume:
+            tri_ids = mesh.get_tetrahedra(bc.tags)
+            edge_ids = list(mesh.tet_to_edge[:, tri_ids].flatten())
+            vertex_ids = list(mesh.tets[:, tri_ids].flatten())
+            ids = [(field.edge_to_field[ii], bc.T) for ii in edge_ids] + [
+                (field.node_to_field[ii], bc.T) for ii in vertex_ids
+            ]
+            Tvec[list(set(ids))] = bc.T
+
+        for bc in init_boundary:
+            tri_ids = mesh.get_triangles(bc.tags)
+            edge_ids = list(mesh.tri_to_edge[:, tri_ids].flatten())
+            vertex_ids = list(mesh.tris[:, tri_ids].flatten())
+            ids = [(field.edge_to_field[ii], bc.T) for ii in edge_ids] + [
+                (field.node_to_field[ii], bc.T) for ii in vertex_ids
+            ]
+            Tvec[list(set(ids))] = bc.T
+
+        # --- Fixted Temperature
         for bc in fixed_temp_bound:
             logger.debug(f"Implementing: {bc}")
             face_tags = bc.tags
@@ -149,7 +189,7 @@ class Assembler:
             face_tags = bc.tags
             tri_ids = mesh.get_triangles(face_tags)
 
-            out = assemble_surface_flux(field, mesh, face_tags, bc.qm)
+            out = assemble_surface_flux(field, face_tags, bc.qm)
             bvec += out
 
         # --- Volume Flux
@@ -189,9 +229,9 @@ class Assembler:
         # --- Thin Conductor
         for bc in thinconductor:
             logger.debug(f"Implementing: {bc}")
-            
+
             kappa_t = bc.get_kappa()
-            
+
             Kval, Krows, Kcols = assemble_conductive_sheet(field, bc.tags, kappa_t)
             K_robin = coo_matrix((Kval, (Krows, Kcols)), shape=Amat.shape).tocsc()
             Amat = Amat + K_robin
@@ -219,6 +259,6 @@ class Assembler:
             ids = []
             ts = []
 
-        simjob = SimJob(Amat, bvec, ids, ts)
+        simjob = SimJob(Amat, Bmat, bvec, NF, ids, ts)
 
         return simjob, [cond_thermal], Tvec

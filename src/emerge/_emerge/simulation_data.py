@@ -26,6 +26,7 @@ from .file import Saveable
 T = TypeVar("T")
 M = TypeVar("M")
 
+
 def assemble_nd_data(
     data_in: List[Union[float, np.ndarray]],
     vars_in: List[Dict[str, float]],
@@ -55,8 +56,8 @@ def assemble_nd_data(
     """
     # Determine axis ordering
     axis_names = sorted(list(axes.keys()))
-    if 'freq' in axis_names:
-        axis_names.append(axis_names.pop(axis_names.index('freq')))
+    if "freq" in axis_names:
+        axis_names.append(axis_names.pop(axis_names.index("freq")))
     axis_lengths = [len(axes[name]) for name in axis_names]
 
     # Determine output shape suffix
@@ -66,15 +67,14 @@ def assemble_nd_data(
 
     # Initialize output array
     out_shape = tuple(axis_lengths) + shp_out
-    out = np.empty(out_shape, dtype=first.dtype if isinstance(first, np.ndarray) else float)
+    out = np.empty(
+        out_shape, dtype=first.dtype if isinstance(first, np.ndarray) else float
+    )
 
     # Fill in data
     for entry, var_map in zip(data_in, vars_in):
         # build index for each axis
-        idx = tuple(
-            axes[name].index(var_map[name])
-            for name in axis_names
-        )
+        idx = tuple(axes[name].index(var_map[name]) for name in axis_names)
         if isinstance(entry, np.ndarray):
             out[idx + tuple(slice(None) for _ in shp_out)] = entry
         else:
@@ -82,11 +82,12 @@ def assemble_nd_data(
 
     return out
 
+
 def generate_ndim(
     outer_data: dict[str, list[float]],
     inner_data: list[float],
-    outer_labels: tuple[str, ...]
-) -> tuple[np.ndarray,...]:
+    outer_labels: tuple[str, ...],
+) -> tuple[np.ndarray, ...]:
     """
     Generates an N-dimensional grid of values from flattened data, and returns each axis array plus the grid.
 
@@ -102,7 +103,7 @@ def generate_ndim(
     Returns
     -------
     *axes : np.ndarray
-        One 1D array for each axis, containing the sorted unique coordinates for that dimension, 
+        One 1D array for each axis, containing the sorted unique coordinates for that dimension,
         in the order specified by outer_labels.
     grid : np.ndarray
         N-dimensional array of shape (n1, n2, ..., nN), where ni is the number of unique
@@ -130,9 +131,8 @@ def generate_ndim(
     # Return each axis array followed by the grid
     return tuple(axes) + (grid,)
 
-def drop_constant_variables(
-    listvars: list[dict[str, float]]
-) -> list[dict[str, float]]:
+
+def drop_constant_variables(listvars: list[dict[str, float]]) -> list[dict[str, float]]:
     if not listvars:
         return []
 
@@ -140,67 +140,66 @@ def drop_constant_variables(
     keys = listvars[0].keys()
 
     # Determine which keys actually vary
-    varying_keys = {
-        k for k in keys
-        if len({d[k] for d in listvars}) > 1
-    }
+    varying_keys = {k for k in keys if len({d[k] for d in listvars}) > 1}
 
     # Filter dictionaries to only keep varying keys
-    return [
-        {k: d[k] for k in varying_keys}
-        for d in listvars
-    ]
+    return [{k: d[k] for k in varying_keys} for d in listvars]
+
 
 class DataEntry(Saveable):
-    
     def __init__(self, variables: dict[str, float]):
         self.vars: dict[str, float] = variables
         self.data: dict[str, Any] = dict()
-    
+
     def is_non_empty(self) -> bool:
-        return (len(self.data) > 0)
-    
+        return len(self.data) > 0
+
     # ALLOWED PRINT
     def print(self) -> None:
         """Print the content of the DataEntry object"""
         for key, value in self.data.items():
             # ALLOWED PRINT
-            print(f'    {key} = {value}')
+            print(f"    {key} = {value}")
 
     def values(self) -> list[Any]:
-        """ Return all values stored in the DataEntry"""
+        """Return all values stored in the DataEntry"""
         return list(self.data.values())
-    
+
     def keys(self) -> list[str]:
-        """ Return all names of data stored in the DataEntry"""
+        """Return all names of data stored in the DataEntry"""
         return list(self.data.keys())
-    
+
     def items(self) -> list[tuple[str, Any]]:
-        """ Returns a list of all key: value pairs of the DataEntry."""
+        """Returns a list of all key: value pairs of the DataEntry."""
         return list(self.data.items())
-    
+
     def __eq__(self, other: Any) -> bool:
         if not isinstance(other, dict):
             return False
         allkeys = set(list(self.vars.keys()) + list(other.keys()))
-        return all(self.vars[key]==other[key] for key in allkeys)
-    
+        return all(self.vars[key] == other[key] for key in allkeys)
+
     def _dist(self, other: dict[str, float]) -> float:
-        return sum([(abs(self.vars.get(key,1e20)-other[key])/(other[key]+1e-12)) for key in other.keys()])
-    
+        return sum(
+            [
+                (abs(self.vars.get(key, 1e20) - other[key]) / (other[key] + 1e-12))
+                for key in other.keys()
+            ]
+        )
+
     def __getitem__(self, key) -> Any:
         return self.data[key]
-    
+
     def __setitem__(self, key: str, value: Any) -> None:
         self.data[key] = value
 
 
 class DataContainer(Saveable):
     """The DataContainer class is a generalized class to store data for a set of parameter sweeps"""
-    
+
     def __init__(self):
         self.entries: list[DataEntry] = []
-    
+
     @staticmethod
     def combine_sets(containers: list[DataContainer]) -> DataContainer:
         """Generate one big container from a list of DataContainers
@@ -212,7 +211,7 @@ class DataContainer(Saveable):
             DataContainer: _description_
         """
         return containers[0].merge_with(*containers[1:])
-    
+
     def merge_with(self, *others: DataContainer) -> DataContainer:
         """Combines this DataContainer with another container
 
@@ -236,11 +235,10 @@ class DataContainer(Saveable):
                 self.entries.append(other)
 
         return self
-    
 
     # ALLOWED PRINT
     def print(self) -> None:
-        """ Print an overview of all data in the DataContainer"""
+        """Print an overview of all data in the DataContainer"""
         for entry in self.entries:
             # ALLOWED PRINT
             entry.print()
@@ -250,105 +248,112 @@ class DataContainer(Saveable):
         entry = DataEntry(variables)
         self.entries.append(entry)
         return entry
-    
+
     def iterate(self) -> Generator[tuple[dict[str, float], dict[str, Any]], None, None]:
         for entry in self.entries:
             yield entry.vars, entry.data
-    
+
     @property
     def first(self) -> DataEntry:
         """Returns the first added entry"""
         return self.entries[0]
-    
+
     @property
     def last(self) -> DataEntry:
         """Returns the last added entry"""
         return self.entries[-1]
-    
+
     def index(self, index: int) -> DataEntry:
         """Returns the last added entry"""
         return self.entries[index]
-    
+
     def select(self, **vars: float) -> DataEntry | None:
         """Returns the data entry corresponding to the provided parametric sweep set"""
         for entry in self.entries:
-            if entry==vars:
+            if entry == vars:
                 return entry
         return None
-    
+
     def find(self, **vars: float) -> DataEntry:
         """Returns the DataEntry closest to the provided parametric sweep setting."""
-        return sorted([(entry, entry._dist(vars)) for entry in self.entries], key=lambda x: x[1])[0][0]
-    
+        return sorted(
+            [(entry, entry._dist(vars)) for entry in self.entries], key=lambda x: x[1]
+        )[0][0]
+
     def __getitem__(self, key: str) -> DataEntry:
         """Returns the requested item from the default DataEntry"""
         return self.last[key]
-        
+
     def __setitem__(self, key: str, value: Any) -> None:
         """Writes a value to the requested default DataEntry"""
         self.last[key] = value
-    
+
     def remove_empty_datasets(self) -> None:
         self.entries = [entry for entry in self.entries if entry.is_non_empty()]
-        
-class BaseDataset(Generic[T,M], Saveable):
-    #skip_fields = ('_datatype','_matrixtype')
-    
+
+
+class BaseDataset(Generic[T, M], Saveable):
+    # skip_fields = ('_datatype','_matrixtype')
+
     def __init__(self, datatype: type[T], matrixtype: type[M], scalar: bool):
         self._datatype: type[T] = datatype
         self._matrixtype: type[M] = matrixtype
         self._variables: list[dict[str, float]] = []
         self._data_entries: list[T] = []
         self._scalar: bool = scalar
-        
+
         self._gritted: bool | None = None
-        self._axes: dict[str, np.ndarray]| None = None
-        self._ax_ids: dict[str, int]| None = None
-        self._ids: np.ndarray| None = None
+        self._axes: dict[str, np.ndarray] | None = None
+        self._ax_ids: dict[str, int] | None = None
+        self._ids: np.ndarray | None = None
         self._gridobj: M | None = None
 
         self._data: dict[str, Any] = dict()
-    
+
     def __getitem__(self, index: int) -> T:
         return self._data_entries[index]
 
     @property
     def _fields(self) -> list[str]:
-        return self._datatype._fields # type: ignore
-    
+        return self._datatype._fields  # type: ignore
+
     @property
     def n(self) -> int:
         return len(self._data_entries)
-    
+
     def iter(self) -> Generator[T, None, None]:
         for item in self._data_entries:
             yield item
-            
+
     @property
     def _copy(self) -> list[str]:
-        return self._datatype._copy # type: ignore
+        return self._datatype._copy  # type: ignore
 
-    def merge_with(self, *others: BaseDataset) -> BaseDataset[T,M]:
+    def merge_with(self, *others: BaseDataset) -> BaseDataset[T, M]:
         for other in others:
             if self._datatype is not other._datatype:
-                raise TypeError(f'Dissimilar datatypes {self._datatype} and {other._datatype}. Aborting merge.')
+                raise TypeError(
+                    f"Dissimilar datatypes {self._datatype} and {other._datatype}. Aborting merge."
+                )
             if self._matrixtype is not other._matrixtype:
-                raise TypeError(f'Dissimilar matrix types {self._matrixtype} and {other._matrixtype}. Aborting merge.')
-            
+                raise TypeError(
+                    f"Dissimilar matrix types {self._matrixtype} and {other._matrixtype}. Aborting merge."
+                )
+
             self._variables.extend(other._variables)
             self._data_entries.extend(other._data_entries)
             self._data.update(other._data)
 
         self._gritted: bool | None = None
-        self._axes: dict[str, np.ndarray]| None = None
-        self._ax_ids: dict[str, int]| None = None
-        self._ids: np.ndarray| None = None
+        self._axes: dict[str, np.ndarray] | None = None
+        self._ax_ids: dict[str, int] | None = None
+        self._ids: np.ndarray | None = None
         self._gridobj: M | None = None
 
         return self
-    
+
     def store(self, key: str, value: Any) -> None:
-        """Stores a variable with some value in the provided key. 
+        """Stores a variable with some value in the provided key.
         Make sure that all values passed are picklable.
 
         Args:
@@ -367,7 +372,7 @@ class BaseDataset(Generic[T,M], Saveable):
             Any: The value of the data entry
         """
         return self._data.get(key, None)
-    
+
     def get_entry(self, index: int) -> T:
         """Returns the physics dataset for  the given index
 
@@ -386,10 +391,9 @@ class BaseDataset(Generic[T,M], Saveable):
             T: The physics dataset
         """
         for i, var_map in enumerate(self._variables):
-            if all(var_map.get(k) == v for k,v in variables.items()):
+            if all(var_map.get(k) == v for k, v in variables.items()):
                 return self.get_entry(i)
-        
-    
+
     def filter(self, **variables: float) -> list[T]:
         """Returns a list of all physics datasets that are valid for the given variable assignment
 
@@ -401,8 +405,10 @@ class BaseDataset(Generic[T,M], Saveable):
             if all(var_map.get(k) == v for k, v in variables.items()):
                 output.append(self.get_entry(i))
         return output
-    
-    def slice_set(self, i1: int, i2: int | None = None, sort_by: str | None = None) -> BaseDataset[T,M]:
+
+    def slice_set(
+        self, i1: int, i2: int | None = None, sort_by: str | None = None
+    ) -> BaseDataset[T, M]:
         """Reduces the DataSet object to a slice with the given range
 
         Args:
@@ -413,15 +419,15 @@ class BaseDataset(Generic[T,M], Saveable):
             BaseDataset[T,M]: _description_
         """
         new_set = BaseDataset(self._datatype, self._matrixtype, self._scalar)
-        new_set._data_entries = self._data_entries[slice(i1,i2)]
-        new_set._variables = drop_constant_variables(self._variables[slice(i1,i2)])
+        new_set._data_entries = self._data_entries[slice(i1, i2)]
+        new_set._variables = drop_constant_variables(self._variables[slice(i1, i2)])
         if sort_by is not None:
             ids = range(self.n)
             ids = sorted(ids, key=lambda x: getattr(self._data_entries[x], sort_by))
             self._data_entries = [self._data_entries[i] for i in ids]
             self._variables = [self._variables[i] for i in ids]
         return new_set
-        
+
     def find(self, **variables: float) -> T:
         """Returns the physics dataset that is closest to the constraint given by the variables.
 
@@ -431,11 +437,13 @@ class BaseDataset(Generic[T,M], Saveable):
         output = []
         for i, var_map in enumerate(self._variables):
             error = sum([abs(var_map.get(k, 1e30) - v) for k, v in variables.items()])
-            output.append((i,error))
-        selection_id = sorted(output, key=lambda x:x[1])[0][0]
+            output.append((i, error))
+        selection_id = sorted(output, key=lambda x: x[1])[0][0]
         entry = self.get_entry(selection_id)
-        variables = ', '.join([f'{key}={value}' for key,value in self._variables[selection_id].items()])
-        logger.info(f'Selected entry: {variables}')
+        variables = ", ".join(
+            [f"{key}={value}" for key, value in self._variables[selection_id].items()]
+        )
+        logger.info(f"Selected entry: {variables}")
         return entry
 
     def axis(self, name: str) -> np.ndarray:
@@ -459,7 +467,7 @@ class BaseDataset(Generic[T,M], Saveable):
         new_entry = self._datatype()
         self._data_entries.append(new_entry)
         return new_entry
-    
+
     def _grid_axes(self) -> bool:
         """This method attepmts to create a gritted version of the scalar dataset. It may fail
         if the data in the dataset cannot be cast into a gridded structure.
@@ -467,44 +475,44 @@ class BaseDataset(Generic[T,M], Saveable):
         Returns:
             None
         """
-        logger.debug('Attempting to grid simulation data')
+        logger.debug("Attempting to grid simulation data")
         variables = defaultdict(set)
         for var in self._variables:
             for key, value in var.items():
                 variables[key].add(value)
-                
+
         N_entries = len(self._variables)
         N_prod = 1
         N_dim = len(variables)
-        
+
         for key, val_list in variables.items():
             N_prod *= len(val_list)
-        
+
         if N_entries == N_prod:
-            logger.debug('Multi-dimensional grid found!')
+            logger.debug("Multi-dimensional grid found!")
             self._gritted = True
         else:
-            logger.debug('Multi-dimensional grid not found')
+            logger.debug("Multi-dimensional grid not found")
             self._gritted = False
             return False
-        
+
         self._axes = dict()
         self._ax_ids = dict()
-        
+
         revax = dict()
         i = 0
-        
+
         for key, val_set in variables.items():
             self._axes[key] = np.sort(np.array(list(val_set)))
             self._ax_ids[key] = i
             revax[i] = key
             i += 1
-            
+
         axlist = []
 
         for idim in range(N_dim):
             axlist.append(self._axes[revax[idim]])
-        
+
         indices = np.arange(N_entries)
         Ndimlist = [len(dim) for dim in axlist]
         self._ids = indices.reshape(Ndimlist)
@@ -513,16 +521,17 @@ class BaseDataset(Generic[T,M], Saveable):
 
         axes_list = {key: list(self._axes[key]) for key in self._axes.keys()}
         for field in self._fields:
-            data_field = [self._data_entries[i].__dict__[field] for i in range(N_entries)]
+            data_field = [
+                self._data_entries[i].__dict__[field] for i in range(N_entries)
+            ]
             data_set = assemble_nd_data(data_field, self._variables, axes_list)
             obj.__setattr__(field, data_set)
         for copyfield in self._copy:
-            
             obj.__setattr__(copyfield, self._data_entries[0].__dict__[copyfield])
         self._gridobj = obj
 
         return True
-    
+
     @property
     def grid(self) -> M:
         """Returns the gridded version of the scalar dataset.
@@ -537,7 +546,7 @@ class BaseDataset(Generic[T,M], Saveable):
             self._grid_axes()
 
         if self._gritted is False:
-            logger.error('The dataset cannot be cast to a structured grid.')
-            raise ValueError('Data not in regular grid')
-        
+            logger.error("The dataset cannot be cast to a structured grid.")
+            raise ValueError("Data not in regular grid")
+
         return self._gridobj

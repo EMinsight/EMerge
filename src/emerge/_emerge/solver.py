@@ -22,6 +22,7 @@ from scipy.sparse.csgraph import reverse_cuthill_mckee  # type: ignore
 from scipy.sparse.linalg import bicgstab, cg, gmres, gcrotmk, eigs, splu  # type: ignore
 from scipy.linalg import eig  # type: ignore
 from scipy import sparse  # type: ignore
+import hashlib
 from dataclasses import dataclass, field
 import numpy as np
 from loguru import logger
@@ -280,9 +281,7 @@ class SolveReport(Saveable):
 
         def row(key, val):
             val_str = f"{val:.4f}" if isinstance(val, float) else str(val)
-            print_cal(
-                f"| {key:<{col1_width}} | {val_str:<{col2_width}} |"
-            )  # ty: ignore
+            print_cal(f"| {key:<{col1_width}} | {val_str:<{col2_width}} |")  # ty: ignore
 
         border = "+" + "-" * (col1_width + 2) + "+" + "-" * (col2_width + 2) + "+"
 
@@ -396,7 +395,6 @@ def filter_unique_eigenpairs(
     selected: list = [eigen_vectors[0] / np.linalg.norm(eigen_vectors[0])]
     indices: list = [0]
     for i in range(1, len(eigen_vectors)):
-
         vec = eigen_vectors[i]
         vec = vec / np.linalg.norm(vec)  # Normalize
 
@@ -703,7 +701,7 @@ class SolverCG(Solver):
             logger.info(f"{self.pre}: Iteration {self._iter}, |r| = {res:.2e}")
 
     def solve(self, A, b, precon, reuse_factorization=False, id=-1):
-        logger.info(f"{_pfx(self.pre,id)} Calling CG.")
+        logger.info(f"{_pfx(self.pre, id)} Calling CG.")
         self._iter = 0
         self.A = A
         self.b = b
@@ -738,7 +736,7 @@ class SolverBicgstab(Solver):
     def solve(
         self, A, b, precon, reuse_factorization: bool = False, id: int = -1
     ) -> tuple[np.ndarray, SolveReport]:
-        logger.info(f"{_pfx(self.pre,id)} Calling BiCGStab.")
+        logger.info(f"{_pfx(self.pre, id)} Calling BiCGStab.")
         self._iter = 0
         self.A = A
         self.b = b
@@ -774,7 +772,7 @@ class SolverGCROTMK(Solver):
         reuse_factorization: bool = False,
         id: int = -1,
     ) -> tuple[np.ndarray, SolveReport]:
-        logger.info(f"{_pfx(self.pre,id)} Calling GCRO-T(m,k) algorithm")
+        logger.info(f"{_pfx(self.pre, id)} Calling GCRO-T(m,k) algorithm")
         self.A = A
         self.b = b
         if precon.M is not None:
@@ -806,7 +804,7 @@ class SolverGMRES(Solver):
     def solve(
         self, A, b, precon, reuse_factorization: bool = False, id: int = -1
     ) -> tuple[np.ndarray, SolveReport]:
-        logger.info(f"{_pfx(self.pre,id)} Calling GMRES Function.")
+        logger.info(f"{_pfx(self.pre, id)} Calling GMRES Function.")
         self.A = A
         self.b = b
         if precon.M is not None:
@@ -855,14 +853,13 @@ class SolverCHOLMOD(Solver):
         return self.__class__(self.pre)
 
     def solve(self, A, b, precon, reuse_factorization=False, id=-1):
-        logger.info(f"{_pfx(self.pre,id)} Calling CHOLMOD (Nested Dissection) Solver.")
+        logger.info(f"{_pfx(self.pre, id)} Calling CHOLMOD (Nested Dissection) Solver.")
 
         if b.ndim == 1:
             b = b.reshape(-1, 1)
 
         if not reuse_factorization or self.factor is None:
-
-            logger.trace(f"{_pfx(self.pre,id)} Computing Cholesky factorization.")
+            logger.trace(f"{_pfx(self.pre, id)} Computing Cholesky factorization.")
             self.factor = cho_factor(
                 A, order="colamd", sym_kind="sym", supernodal_mode="supernodal"
             )
@@ -891,13 +888,22 @@ class SolverSuperLU(Solver):
         )
         self._pivoting_threshold: float = 0.001
         self.lu = None
-        self.perm = None
+        self._perm = None
+        self._a_hash: bytes = None
+
+    def hash_A(self, A: csc_matrix) -> None:
+        """Hashes the A matrix"""
+        hasher = hashlib.sha256()
+        hasher.update(A.indptr.tobytes())
+        hasher.update(A.indices.tobytes())
+        self._a_hash = hasher.digest()
 
     def reset(self):
         self.A = None
         self.b = None
         self.lu = None
-        self.perm = None
+        self._perm = None
+        self._a_hash = None
         self.options = dict(SymmetricMode=True, Equil=False, IterRefine="SINGLE")
         self._pivoting_threshold = 0.001
 
@@ -910,23 +916,47 @@ class SolverSuperLU(Solver):
         if pivoting_threshold is not None:
             self._pivoting_threshold = pivoting_threshold
 
+    def _metis(self, A: csc_matrix, hash_value: bytes, idf: int) -> None:
+        """Executes METIS column preordering algorithm from Scikit-Sparse
+
+        Args:
+            A (csc_matrix): The A-matrix
+            hash_value (bytes): _description_
+        """
+        logger.debug(f"{_pfx(self.pre, idf)} Computing METIS permutation.")
+        self._perm = metis(A)
+        self._a_hash = hash_value
+
+    def _metis_if_needed(self, A: csc_matrix, idf: int) -> None:
+        """Executes a new METIS column preordering only if there is no
+        ordering or the ordering is of a different matrix.
+
+        Args:
+            A (csc_matrix): _description_
+            idf (int): _description_
+        """
+        hash_A = self.hash_A(A)
+        if self._perm is None:
+            self._metis(A, hash_A, idf)
+            return
+        if hash_A != self._a_hash:
+            self._metis(A, hash_A, idf)
+
     def solve(
         self, A: csc_matrix, b: np.ndarray, precon, id: int = -1
     ) -> tuple[np.ndarray, SolveReport]:
-        logger.info(f"{_pfx(self.pre,id)} Calling SuperLU Solver.")
+        logger.info(f"{_pfx(self.pre, id)} Calling SuperLU Solver.")
 
         if _SKSP_AVAILABLE:
-            if self.perm is None:
-                logger.debug(f"{_pfx(self.pre,id)} Computing METIS permutation.")
-                self.perm = metis(A)
-            A_ordered = A[self.perm][:, self.perm]
+            self._metis_if_needed(A, id)
+            A_ordered = A[self._perm][:, self._perm]
             permc = "NATURAL"
         else:
-            self.perm = None
+            self._perm = None
             A_ordered = A
             permc = "MMD_AT_PLUS_A"
 
-        logger.trace(f"{_pfx(self.pre,id)} Computing LU-Decomposition.")
+        logger.trace(f"{_pfx(self.pre, id)} Computing LU-Decomposition.")
         self.lu = splu(
             A_ordered,
             permc_spec=permc,
@@ -935,17 +965,17 @@ class SolverSuperLU(Solver):
             options=self.options,
         )
 
-        if self.perm is not None:
+        if self._perm is not None:
             if b.ndim == 1:
-                bp = b[self.perm]
+                bp = b[self._perm]
                 xp = self.lu.solve(bp)
                 x = np.empty_like(xp)
-                x[self.perm] = xp
+                x[self._perm] = xp
             else:
                 x = np.empty_like(b)
                 for i in range(b.shape[1]):
-                    xp = self.lu.solve(b[self.perm, i])
-                    x[self.perm, i] = xp
+                    xp = self.lu.solve(b[self._perm, i])
+                    x[self._perm, i] = xp
         else:
             x = self.lu.solve(b)
 
@@ -982,9 +1012,7 @@ class SolverUMFPACK(Solver):
         self.umfpack = um.UmfpackContext("zl")
         self.umfpack.control[um.UMFPACK_PRL] = 0  # ty: ignore
         self.umfpack.control[um.UMFPACK_IRSTEP] = 2  # ty: ignore
-        self.umfpack.control[um.UMFPACK_STRATEGY] = (
-            um.UMFPACK_STRATEGY_SYMMETRIC
-        )  # ty: ignore
+        self.umfpack.control[um.UMFPACK_STRATEGY] = um.UMFPACK_STRATEGY_SYMMETRIC  # ty: ignore
         self.umfpack.control[um.UMFPACK_ORDERING] = 3  # ty: ignore
         self.umfpack.control[um.UMFPACK_PIVOT_TOLERANCE] = 0.001  # ty: ignore
         self.umfpack.control[um.UMFPACK_SYM_PIVOT_TOLERANCE] = 0.001  # ty: ignore
@@ -999,12 +1027,8 @@ class SolverUMFPACK(Solver):
     def set_options(self, pivoting_threshold: float | None = None) -> None:
         self.initialize()
         if pivoting_threshold is not None:
-            self.umfpack.control[um.UMFPACK_PIVOT_TOLERANCE] = (
-                pivoting_threshold  # ty: ignore
-            )
-            self.umfpack.control[um.UMFPACK_SYM_PIVOT_TOLERANCE] = (
-                pivoting_threshold  # ty: ignore
-            )
+            self.umfpack.control[um.UMFPACK_PIVOT_TOLERANCE] = pivoting_threshold  # ty: ignore
+            self.umfpack.control[um.UMFPACK_SYM_PIVOT_TOLERANCE] = pivoting_threshold  # ty: ignore
             self._pivoting_threshold = pivoting_threshold
 
     def duplicate(self) -> Solver:
@@ -1013,23 +1037,21 @@ class SolverUMFPACK(Solver):
         return new_solver
 
     def solve(self, A, b, precon, id: int = -1) -> tuple[np.ndarray, SolveReport]:
-        logger.info(f"{_pfx(self.pre,id)} Calling UMFPACK Solver.")
+        logger.info(f"{_pfx(self.pre, id)} Calling UMFPACK Solver.")
         A.indptr = A.indptr.astype(np.int64)
         A.indices = A.indices.astype(np.int64)
         if self.fact_symb is False:
-            logger.trace(f"{_pfx(self.pre,id)} Executing symbollic factorization.")
+            logger.trace(f"{_pfx(self.pre, id)} Executing symbollic factorization.")
             self.umfpack.symbolic(A)
             self.fact_symb = True
 
-        logger.trace(f"{_pfx(self.pre,id)} Executing numeric factorization.")
+        logger.trace(f"{_pfx(self.pre, id)} Executing numeric factorization.")
         self.umfpack.numeric(A)
-        logger.trace(f"{_pfx(self.pre,id)} Solving linear system.")
+        logger.trace(f"{_pfx(self.pre, id)} Solving linear system.")
         x = np.zeros_like(b)
         for i in range(b.shape[1]):
-            logger.trace(f"{_pfx(self.pre,id)} Solving RHS {i}")
-            x[:, i] = self.umfpack.solve(
-                um.UMFPACK_A, A, b[:, i], autoTranspose=False
-            )  # ty: ignore
+            logger.trace(f"{_pfx(self.pre, id)} Solving RHS {i}")
+            x[:, i] = self.umfpack.solve(um.UMFPACK_A, A, b[:, i], autoTranspose=False)  # ty: ignore
         aux = {"Pivoting Threshold": str(self._pivoting_threshold)}
         return x, SolveReport(solver=str(self), exit_code=0, aux=aux)
 
@@ -1073,19 +1095,19 @@ class SolverMUMPS(Solver):
     def solve(
         self, A, b, precon, reuse_factorization: bool = False, id: int = -1
     ) -> tuple[np.ndarray, SolveReport]:
-        logger.info(f"{_pfx(self.pre,id)} Calling MUMPS Solver.")
+        logger.info(f"{_pfx(self.pre, id)} Calling MUMPS Solver.")
         if self.fact_symb is False:
-            logger.trace(f"{_pfx(self.pre,id)} Executing symbollic factorization.")
+            logger.trace(f"{_pfx(self.pre, id)} Executing symbollic factorization.")
             self.mumps.analyse_matrix(A)
             self.fact_symb = True
         if not reuse_factorization:
-            logger.trace(f"{_pfx(self.pre,id)} Executing numeric factorization.")
+            logger.trace(f"{_pfx(self.pre, id)} Executing numeric factorization.")
             self.mumps.factorize(A)
             self.A = A
-        logger.trace(f"{_pfx(self.pre,id)} Solving linear system.")
+        logger.trace(f"{_pfx(self.pre, id)} Solving linear system.")
         x = np.zeros_like(b)
         for i in range(x.shape[1]):
-            logger.trace(f"{_pfx(self.pre,id)} Solve RHS {i}.")
+            logger.trace(f"{_pfx(self.pre, id)} Solve RHS {i}.")
             x[:, i], _ = self.mumps.solve(b[:, i])  # ty: ignore
         return x, SolveReport(solver=str(self), exit_code=0)
 
@@ -1134,19 +1156,19 @@ class SolverAASDS(Solver):
     def solve(
         self, A: csc_matrix, b, precon, id: int = -1
     ) -> tuple[np.ndarray, SolveReport]:
-        logger.info(f"{_pfx(self.pre,id)} Calling Accelerate Solver.")
+        logger.info(f"{_pfx(self.pre, id)} Calling Accelerate Solver.")
         if self.fact_symb is False:
-            logger.trace(f"{_pfx(self.pre,id)} Executing symbolic factorization.")
+            logger.trace(f"{_pfx(self.pre, id)} Executing symbolic factorization.")
             self.aasds.analyse(A)
             self.fact_symb = True
         if True:
-            logger.trace(f"{_pfx(self.pre,id)} Executing numeric factorization.")
+            logger.trace(f"{_pfx(self.pre, id)} Executing numeric factorization.")
             self.aasds.factorize(A)
             self.A = A
-        logger.trace(f"{_pfx(self.pre,id)} Solving linear system.")
+        logger.trace(f"{_pfx(self.pre, id)} Solving linear system.")
         x = np.zeros_like(b)
         for i in range(x.shape[1]):
-            logger.trace(f"{_pfx(self.pre,id)} Solve RHS {i}.")
+            logger.trace(f"{_pfx(self.pre, id)} Solve RHS {i}.")
             x[:, i], _ = self.aasds.solve(b[:, i])
 
         #
@@ -1184,27 +1206,27 @@ class SolverPardiso(Solver):
         self, A: csc_matrix, b, precon, id: int = -1
     ) -> tuple[np.ndarray, SolveReport]:
 
-        logger.info(f"{_pfx(self.pre,id)} Calling Pardiso Solver")
+        logger.info(f"{_pfx(self.pre, id)} Calling Pardiso Solver")
         if self.fact_symb is False:
-            logger.trace(f"{_pfx(self.pre,id)} Executing symbollic factorization.")
+            logger.trace(f"{_pfx(self.pre, id)} Executing symbollic factorization.")
             self.solver.symbolic(A)
             self.fact_symb = True
 
-        logger.trace(f"{_pfx(self.pre,id)} Executing numeric factorization.")
+        logger.trace(f"{_pfx(self.pre, id)} Executing numeric factorization.")
         self.solver.numeric(A)
         self.A = A
 
-        logger.trace(f"{_pfx(self.pre,id)} Solving linear system.")
+        logger.trace(f"{_pfx(self.pre, id)} Solving linear system.")
         x = np.zeros_like(b)
         for i in range(x.shape[1]):
-            logger.trace(f"{_pfx(self.pre,id)} Solving RHS {i}")
+            logger.trace(f"{_pfx(self.pre, id)} Solving RHS {i}")
             x[:, i], error = self.solver.solve(A, b[:, i])
 
         if error != 0:
-            logger.error(f"{_pfx(self.pre,id)} Terminated with error code {error}")
+            logger.error(f"{_pfx(self.pre, id)} Terminated with error code {error}")
             logger.error(self.pre + self.solver.get_error(error))
             raise SimulationError(
-                f"{_pfx(self.pre,id)} PARDISO Terminated with error code {error}"
+                f"{_pfx(self.pre, id)} PARDISO Terminated with error code {error}"
             )
 
         aux = {}
@@ -1240,16 +1262,16 @@ class SolverCuDSS(Solver):
             self._cudss.clear_memory()
 
     def solve(self, A, b, precon, id: int = -1):
-        logger.info(f"{_pfx(self.pre,id)} Calling cuDSS Solver")
+        logger.info(f"{_pfx(self.pre, id)} Calling cuDSS Solver")
 
         if self.fact_symb is False:
-            logger.trace(f"{_pfx(self.pre,id)} Starting from symbollic factorization.")
+            logger.trace(f"{_pfx(self.pre, id)} Starting from symbollic factorization.")
             x = self._cudss.symbolic(A)
             self.fact_symb = True
 
-        logger.trace(f"{_pfx(self.pre,id)} Starting from numeric factorization.")
+        logger.trace(f"{_pfx(self.pre, id)} Starting from numeric factorization.")
         x = self._cudss.numeric(A)
-        logger.trace(f"{_pfx(self.pre,id)} Solving linear system.")
+        logger.trace(f"{_pfx(self.pre, id)} Solving linear system.")
         x = np.zeros_like(b)
         for i in range(b.shape[1]):
             x[:, i] = self._cudss.solve(b[:, i])
@@ -1395,7 +1417,7 @@ class SmartARPACK_BMA(EigSolver):
 
         for i, q in enumerate(qs):
             sigma = sign * ((q * target_k0) ** 2)
-            logger.trace(f" Searching around {q*target_k0:.2f} rad/m")
+            logger.trace(f" Searching around {q * target_k0:.2f} rad/m")
             eigen_values, eigen_modes = eigs(A, k=1, M=B, sigma=sigma, which=which)
 
             energy = np.mean(np.abs(eigen_modes.flatten()) ** 2)
@@ -1404,7 +1426,7 @@ class SmartARPACK_BMA(EigSolver):
             total_energy = np.real(psi.conj() @ (B @ psi))
             ratio = abs(curl_energy / (total_energy + 1e-15))
             logger.trace(
-                f"Ratio = {ratio:.6f}, Energy = {energy:.4f}, value = {(sign*eigen_values[0])**0.5}, curl_energy = {curl_energy}, total_energy = {total_energy}"
+                f"Ratio = {ratio:.6f}, Energy = {energy:.4f}, value = {(sign * eigen_values[0]) ** 0.5}, curl_energy = {curl_energy}, total_energy = {total_energy}"
             )
 
             if ratio > ratio_limit and energy > self.energy_limit:
@@ -1417,7 +1439,7 @@ class SmartARPACK_BMA(EigSolver):
                 continue
 
             sigma = sign * ((target_k0 / q) ** 2)
-            logger.trace(f" Searching around {target_k0/q:.2f} rad/m")
+            logger.trace(f" Searching around {target_k0 / q:.2f} rad/m")
             eigen_values, eigen_modes = eigs(A, k=1, M=B, sigma=sigma, which=which)
             energy = np.mean(np.abs(eigen_modes.flatten()) ** 2)
             psi = eigen_modes[:, 0]
@@ -1425,7 +1447,7 @@ class SmartARPACK_BMA(EigSolver):
             total_energy = np.real(psi.conj() @ B @ psi)
             ratio = abs(curl_energy / (total_energy + 1e-15))
             logger.trace(
-                f"Ratio = {ratio:.6f}, Energy = {energy:.4f}, value = {(sign*eigen_values[0])**0.5}, curl_energy = {curl_energy}, total_energy = {total_energy}"
+                f"Ratio = {ratio:.6f}, Energy = {energy:.4f}, value = {(sign * eigen_values[0]) ** 0.5}, curl_energy = {curl_energy}, total_energy = {total_energy}"
             )
 
             if ratio > ratio_limit and energy > self.energy_limit:
@@ -1965,11 +1987,11 @@ class SolveRoutine:
         nnz = Asel.nnz
 
         logger.debug(
-            f"{_pfx(self.pre,id)} Removed {NF-NS} prescribed DOFs ({NS:,} left, {nnz:,}≠0)"
+            f"{_pfx(self.pre, id)} Removed {NF - NS} prescribed DOFs ({NS:,} left, {nnz:,}≠0)"
         )
 
         if solver.real_only:
-            logger.debug(f"{_pfx(self.pre,id)} Converting to real matrix")
+            logger.debug(f"{_pfx(self.pre, id)} Converting to real matrix")
             Asel, bsel = complex_to_real_block(Asel, bsel)
 
         # SORT
@@ -1993,9 +2015,9 @@ class SolveRoutine:
 
         end = time.time()
         simtime = end - start
-        logger.info(f"{_pfx(self.pre,id)} Elapsed time taken: {simtime:.3f} seconds")
+        logger.info(f"{_pfx(self.pre, id)} Elapsed time taken: {simtime:.3f} seconds")
         logger.debug(
-            f"{_pfx(self.pre,id)} O(N^2) performance = {(NS**(2))/((end-start+1e-6)*1e6):.1f} MDoF/s"
+            f"{_pfx(self.pre, id)} O(N^2) performance = {(NS ** (2)) / ((end - start + 1e-6) * 1e6):.1f} MDoF/s"
         )
 
         if self.use_sorter and solver.req_sorter:
@@ -2004,14 +2026,14 @@ class SolveRoutine:
             x = x_solved
 
         if solver.real_only:
-            logger.debug(f"{_pfx(self.pre,id)} Converting back to complex matrix")
+            logger.debug(f"{_pfx(self.pre, id)} Converting back to complex matrix")
             x = real_to_complex_block(x)
 
         solution = np.zeros((NF, NB), dtype=A.dtype)
 
         solution[solve_ids, :] = x
 
-        logger.debug(f"{_pfx(self.pre,id)} Solver complete!")
+        logger.debug(f"{_pfx(self.pre, id)} Solver complete!")
         report.jobid = id
         report.sorter = str(sorter)
         report.simtime = simtime
@@ -2059,7 +2081,7 @@ class SolveRoutine:
         NF = A.shape[0]
         NS = solve_ids.shape[0]
 
-        logger.debug(self.pre + f" Removing {NF-NS} prescribed DOFs ({NS} left)")
+        logger.debug(self.pre + f" Removing {NF - NS} prescribed DOFs ({NS} left)")
 
         Asel = A[np.ix_(solve_ids, solve_ids)]
         Bsel = B[np.ix_(solve_ids, solve_ids)]
@@ -2116,7 +2138,7 @@ class SolveRoutine:
         NF = A.shape[0]
         NS = solve_ids.shape[0]
 
-        logger.debug(self.pre + f" Removing {NF-NS} prescribed DOFs ({NS} left)")
+        logger.debug(self.pre + f" Removing {NF - NS} prescribed DOFs ({NS} left)")
 
         Asel = A[np.ix_(solve_ids, solve_ids)]
         Bsel = B[np.ix_(solve_ids, solve_ids)]
@@ -2178,6 +2200,8 @@ class AutomaticRoutine(SolveRoutine):
                 return self._try_solver(EMSolver.BICGSTAB)
 
         if N < 10_000:
+            if matrix_type is MatrixType.SPD and _SKSP_AVAILABLE:
+                return self._try_solver(EMSolver.CHOLMOD)
             return self._try_solver(EMSolver.SUPERLU)
         if self.parallel == "SI":
             if matrix_type is MatrixType.SPD and _SKSP_AVAILABLE:

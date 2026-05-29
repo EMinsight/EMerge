@@ -23,7 +23,7 @@ from ...coord import Line
 from ...geometry import GeoSurface, GeoVolume
 from ...elements.femdata import FEMBasis
 from ...elements.nedelec2 import Nedelec2
-from ...solver import DEFAULT_ROUTINE, SolveRoutine, MatrixType
+from ...solver import DEFAULT_ROUTINE, SolveRoutine
 from ...system import called_from_main_function
 from ...selection import FaceSelection
 from ...settings import Settings
@@ -127,7 +127,7 @@ def _dimstring(data: list[float] | np.ndarray) -> str:
     Returns:
         str: The formatted string
     """
-    return "(" + ", ".join([f"{x*1000:.1f}mm" for x in data]) + ")"
+    return "(" + ", ".join([f"{x * 1000:.1f}mm" for x in data]) + ")"
 
 
 def _format_freq(freq: float) -> str:
@@ -352,7 +352,9 @@ class Microwave3D:
             None
         )  # The boundary condition set class.
         self.basis: Nedelec2 | None = None  # The Basis function class
+
         self.solveroutine: SolveRoutine = DEFAULT_ROUTINE
+
         self.cache_matrices: bool = True
 
         ## States
@@ -441,7 +443,7 @@ class Microwave3D:
         self.mesher.min_size = 0.1 * self.mesher.max_size
 
         logger.debug(
-            f"Setting global mesh size range to: {self.mesher.min_size*1000:.3f}mm - {self.mesher.max_size*1000:.3f}mm"
+            f"Setting global mesh size range to: {self.mesher.min_size * 1000:.3f}mm - {self.mesher.max_size * 1000:.3f}mm"
         )
 
     set_frequencies = set_frequency
@@ -764,7 +766,6 @@ class Microwave3D:
             freq (float): The simulation frequency
         """
         for bc in self.bc.oftype(ModalPort):
-
             # If there is a port mode (at least one) and the port does not have mixed materials. No new analysis is needed
             if not bc.mixed_materials and bc.initialized:
                 continue
@@ -822,16 +823,14 @@ class Microwave3D:
         matassign = -1 * np.ones((self.mesh.n_tets,), dtype=np.int64)
 
         for volume in sorted(volumes, key=lambda x: x._priority):
-
             for dimtag in volume.dimtags:
-
                 tet_ids = self.mesh.get_tetrahedra(dimtag[1])
 
                 matassign[tet_ids] = volume.material._hash_key
 
         if np.any(matassign == -1):
             raise SimulationError(
-                f"Tetrahedra detected with unassigned materials: {np.argwhere(matassign==-1)}"
+                f"Tetrahedra detected with unassigned materials: {np.argwhere(matassign == -1)}"
             )
 
         for mat in materials:
@@ -966,7 +965,7 @@ class Microwave3D:
         )
 
         logger.debug(f"Total of {Amatrix.shape[0]} Degrees of freedom.")
-        logger.debug(f"Applied frequency: {freq/1e9:.2f}GHz")
+        logger.debug(f"Applied frequency: {freq / 1e9:.2f}GHz")
         logger.debug(f"K0 = {k0} rad/m")
 
         # neff is the effective index for the port mode defined as kz = k0*neff
@@ -1100,7 +1099,7 @@ class Microwave3D:
                     line_centers = np.array(line.cmid)
 
                     logger.debug(
-                        f"Integrating portmode from {line_centers[:,0]} to {line_centers[:,-1]}"
+                        f"Integrating portmode from {line_centers[:, 0]} to {line_centers[:, -1]}"
                     )
                     voltage = line.line_integral(portfE)
 
@@ -1161,7 +1160,7 @@ class Microwave3D:
         logger.info(f"Total of {port.nmodes} found")
 
         T2 = time.time()
-        logger.info(f"Elapsed time = {(T2-T0):.2f} seconds.")
+        logger.info(f"Elapsed time = {(T2 - T0):.2f} seconds.")
         return None
 
     def run_sweep(
@@ -1324,7 +1323,7 @@ class Microwave3D:
         freq_groups = self._get_frequency_groups(frequency_groups)
 
         for i, group in enumerate(freq_groups):
-            group_GHz = [f"{f/1e9:.3f}GHz" for f in group]
+            group_GHz = [f"{f / 1e9:.3f}GHz" for f in group]
             logger.trace(f"Frequency group ({i}): {group_GHz}")
 
         # I am not sure if this is supposed to be there
@@ -1603,7 +1602,7 @@ class Microwave3D:
                     or np.any(np.abs(Smat.flatten()) > 1.0)
                 ):
                     newF.append((f1 * f2) ** 0.5)
-                    logger.debug(f"  Adding {newF[-1]/1e9} GHz as new sample point.")
+                    logger.debug(f"  Adding {newF[-1] / 1e9} GHz as new sample point.")
 
             # if len(newF) > n_max_new:
             #     newF = newF[0:n_max_new]
@@ -1743,7 +1742,7 @@ class Microwave3D:
 
         freq_groups = self._get_frequency_groups(frequency_groups)
         for i, group in enumerate(freq_groups):
-            group_GHz = [f"{f/1e9:.3f}GHz" for f in group]
+            group_GHz = [f"{f / 1e9:.3f}GHz" for f in group]
             logger.trace(f"Frequency group ({i}): {group_GHz}")
 
         # I am not sure if this is supposed to be there
@@ -1965,7 +1964,7 @@ class Microwave3D:
 
         self._compute_modes(frequency)
 
-        logger.debug(f"Simulation frequency = {frequency/1e9:.3f} GHz")
+        logger.debug(f"Simulation frequency = {frequency / 1e9:.3f} GHz")
 
         job, mats = self.assembler.assemble_freq_matrix(
             self.basis,
@@ -2064,7 +2063,6 @@ class Microwave3D:
         nmodes_found = eigen_values.shape[0]
 
         for i in range(nmodes_found):
-
             eig_k0 = np.sqrt(eigen_values[i])
             if eig_k0 < k0_limit:
                 logger.debug(f"Ignoring mode due to low k0: {eig_k0} < {k0_limit}")
@@ -2072,7 +2070,7 @@ class Microwave3D:
             eig_freq = eig_k0 * 299792458 / (2 * np.pi)
             Q = 0.5 * eig_freq.real / eig_freq.imag
             logger.debug(
-                f"Found k0={eig_k0:.2f}, f0={eig_freq/1e9:.2f} GHz (Q = {Q:.1f})"
+                f"Found k0={eig_k0:.2f}, f0={eig_freq / 1e9:.2f} GHz (Q = {Q:.1f})"
             )
             Emode = eigen_modes[:, i]
 
@@ -2153,7 +2151,7 @@ class Microwave3D:
             fielddata._dur = np.squeeze(ur_scal)
             fielddata._dsig = np.squeeze(cond_scal)
 
-            logger.info(f"Post Processing simulation frequency = {freq/1e9:.3f} GHz")
+            logger.info(f"Post Processing simulation frequency = {freq / 1e9:.3f} GHz")
 
             # Recording port information
             for active_port, smat_index_j, mode_nr_j in self.bc.iter_port_modes():
@@ -2236,7 +2234,7 @@ class Microwave3D:
                     scalardata.write_S(smat_index_i, smat_index_j, Amp_pas / Amp_act)
                     if abs(Amp_pas / Amp_act) > 1.0:
                         logger.debug(
-                            f"S-parameter ({smat_index_i},{smat_index_j}) > 1.0 detected: {np.abs(Amp_pas/Amp_act)}"
+                            f"S-parameter ({smat_index_i},{smat_index_j}) > 1.0 detected: {np.abs(Amp_pas / Amp_act)}"
                         )
                         not_conserved = True
                         conserve_margin = abs(Amp_pas / Amp_act) - 1.0
@@ -2268,7 +2266,7 @@ class Microwave3D:
 
         if not_conserved and conserve_margin > 0.01:
             DEBUG_COLLECTOR.add_report(
-                f"S-parameters with an amplitude greater than 1.0 detected. ({20*np.log10(conserve_margin):.2f}dB error. This could be due to a ModalPort with the wrong mode type.\n"
+                f"S-parameters with an amplitude greater than 1.0 detected. ({20 * np.log10(conserve_margin):.2f}dB error. This could be due to a ModalPort with the wrong mode type.\n"
                 + "Specify the type of mode (TE/TM/TEM) in the constructor using ModalPort(..., modetype='TE') for example."
             )
         # if not_conserved and conserve_margin < 0.001:
@@ -2276,7 +2274,7 @@ class Microwave3D:
         #                                'This is compatible with the numerical accuracy of EMerge.')
         logger.info("Simulation Complete!")
         self._simend = time.time()
-        logger.info(f"Elapsed time = {(self._simend-self._simstart):.2f} seconds.")
+        logger.info(f"Elapsed time = {(self._simend - self._simstart):.2f} seconds.")
         self._state.set_modified()
 
     def _post_process_scatter(
@@ -2340,7 +2338,7 @@ class Microwave3D:
             fielddata._fields = job._solutions_dict
             fielddata.basis = self.basis
 
-            logger.info(f"Post Processing simulation frequency = {freq/1e9:.3f} GHz")
+            logger.info(f"Post Processing simulation frequency = {freq / 1e9:.3f} GHz")
 
             # Recording port information
             i = 1
@@ -2353,7 +2351,7 @@ class Microwave3D:
 
         logger.info("Simulation Complete!")
         self._simend = time.time()
-        logger.info(f"Elapsed time = {(self._simend-self._simstart):.2f} seconds.")
+        logger.info(f"Elapsed time = {(self._simend - self._simstart):.2f} seconds.")
         self._state.set_modified()
 
     def _compute_s_data(
@@ -2754,16 +2752,14 @@ class MW3D:
         matassign = -1 * np.ones((self.mesh.n_tets,), dtype=np.int64)
 
         for volume in sorted(volumes, key=lambda x: x._priority):
-
             for dimtag in volume.dimtags:
-
                 tet_ids = self.mesh.get_tetrahedra(dimtag[1])
 
                 matassign[tet_ids] = volume.material._hash_key
 
         if np.any(matassign == -1):
             raise SimulationError(
-                f"Tetrahedra detected with unassigned materials: {np.argwhere(matassign==-1)}"
+                f"Tetrahedra detected with unassigned materials: {np.argwhere(matassign == -1)}"
             )
         for mat in materials:
             ids = np.argwhere(matassign == mat._hash_key).flatten()
