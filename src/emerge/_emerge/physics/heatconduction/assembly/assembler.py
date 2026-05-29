@@ -73,7 +73,19 @@ class Assembler:
         T_initial_K: float | np.ndarray,
         transient: bool = False,
     ) -> tuple[SimJob, tuple[np.ndarray,]]:
+        """Main ssembly routine of the heat conduction matrices
 
+
+        It assembles both the stiffness matrix for stationary problems
+        and the mass matrix for transient (optional if transiet = True)
+        Args:
+            field (Legrange2): The field object
+            materials (list[Material]): List of all the assigned materials
+            bcs (list[BoundaryCondition]): List of boundary conditions
+            T_initial_K (float, np.ndarray): The initial temperature as scalar or array (previous solution)
+            transient (bool): If a transient analysis is performed.
+
+        """
         from .grad import tet_stiffness_matrix, tet_mass_matrix
         from .heatflux import assemble_surface_flux, assemble_volume_source
         from .convection import assemble_robin_bc, assemble_radiation_bc
@@ -103,7 +115,9 @@ class Assembler:
 
         NF = field.n_field
 
-        # --- Matrix Assembly
+        ############################################################
+        #                     MATRIX ASSEMBLY                      #
+        ############################################################
 
         # --- Stiffness Matrix
         Amat_coo, cscmap = tet_stiffness_matrix(field, cond_thermal)

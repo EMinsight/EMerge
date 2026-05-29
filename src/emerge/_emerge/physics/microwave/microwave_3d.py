@@ -24,7 +24,7 @@ from ...geometry import GeoSurface, GeoVolume
 from ...elements.femdata import FEMBasis
 from ...elements.nedelec2 import Nedelec2
 from ...solver import DEFAULT_ROUTINE, SolveRoutine
-from ...system import called_from_main_function
+from ...system import _called_from_main_function
 from ...selection import FaceSelection
 from ...settings import Settings
 from ...simstate import SimState
@@ -1418,7 +1418,7 @@ class Microwave3D:
 
         else:
             # Check for entry point protection
-            if not called_from_main_function():
+            if not _called_from_main_function():
                 raise SimulationError(
                     "Multiprocess support must be launched from your "
                     "if __name__ == '__main__' guard in the top-level script."
@@ -1823,7 +1823,7 @@ class Microwave3D:
 
         else:
             # Check for entry point protection
-            if not called_from_main_function():
+            if not _called_from_main_function():
                 raise SimulationError(
                     "Multiprocess support must be launched from your "
                     "if __name__ == '__main__' guard in the top-level script."

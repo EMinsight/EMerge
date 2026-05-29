@@ -16,12 +16,13 @@
 # <https://www.gnu.org/licenses/>.
 
 
-# Last Cleanup: 2025-01-01
+# Last Cleanup: 2025-05-29
 import sys
 import os
 import ast
 
-def called_from_main_function() -> bool:
+
+def _called_from_main_function() -> bool:
     """
     Check whether the entry-point script contains
     `if __name__ == "__main__":`

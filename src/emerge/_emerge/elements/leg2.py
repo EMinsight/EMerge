@@ -15,7 +15,7 @@
 # along with this program; if not, see
 # <https://www.gnu.org/licenses/>.
 
-# Last Cleanup: 2025-01-01
+# Last Cleanup: 2025-05-29
 from __future__ import annotations
 import numpy as np
 from ..mesh3d import Mesh3D
@@ -24,9 +24,7 @@ from emsutil import Saveable
 from loguru import logger
 from ..compiled import MATHLIB
 
-############### Nedelec2 Class
-
-USE_NUMBA = False
+############### Legrange 2 Class
 
 
 class DoFSplitException(Exception):
@@ -34,6 +32,18 @@ class DoFSplitException(Exception):
 
 
 class Legrange2(FEMBasis, Saveable):
+    """Implementation of the Legrange order 2 basis functions.
+
+    Basis functions are numbered with the node DoF first and then the edge DoF
+
+    There are 4 node DoF per tetrahedron and 6 edge DoF.
+
+    The total system is also assembled in order: all nodes first then al edges
+
+    Args:
+        FEMBasis (_type_): _description_
+        Saveable (_type_): _description_
+    """
 
     def __init__(self, mesh: Mesh3D):
         super().__init__(mesh)
@@ -87,7 +97,14 @@ class Legrange2(FEMBasis, Saveable):
             self._partition_dof_face(tag)
 
     def _partition_dof_face(self, tag: int) -> None:
-        """Splits DOFs on a specific face tag between two volumes."""
+        """Splits DOFs on a specific face tag between two volumes.
+
+        Splitting means that one domain gets one set of degrees of freedom
+        and the other a copied set of degrees of freedom.
+
+        the mapping between them is stored in self._dof_mapping
+
+        """
 
         tris = self.mesh.get_triangles([tag])
         linked_tets = self.mesh.tri_to_tet[:, tris]
