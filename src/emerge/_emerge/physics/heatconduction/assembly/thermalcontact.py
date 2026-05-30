@@ -17,45 +17,9 @@
 
 import numpy as np
 from numba import njit, f8, i8, types, prange
-from .heatflux import TRI_DPTS
 from ....elements.leg2 import Legrange2
 from ....mth.optimized import calc_area
-
-
-@njit(f8[:, :](), cache=True, nogil=True)
-def _tri_surface_mass_element():
-    weights = TRI_DPTS[0, :]
-    nq = weights.shape[0]
-    edge_vertex_1 = np.array([0, 1, 0])
-    edge_vertex_2 = np.array([1, 2, 2])
-
-    M = np.zeros((6, 6), dtype=np.float64)
-
-    for iq in range(nq):
-        L1 = TRI_DPTS[1, iq]
-        L2 = TRI_DPTS[2, iq]
-        L3 = TRI_DPTS[3, iq]
-        w = weights[iq]
-
-        Ls = np.empty(3, dtype=np.float64)
-        Ls[0] = L1
-        Ls[1] = L2
-        Ls[2] = L3
-
-        N = np.empty(6, dtype=np.float64)
-
-        for iv in range(3):
-            N[iv] = Ls[iv] * (2.0 * Ls[iv] - 1.0)
-
-        for ie in range(3):
-            li = Ls[edge_vertex_1[ie]]
-            lj = Ls[edge_vertex_2[ie]]
-            N[3 + ie] = 4.0 * li * lj
-
-        for i in range(6):
-            for j in range(6):
-                M[i, j] += w * N[i] * N[j]
-    return M
+from .convection import _tri_mass_stencil
 
 
 @njit(
@@ -97,7 +61,7 @@ def _thermal_contact_builder(
     rows = np.empty(nnz, dtype=np.int64)
     cols = np.empty(nnz, dtype=np.int64)
 
-    M = _tri_surface_mass_element()
+    M = _tri_mass_stencil()
 
     for idx in prange(n_triangles):
         p = idx * 144

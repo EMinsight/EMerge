@@ -15,10 +15,6 @@
 # along with this program; if not, see
 # <https://www.gnu.org/licenses/>.
 
-# Minor restrictions to Copyright claims are added in specific functions:
-# - run_steady_state_nl
-# - _anderson_update
-
 # Last Cleanup: 2026-03-04
 from ...mesher import Mesher
 from ...mesh3d import Mesh3D
@@ -26,7 +22,6 @@ from ...elements.leg2 import Legrange2
 from ...solver import DEFAULT_ROUTINE, SolveRoutine, MatrixType, SolveReport
 from ...settings import Settings
 from ...simstate import SimState
-from ...logsettings import DEBUG_COLLECTOR
 
 from .heatconduction_bc import HCBoundaryConditionSet
 from .heatconduction_data import HCData
@@ -420,6 +415,7 @@ class HeatConduction3D(GenericPhysics3D):
         nonlinear_tol: float = 1e-6,
         anderson_m: int = 5,
         anderson_beta: float = 1.0,
+        anderson_reg: float = 0.0,
     ):
         """Run a non linear steady state thermal analysis.
 
@@ -530,7 +526,7 @@ class HeatConduction3D(GenericPhysics3D):
             # Anderson acceleration or simple update
             if len(T_history) >= 2:
                 T_current = self._anderson_update(
-                    T_history, R_history, anderson_m, anderson_beta
+                    T_history, R_history, anderson_m, anderson_reg, anderson_beta
                 )
             else:
                 T_current = T_new
@@ -560,22 +556,28 @@ class HeatConduction3D(GenericPhysics3D):
         T_history: list[np.ndarray],
         R_history: list[np.ndarray],
         m: int,
-        beta: float = 0.5,
+        reg: float = 0.0,
+        beta: float = 1.0,
     ) -> np.ndarray:
-        """Anderson mixing acceleration for fixed-point iteration.
+        """Anderson acceleration for a good next guess estimate based on prior guesses.
+
+        Algorithm based on the code by Josh Nguyen:
+
+         - https://github.com/joshnguyen99/anderson_acceleration
+        Based on the paper:
+         - T. D. Nguyen, A. R. Balef, C. T. Dinh, N. H. Tran, D. T. Ngo, T. A. Le, and P. L. Vo. "Accelerating federated edge learning," in IEEE Communications Letters, 25(10):3282–3286, 2021.
+        Blog:
+         - https://joshnguyen.net/posts/anderson-acceleration
 
         Args:
-            T_history: The Temperature solution history
-            R_history: The Residual history
-            m: The window size of the anderson acceleration
-            beta: Damping parameter (0 < beta <= 1), lower = more stable
-
-        Copyright Clarification:
-        The logic for this Anderson Update algorithm is generated with the help of Claude Code.
-        Later modifications are made to include the dampening factor beta for better stabilization.
+            T_history (list[np.ndarray]): Temperature Histories Tn
+            R_history (list[np.ndarray]): Residual history Tn-f(Tn-1)
+            m (int): Window size
+            reg (float, optional): Regularization parameter. Defaults to 0.0.
+            beta (float, optional): Mixing parameter. Defaults to 0.5.
 
         Returns:
-            The new temperature guess
+            np.ndarray: _description_
         """
         n_temp_solutions = len(T_history)
         avg_win_length = min(m, n_temp_solutions - 1)
@@ -583,24 +585,31 @@ class HeatConduction3D(GenericPhysics3D):
         if avg_win_length == 0:
             return (1 - beta) * T_history[-1] + beta * (T_history[-1] + R_history[-1])
 
-        residual_stack = np.column_stack(
-            [
-                R_history[-avg_win_length + i + 1] - R_history[-avg_win_length + i]
-                for i in range(avg_win_length)
-            ]
-        )
+        Ft = np.stack(R_history[-avg_win_length - 1 :])
 
-        alpha, *_ = np.linalg.lstsq(residual_stack, R_history[-1], rcond=None)
+        RR = Ft @ Ft.T
+        RR += reg * np.eye(RR.shape[0])
 
-        # Damped Anderson update
-        T_new = T_history[-1] + beta * R_history[-1]
-        for i in range(avg_win_length):
-            solution_id = i - avg_win_length
-            dT = T_history[solution_id + 1] - T_history[solution_id]
-            dRi = R_history[solution_id + 1] - R_history[solution_id]
-            T_new -= alpha[i] * (dT + beta * dRi)
+        try:
+            RR_inv = np.linalg.inv(RR)
+            alpha = np.sum(RR_inv, 1)
+        except np.linalg.LinAlgError:
+            alpha = np.linalg.lstsq(RR, np.ones(Ft.shape[0]), -1)[0]
 
-        return T_new
+        alpha = alpha / alpha.sum() + 1e-12
+
+        if len(T_history) <= 0:
+            T_acc = T_history[-1]
+        else:
+            T_acc = 0
+            for i in range(len(alpha)):
+                alpha_i = alpha[i]
+                x_i = T_history[-avg_win_length - 1 + i]
+                Gx_i = x_i + Ft[i]
+
+                T_acc += (1 - beta) * alpha_i * x_i
+                T_acc += beta * alpha_i * Gx_i
+        return T_acc
 
     def _post_process(self, job: SimJob, materialset: list[tuple[np.ndarray,]]):
         """Post Processes the heat transfer solution data

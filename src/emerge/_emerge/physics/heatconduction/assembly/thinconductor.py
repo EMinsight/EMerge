@@ -18,58 +18,147 @@
 import numpy as np
 from numba import njit, f8, i8, types, prange
 from .heatflux import TRI_DPTS
+from ....mth.optimized import cross
 
 
-@njit(f8[:, :](f8, f8, f8, f8), cache=True, nogil=True)
-def _K_tri(inv_det: float, g11: float, g12: float, g22: float):
+@njit(cache=True, fastmath=True, nogil=True)
+def optim_matmul(B: np.ndarray, data: np.ndarray):
+    dnew = np.zeros_like(data)
+    dnew[0, :] = B[0, 0] * data[0, :] + B[0, 1] * data[1, :] + B[0, 2] * data[2, :]
+    dnew[1, :] = B[1, 0] * data[0, :] + B[1, 1] * data[1, :] + B[1, 2] * data[2, :]
+    dnew[2, :] = B[2, 0] * data[0, :] + B[2, 1] * data[1, :] + B[2, 2] * data[2, :]
+    return dnew
 
-    weights = TRI_DPTS[0, :]
-    nq = weights.shape[0]
 
-    gi11 = g22 * inv_det
-    gi12 = -g12 * inv_det
-    gi22 = g11 * inv_det
+@njit(cache=True, nogil=True)
+def normalize(a: np.ndarray):
+    return a / ((a[0] ** 2 + a[1] ** 2 + a[2] ** 2) ** 0.5)
 
-    dLdxi = np.array([-1.0, 1.0, 0.0])
-    dLdeta = np.array([-1.0, 0.0, 1.0])
-    edge_vertex_1 = np.array([0, 1, 0])
-    edge_vertex_2 = np.array([1, 2, 2])
 
-    K_local = np.zeros((6, 6), dtype=np.float64)
-    for iq in range(nq):
-        L1 = TRI_DPTS[1, iq]
-        L2 = TRI_DPTS[2, iq]
-        L3 = TRI_DPTS[3, iq]
-        w = weights[iq]
+@njit(types.Tuple((f8[:], f8[:], f8[:], f8))(f8[:], f8[:]), cache=True, nogil=True)
+def tri_coefficients(vxs, vys):
 
-        Ls = np.empty(3, dtype=np.float64)
-        Ls[0] = L1
-        Ls[1] = L2
-        Ls[2] = L3
+    x1, x2, x3 = vxs
+    y1, y2, y3 = vys
 
-        dNdxi = np.empty(6, dtype=np.float64)
-        dNdeta = np.empty(6, dtype=np.float64)
+    a1 = x2 * y3 - y2 * x3
+    a2 = x3 * y1 - y3 * x1
+    a3 = x1 * y2 - y1 * x2
+    b1 = y2 - y3
+    b2 = y3 - y1
+    b3 = y1 - y2
+    c1 = x3 - x2
+    c2 = x1 - x3
+    c3 = x2 - x1
 
-        for iv in range(3):
-            q = 4.0 * Ls[iv] - 1.0
-            dNdxi[iv] = q * dLdxi[iv]
-            dNdeta[iv] = q * dLdeta[iv]
+    sA = 0.5 * ((x1 - x3) * (y2 - y1) - (x1 - x2) * (y3 - y1))
+    sign = np.sign(sA)
+    A = np.abs(sA)
+    As = np.array([a1, a2, a3]) * sign
+    Bs = np.array([b1, b2, b3]) * sign
+    Cs = np.array([c1, c2, c3]) * sign
+    return As, Bs, Cs, A
 
-        for ie in range(3):
-            ei = edge_vertex_1[ie]
-            ej = edge_vertex_2[ie]
-            dNdxi[3 + ie] = 4.0 * (Ls[ej] * dLdxi[ei] + Ls[ei] * dLdxi[ej])
-            dNdeta[3 + ie] = 4.0 * (Ls[ej] * dLdeta[ei] + Ls[ei] * dLdeta[ej])
 
-        for i in range(6):
-            for j in range(6):
-                K_local[i, j] += w * (
-                    dNdxi[i] * gi11 * dNdxi[j]
-                    + dNdxi[i] * gi12 * dNdeta[j]
-                    + dNdeta[i] * gi12 * dNdxi[j]
-                    + dNdeta[i] * gi22 * dNdeta[j]
-                )
-    return K_local
+# --- Gradients ∇N
+@njit(f8[:, :](f8[:], f8[:, :]), cache=True, nogil=True)
+def grad_n1(coeff, coords):
+    a, b, c = coeff
+    xs = coords[0, :]
+    ys = coords[1, :]
+
+    out = np.empty((3, xs.shape[0]), dtype=np.float64)
+    q = 4 * (b * xs + c * ys) + (4 * a - 1)
+    out[0, :] = q * b
+    out[1, :] = q * c
+    return out
+
+
+@njit(f8[:, :](f8[:, :], f8[:, :]), cache=True, nogil=True)
+def grad_n2(coeff, coord):
+    a1, b1, c1 = coeff[:, 0]
+    a2, b2, c2 = coeff[:, 1]
+
+    xs = coord[0, :]
+    ys = coord[1, :]
+
+    out = np.empty((3, xs.shape[0]), dtype=np.float64)
+    L1 = 4 * (a1 + b1 * xs + c1 * ys)
+    L2 = 4 * (a2 + b2 * xs + c2 * ys)
+
+    out[0, :] = L2 * b1 + L1 * b2
+    out[1, :] = L2 * c1 + L1 * c2
+
+    return out
+
+
+@njit(f8[:, :](f8[:, :], f8), cache=True, nogil=True)
+def leg2_tri_stiff_triangle(glob_vertices: np.ndarray, kappa_t) -> np.ndarray:
+    """Assembly of the legrange 2 stiffness terms for thin conductors."""
+    Kmat = np.empty((6, 6), dtype=np.float64)
+
+    # Compute local coordinate system for the triangles
+    origin = glob_vertices[:, 0]
+    v2 = glob_vertices[:, 1]
+    v3 = glob_vertices[:, 2]
+
+    e1 = v2 - origin
+    e2 = v3 - origin
+    zhat = normalize(cross(e1, e2))
+    xhat = normalize(e1)
+    yhat = normalize(cross(zhat, xhat))
+
+    basis = np.zeros((3, 3), dtype=np.float64)
+    basis[0, :] = xhat
+    basis[1, :] = yhat
+    basis[2, :] = zhat
+
+    lcs_vertices = optim_matmul(basis, glob_vertices - origin[:, np.newaxis])
+
+    xs = lcs_vertices[0, :]
+    ys = lcs_vertices[1, :]
+
+    # Compute the barycentric coordinate coefficients and area
+    aas, bbs, ccs, A = tri_coefficients(xs, ys)
+
+    coeff = np.empty((3, 3), dtype=np.float64)
+    coeff[0, :] = aas / (2 * A)
+    coeff[1, :] = bbs / (2 * A)
+    coeff[2, :] = ccs / (2 * A)
+
+    WEIGHTS = TRI_DPTS[0, :]
+    DPTS1 = TRI_DPTS[1, :]
+    DPTS2 = TRI_DPTS[2, :]
+    DPTS3 = TRI_DPTS[3, :]
+
+    # Compute all Gauss-Quadrature points
+    xs_gq = xs[0] * DPTS1 + xs[1] * DPTS2 + xs[2] * DPTS3
+    ys_gq = ys[0] * DPTS1 + ys[1] * DPTS2 + ys[2] * DPTS3
+
+    coords = np.empty((2, xs_gq.shape[0]), dtype=np.float64)
+    coords[0, :] = xs_gq
+    coords[1, :] = ys_gq
+
+    local_edge_map = np.array([[0, 1, 0], [1, 2, 2]], dtype=np.int64)
+    for iv1 in range(6):
+        if iv1 < 3:
+            val_gn1 = grad_n1(coeff[:, iv1], coords)
+        else:
+            ie1 = local_edge_map[:, iv1 - 3]
+            val_gn1 = grad_n2(coeff[:, ie1], coords)
+
+        for iv2 in range(6):
+            if iv2 < 3:
+                val_gn2 = grad_n1(coeff[:, iv2], coords)
+            else:
+                ie2 = local_edge_map[:, iv2 - 3]
+                val_gn2 = grad_n2(coeff[:, ie2], coords)
+
+            gN1_dot_gN2 = val_gn1[0, :] * val_gn2[0, :] + val_gn1[1, :] * val_gn2[1, :]
+            Kmat[iv1, iv2] = np.sum(gN1_dot_gN2 * WEIGHTS)
+
+    Kmat = Kmat * kappa_t * 2.0 * A
+    return Kmat
 
 
 @njit(
@@ -78,7 +167,7 @@ def _K_tri(inv_det: float, g11: float, g12: float, g22: float):
     nogil=True,
     parallel=True,
 )
-def _conductive_sheet_builder(nodes, tris, tri_to_field, tri_ids_2d, kappa_t):
+def leg2_tri_stiff(nodes, tris, tri_to_field, tri_ids_2d, kappa_t):
     n_sel = tri_ids_2d.shape[1]
     nnz = n_sel * 36  # 6x6 per face
 
@@ -90,53 +179,15 @@ def _conductive_sheet_builder(nodes, tris, tri_to_field, tri_ids_2d, kappa_t):
         p = idx * 36
         itri = tri_ids_2d[0, idx]
 
-        # Triangle vertex coordinates
-        v0 = tris[0, itri]
-        v1 = tris[1, itri]
-        v2 = tris[2, itri]
-
-        x0 = nodes[0, v0]
-        y0 = nodes[1, v0]
-        z0 = nodes[2, v0]
-        x1 = nodes[0, v1]
-        y1 = nodes[1, v1]
-        z1 = nodes[2, v1]
-        x2 = nodes[0, v2]
-        y2 = nodes[1, v2]
-        z2 = nodes[2, v2]
-
-        # Edge vectors
-        e1x = x1 - x0
-        e1y = y1 - y0
-        e1z = z1 - z0
-        e2x = x2 - x0
-        e2y = y2 - y0
-        e2z = z2 - z0
-
-        nx = e1y * e2z - e1z * e2y
-        ny = e1z * e2x - e1x * e2z
-        nz = e1x * e2y - e1y * e2x
-        area2 = np.sqrt(nx * nx + ny * ny + nz * nz)
-        area = 0.5 * area2
-
-        g11 = e1x * e1x + e1y * e1y + e1z * e1z
-        g12 = e1x * e2x + e1y * e2y + e1z * e2z
-        g22 = e2x * e2x + e2y * e2y + e2z * e2z
-        det_g = g11 * g22 - g12 * g12
-        inv_det = 1.0 / det_g
+        tri_nodes = nodes[:, tris[:, itri]]
+        Ksub = leg2_tri_stiff_triangle(tri_nodes, kappa_t)
 
         field_ids = tri_to_field[:, itri]
-
-        K_local = _K_tri(inv_det, g11, g12, g22)
-
-        scale = kappa_t * 2.0 * area
-
         for i in range(6):
-            for j in range(6):
-                k = p + 6 * i + j
-                rows[k] = field_ids[i]
-                cols[k] = field_ids[j]
-                values[k] = K_local[i, j] * scale
+            rows[p + 6 * i : p + 6 * (i + 1)] = field_ids[i]
+            cols[p + i : p + 36 + i : 6] = field_ids[i]
+
+        values[p : p + 36] = Ksub.ravel()
 
     return values, rows, cols
 
@@ -149,10 +200,8 @@ def assemble_conductive_sheet(field, face_tags, kappa_t):
 
     Args:
         field: Legrange2 field
-        mesh: Mesh3D
         face_tags: GMSH face tags for the sheet surface
-        kappa: thermal conductivity of the sheet material [W/(m·K)]
-        thickness: sheet thickness [m]
+        kappa_t: thermal conductivity of the sheet material times thickness [W/(K)]
 
     Returns:
         K_values: COO values for stiffness matrix addition
@@ -164,7 +213,7 @@ def assemble_conductive_sheet(field, face_tags, kappa_t):
 
     tri_ids_2d = tri_ids.reshape(1, -1).astype(np.int64)
 
-    return _conductive_sheet_builder(
+    return leg2_tri_stiff(
         mesh.nodes,
         mesh.tris,
         field.tri_to_field,

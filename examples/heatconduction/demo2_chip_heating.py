@@ -1,6 +1,4 @@
 import emerge as em
-from emerge.plot import plot
-import numpy as np
 
 
 """In this example we will show how we can run a static heat flow simulation for some arbitrary chip.

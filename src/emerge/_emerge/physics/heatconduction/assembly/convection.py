@@ -28,17 +28,18 @@ KC = 5.670374419e-8
 ############################################################
 
 
+# Precompute the mass matrix stencil for NiNj gauss quadrature integration
 @njit(f8[:, :](), cache=True, nogil=True)
-def _tri_surface_mass_element():
+def _tri_mass_stencil():
     weights = TRI_DPTS[0, :]
-    nq = weights.shape[0]
+    n_gausquad = weights.shape[0]
 
     # Local edge map
     edge_vertex_1 = np.array([0, 1, 0])
     edge_vertex_2 = np.array([1, 2, 2])
     M = np.zeros((6, 6), dtype=np.float64)
 
-    for iq in range(nq):
+    for iq in range(n_gausquad):
         L1 = TRI_DPTS[1, iq]
         L2 = TRI_DPTS[2, iq]
         L3 = TRI_DPTS[3, iq]
@@ -51,9 +52,11 @@ def _tri_surface_mass_element():
 
         N = np.empty(6, dtype=np.float64)
 
+        # Mass contributions as: λ(2λ - 1)
         for iv in range(3):
             N[iv] = Ls[iv] * (2.0 * Ls[iv] - 1.0)
 
+        # Mass edge contribution as: 4λ₁λ₂
         for ie in range(3):
             li = Ls[edge_vertex_1[ie]]
             lj = Ls[edge_vertex_2[ie]]
@@ -63,6 +66,39 @@ def _tri_surface_mass_element():
             for j in range(6):
                 M[i, j] += w * N[i] * N[j]
     return M
+
+
+# Pre-compute only the different basis functions for each Gauss-Quadrature point.
+@njit(f8[:, :](), cache=True, nogil=True)
+def _tri_mass_Nonly():
+    weights = TRI_DPTS[0, :]
+    n_gausquad = weights.shape[0]
+
+    # Local edge map
+    edge_vertex_1 = np.array([0, 1, 0])
+    edge_vertex_2 = np.array([1, 2, 2])
+    N = np.zeros((6, 10), dtype=np.float64)
+
+    for iq in range(n_gausquad):
+        L1 = TRI_DPTS[1, iq]
+        L2 = TRI_DPTS[2, iq]
+        L3 = TRI_DPTS[3, iq]
+
+        Ls = np.empty(3, dtype=np.float64)
+        Ls[0] = L1
+        Ls[1] = L2
+        Ls[2] = L3
+
+        # Mass contributions as: λ(2λ - 1)
+        for iv in range(3):
+            N[iv, iq] = Ls[iv] * (2.0 * Ls[iv] - 1.0)
+
+        # Mass edge contribution as: 4λ₁λ₂
+        for ie in range(3):
+            li = Ls[edge_vertex_1[ie]]
+            lj = Ls[edge_vertex_2[ie]]
+            N[3 + ie, iq] = 4.0 * li * lj
+    return N
 
 
 ############################################################
@@ -85,7 +121,7 @@ def _robin_stiffness_builder(nodes, tris, tri_to_field, tri_ids_2d, h_coeff):
     rows = np.empty(nnz, dtype=np.int64)
     cols = np.empty(nnz, dtype=np.int64)
 
-    M = _tri_surface_mass_element()
+    M = _tri_mass_stencil()
 
     for idx in prange(n_triangles):
         p = idx * NDOF_TRI
@@ -139,13 +175,12 @@ def _radiation_builder(
     f_global = np.zeros(n_field, dtype=np.float64)
 
     weights = TRI_DPTS[0, :]
-    nq = weights.shape[0]
+    n_gausquad = weights.shape[0]
     T_amb2 = T_amb * T_amb
 
-    EDGE_NODES_1 = np.array([0, 1, 0])
-    EDGE_NODES_2 = np.array([1, 2, 2])
-
     T_local = np.empty(6, dtype=np.float64)
+
+    N_prebuild = _tri_mass_Nonly()
 
     for i_triangle in range(n_triangles):
         p = i_triangle * 36
@@ -165,35 +200,17 @@ def _radiation_builder(
         K_local = np.zeros((6, 6), dtype=np.float64)
         f_local = np.zeros(6, dtype=np.float64)
 
-        for iq in range(nq):
-            L1 = TRI_DPTS[1, iq]
-            L2 = TRI_DPTS[2, iq]
-            L3 = TRI_DPTS[3, iq]
+        for iq in range(n_gausquad):
             w = weights[iq]
 
-            Ls = np.empty(3, dtype=np.float64)
-            Ls[0] = L1
-            Ls[1] = L2
-            Ls[2] = L3
-
-            N = np.empty(6, dtype=np.float64)
-
-            for iv in range(3):
-                N[iv] = Ls[iv] * (2.0 * Ls[iv] - 1.0)
-
-            for ie in range(3):
-                li = Ls[EDGE_NODES_1[ie]]
-                lj = Ls[EDGE_NODES_2[ie]]
-                N[3 + ie] = 4.0 * li * lj
-
-            T_q = np.sum(N * T_local)
+            T_q = np.sum(N_prebuild[:, iq] * T_local)
 
             wh = w * emissivity * sigma * (T_q * T_q + T_amb2) * (T_q + T_amb)
             wht = wh * T_amb
             for i in range(6):
-                f_local[i] += wht * N[i]
+                f_local[i] += wht * N_prebuild[i, iq]
                 for j in range(6):
-                    K_local[i, j] += wh * N[i] * N[j]
+                    K_local[i, j] += wh * N_prebuild[i, iq] * N_prebuild[j, iq]
 
         scale = 2.0 * A
 

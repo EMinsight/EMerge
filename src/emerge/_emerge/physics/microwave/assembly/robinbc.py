@@ -19,404 +19,466 @@
 # Last Cleanup: 2025-01-01
 import numpy as np
 from numba import njit, f8, c16, i8, types, prange
-from ....mth.optimized import cross, matinv_r
+from ....mth.optimized import cross
 from ....elements import Nedelec2
 from typing import Callable
 from loguru import logger
 
 _FACTORIALS = np.array([1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880], dtype=np.int64)
- 
+
+
 @njit(cache=True, fastmath=True, nogil=True)
 def optim_matmul(B: np.ndarray, data: np.ndarray):
     dnew = np.zeros_like(data)
-    dnew[0,:] = B[0,0]*data[0,:] + B[0,1]*data[1,:] + B[0,2]*data[2,:]
-    dnew[1,:] = B[1,0]*data[0,:] + B[1,1]*data[1,:] + B[1,2]*data[2,:]
-    dnew[2,:] = B[2,0]*data[0,:] + B[2,1]*data[1,:] + B[2,2]*data[2,:]
+    dnew[0, :] = B[0, 0] * data[0, :] + B[0, 1] * data[1, :] + B[0, 2] * data[2, :]
+    dnew[1, :] = B[1, 0] * data[0, :] + B[1, 1] * data[1, :] + B[1, 2] * data[2, :]
+    dnew[2, :] = B[2, 0] * data[0, :] + B[2, 1] * data[1, :] + B[2, 2] * data[2, :]
     return dnew
+
 
 @njit(cache=True, fastmath=True, nogil=True)
 def optim_matmul_vec(B: np.ndarray, data: np.ndarray):
     dnew = np.zeros((3,), dtype=data.dtype)
-    dnew[0] = B[0,0]*data[0] + B[0,1]*data[1] + B[0,2]*data[2]
-    dnew[1] = B[1,0]*data[0] + B[1,1]*data[1] + B[1,2]*data[2]
-    dnew[2] = B[2,0]*data[0] + B[2,1]*data[1] + B[2,2]*data[2]
+    dnew[0] = B[0, 0] * data[0] + B[0, 1] * data[1] + B[0, 2] * data[2]
+    dnew[1] = B[1, 0] * data[0] + B[1, 1] * data[1] + B[1, 2] * data[2]
+    dnew[2] = B[2, 0] * data[0] + B[2, 1] * data[1] + B[2, 2] * data[2]
     return dnew
+
 
 @njit(f8(i8, i8, i8, i8), cache=True, fastmath=True, nogil=True)
 def area_coeff(a, b, c, d):
-    klmn = np.array([0,0,0,0,0,0,0])
+    klmn = np.array([0, 0, 0, 0, 0, 0, 0])
     klmn[a] += 1
     klmn[b] += 1
     klmn[c] += 1
     klmn[d] += 1
-    output = 2*(_FACTORIALS[klmn[1]]*_FACTORIALS[klmn[2]]*_FACTORIALS[klmn[3]]
-                  *_FACTORIALS[klmn[4]]*_FACTORIALS[klmn[5]]*_FACTORIALS[klmn[6]])/_FACTORIALS[(np.sum(klmn[1:])+2)]
+    output = (
+        2
+        * (
+            _FACTORIALS[klmn[1]]
+            * _FACTORIALS[klmn[2]]
+            * _FACTORIALS[klmn[3]]
+            * _FACTORIALS[klmn[4]]
+            * _FACTORIALS[klmn[5]]
+            * _FACTORIALS[klmn[6]]
+        )
+        / _FACTORIALS[(np.sum(klmn[1:]) + 2)]
+    )
     return output
-    
+
 
 NFILL = 5
-AREA_COEFF_CACHE_BASE = np.zeros((NFILL,NFILL,NFILL,NFILL), dtype=np.float64)
+AREA_COEFF_CACHE_BASE = np.zeros((NFILL, NFILL, NFILL, NFILL), dtype=np.float64)
 for I in range(NFILL):
     for J in range(NFILL):
         for K in range(NFILL):
             for L in range(NFILL):
-                AREA_COEFF_CACHE_BASE[I,J,K,L] = area_coeff(I,J,K,L)
-
+                AREA_COEFF_CACHE_BASE[I, J, K, L] = area_coeff(I, J, K, L)
 
 
 @njit(f8(f8[:], f8[:]), cache=True, fastmath=True, nogil=True)
 def dot(a: np.ndarray, b: np.ndarray):
-    return a[0]*b[0] + a[1]*b[1]
+    return a[0] * b[0] + a[1] * b[1]
+
 
 @njit(f8[:](f8[:], f8[:]), cache=True, fastmath=True, nogil=True)
 def cross(a: np.ndarray, b: np.ndarray):
     crossv = np.empty((3,), dtype=np.float64)
-    crossv[0] = a[1]*b[2] - a[2]*b[1]
-    crossv[1] = a[2]*b[0] - a[0]*b[2]
-    crossv[2] = a[0]*b[1] - a[1]*b[0]
+    crossv[0] = a[1] * b[2] - a[2] * b[1]
+    crossv[1] = a[2] * b[0] - a[0] * b[2]
+    crossv[2] = a[0] * b[1] - a[1] * b[0]
     return crossv
 
-@njit(types.Tuple((f8[:],f8[:]))(f8[:,:], i8[:,:], f8[:,:], i8[:]), cache=True, nogil=True)
+
+@njit(
+    types.Tuple((f8[:], f8[:]))(f8[:, :], i8[:, :], f8[:, :], i8[:]),
+    cache=True,
+    nogil=True,
+)
 def generate_points(vertices_local, tris, DPTs, surf_triangle_indices):
     NS = surf_triangle_indices.shape[0]
     xall = np.zeros((DPTs.shape[1], NS))
-    yall = np.zeros((DPTs.shape[1], NS)) 
+    yall = np.zeros((DPTs.shape[1], NS))
 
     for i in range(NS):
         itri = surf_triangle_indices[i]
         vertex_ids = tris[:, itri]
-        
+
         x1, x2, x3 = vertices_local[0, vertex_ids]
         y1, y2, y3 = vertices_local[1, vertex_ids]
-        
-        xall[:,i] = x1*DPTs[1,:] + x2*DPTs[2,:] + x3*DPTs[3,:]
-        yall[:,i] = y1*DPTs[1,:] + y2*DPTs[2,:] + y3*DPTs[3,:]
-    
+
+        xall[:, i] = x1 * DPTs[1, :] + x2 * DPTs[2, :] + x3 * DPTs[3, :]
+        yall[:, i] = y1 * DPTs[1, :] + y2 * DPTs[2, :] + y3 * DPTs[3, :]
+
     xflat = xall.flatten()
     yflat = yall.flatten()
     return xflat, yflat
 
-@njit(types.Tuple((f8[:],f8[:], f8[:]))(f8[:,:], i8[:,:], f8[:,:], i8[:]), cache=True, nogil=True)
+
+@njit(
+    types.Tuple((f8[:], f8[:], f8[:]))(f8[:, :], i8[:, :], f8[:, :], i8[:]),
+    cache=True,
+    nogil=True,
+)
 def generate_points_3d(vertices, tris, DPTs, surf_triangle_indices):
     NS = surf_triangle_indices.shape[0]
     xall = np.zeros((DPTs.shape[1], NS))
-    yall = np.zeros((DPTs.shape[1], NS)) 
+    yall = np.zeros((DPTs.shape[1], NS))
     zall = np.zeros((DPTs.shape[1], NS))
     for i in range(NS):
         itri = surf_triangle_indices[i]
         vertex_ids = tris[:, itri]
-        
+
         x1, x2, x3 = vertices[0, vertex_ids]
         y1, y2, y3 = vertices[1, vertex_ids]
         z1, z2, z3 = vertices[2, vertex_ids]
-        
-        xall[:,i] = x1*DPTs[1,:] + x2*DPTs[2,:] + x3*DPTs[3,:]
-        yall[:,i] = y1*DPTs[1,:] + y2*DPTs[2,:] + y3*DPTs[3,:]
-        zall[:,i] = z1*DPTs[1,:] + z2*DPTs[2,:] + z3*DPTs[3,:]
+
+        xall[:, i] = x1 * DPTs[1, :] + x2 * DPTs[2, :] + x3 * DPTs[3, :]
+        yall[:, i] = y1 * DPTs[1, :] + y2 * DPTs[2, :] + y3 * DPTs[3, :]
+        zall[:, i] = z1 * DPTs[1, :] + z2 * DPTs[2, :] + z3 * DPTs[3, :]
     xflat = xall.flatten()
     yflat = yall.flatten()
     zflat = zall.flatten()
     return xflat, yflat, zflat
 
-@njit(f8[:,:](f8[:], f8[:], f8[:]), cache=True, nogil=True, fastmath=True)
+
+@njit(f8[:, :](f8[:], f8[:], f8[:]), cache=True, nogil=True, fastmath=True)
 def compute_distances(xs: np.ndarray, ys: np.ndarray, zs: np.ndarray) -> np.ndarray:
     N = xs.shape[0]
-    Ds = np.empty((N,N), dtype=np.float64)
+    Ds = np.empty((N, N), dtype=np.float64)
     for i in range(N):
-        for j in range(i,N):
-            Ds[i,j] = np.sqrt((xs[i]-xs[j])**2 + (ys[i]-ys[j])**2 + (zs[i]-zs[j])**2) 
-            Ds[j,i] = Ds[i,j]  
+        for j in range(i, N):
+            Ds[i, j] = np.sqrt(
+                (xs[i] - xs[j]) ** 2 + (ys[i] - ys[j]) ** 2 + (zs[i] - zs[j]) ** 2
+            )
+            Ds[j, i] = Ds[i, j]
     return Ds
+
 
 @njit(cache=True, nogil=True)
 def normalize(a: np.ndarray):
-    return a/((a[0]**2 + a[1]**2 + a[2]**2)**0.5)
-    
-@njit(c16[:](f8[:,:], c16[:,:], f8[:,:]), cache=True, nogil=True, parallel=False)
-def ned2_tri_force(glob_vertices, glob_Uinc, DPTs):
-    ''' Nedelec-2 Triangle Stiffness matrix and forcing vector (For Boundary Condition of the Third Kind)
+    return a / ((a[0] ** 2 + a[1] ** 2 + a[2] ** 2) ** 0.5)
 
-    '''
-    local_edge_map = np.array([[0,1,0],[1,2,2]])
+
+@njit(c16[:](f8[:, :], c16[:, :], f8[:, :]), cache=True, nogil=True, parallel=False)
+def ned2_tri_force(glob_vertices, glob_Uinc, DPTs):
+    """Nedelec-2 Triangle Stiffness matrix and forcing vector (For Boundary Condition of the Third Kind)"""
+    local_edge_map = np.array([[0, 1, 0], [1, 2, 2]])
     bvec = np.zeros((8,), dtype=np.complex128)
 
-    orig = glob_vertices[:,0]
-    v2 = glob_vertices[:,1]
-    v3 = glob_vertices[:,2]
-    
-    e1 = v2-orig
-    e2 = v3-orig
+    orig = glob_vertices[:, 0]
+    v2 = glob_vertices[:, 1]
+    v3 = glob_vertices[:, 2]
+
+    e1 = v2 - orig
+    e2 = v3 - orig
     zhat = normalize(cross(e1, e2))
     xhat = normalize(e1)
     yhat = normalize(cross(zhat, xhat))
-    basis = np.zeros((3,3), dtype=np.float64)
-    basis[0,:] = xhat
-    basis[1,:] = yhat
-    basis[2,:] = zhat
-    lcs_vertices = optim_matmul(basis, glob_vertices - orig[:,np.newaxis])
+    basis = np.zeros((3, 3), dtype=np.float64)
+    basis[0, :] = xhat
+    basis[1, :] = yhat
+    basis[2, :] = zhat
+    lcs_vertices = optim_matmul(basis, glob_vertices - orig[:, np.newaxis])
     lcs_Uinc = optim_matmul(basis, glob_Uinc)
-    
-    xs = lcs_vertices[0,:]
-    ys = lcs_vertices[1,:]
-    
+
+    xs = lcs_vertices[0, :]
+    ys = lcs_vertices[1, :]
+
     x1, x2, x3 = xs
     y1, y2, y3 = ys
 
-    a1 = x2*y3-y2*x3
-    a2 = x3*y1-y3*x1
-    a3 = x1*y2-y1*x2
-    b1 = y2-y3
-    b2 = y3-y1
-    b3 = y1-y2
-    c1 = x3-x2
-    c2 = x1-x3
-    c3 = x2-x1
+    a1 = x2 * y3 - y2 * x3
+    a2 = x3 * y1 - y3 * x1
+    a3 = x1 * y2 - y1 * x2
+    b1 = y2 - y3
+    b2 = y3 - y1
+    b3 = y1 - y2
+    c1 = x3 - x2
+    c2 = x1 - x3
+    c3 = x2 - x1
 
     As = np.array([a1, a2, a3])
     Bs = np.array([b1, b2, b3])
     Cs = np.array([c1, c2, c3])
 
     Ds = compute_distances(xs, ys, np.zeros_like(xs))
-    
+
     Area = 0.5 * np.abs((x1 - x3) * (y2 - y1) - (x1 - x2) * (y3 - y1))
     signA = -np.sign((x1 - x3) * (y2 - y1) - (x1 - x2) * (y3 - y1))
 
     Lt1, Lt2 = Ds[2, 0], Ds[1, 0]
-    
-    Ux = lcs_Uinc[0,:]
-    Uy = lcs_Uinc[1,:]
 
-    x = x1*DPTs[1,:] + x2*DPTs[2,:] + x3*DPTs[3,:]
-    y = y1*DPTs[1,:] + y2*DPTs[2,:] + y3*DPTs[3,:]
+    Ux = lcs_Uinc[0, :]
+    Uy = lcs_Uinc[1, :]
 
-    Ws = DPTs[0,:]
+    x = x1 * DPTs[1, :] + x2 * DPTs[2, :] + x3 * DPTs[3, :]
+    y = y1 * DPTs[1, :] + y2 * DPTs[2, :] + y3 * DPTs[3, :]
+
+    Ws = DPTs[0, :]
 
     for ei in range(3):
         ei1, ei2 = local_edge_map[:, ei]
         Li = Ds[ei1, ei2]
-             
+
         A1, A2 = As[ei1], As[ei2]
         B1, B2 = Bs[ei1], Bs[ei2]
         C1, C2 = Cs[ei1], Cs[ei2]
 
-        Q = A2 + B2*x + C2*y
-        Z = A1 + B1*x + C1*y
-        A4 = (4*Area**2)
-        Q2 = Q/A4
-        Z2 = Z/A4
-        Ar2 = 1/(2*Area)
+        Q = A2 + B2 * x + C2 * y
+        Z = A1 + B1 * x + C1 * y
+        A4 = 4 * Area**2
+        Q2 = Q / A4
+        Z2 = Z / A4
+        Ar2 = 1 / (2 * Area)
 
-        Ee1x = (B1*Q2 - B2*Z2)*(Z)*Ar2
-        Ee1y = (C1*Q2 - C2*Z2)*(Z)*Ar2
-        Ee2x = (B1*Q2 - B2*Z2)*(Q)*Ar2
-        Ee2y = (C1*Q2 - C2*Z2)*(Q)*Ar2
+        Ee1x = (B1 * Q2 - B2 * Z2) * (Z) * Ar2
+        Ee1y = (C1 * Q2 - C2 * Z2) * (Z) * Ar2
+        Ee2x = (B1 * Q2 - B2 * Z2) * (Q) * Ar2
+        Ee2y = (C1 * Q2 - C2 * Z2) * (Q) * Ar2
 
-        bvec[ei] += signA*Area*Li*np.sum(Ws*(Ee1x*Ux + Ee1y*Uy))
-        bvec[ei+4] += signA*Area*Li*np.sum(Ws*(Ee2x*Ux + Ee2y*Uy))
-    
+        bvec[ei] += signA * Area * Li * np.sum(Ws * (Ee1x * Ux + Ee1y * Uy))
+        bvec[ei + 4] += signA * Area * Li * np.sum(Ws * (Ee2x * Ux + Ee2y * Uy))
+
     A1, A2, A3 = As
     B1, B2, B3 = Bs
     C1, C2, C3 = Cs
 
-    Q = A2 + B2*x + C2*y
-    Z = A1 + B1*x + C1*y
-    FA = (8*Area**3)
-    W = (A3 + B3*x + C3*y)/FA
-    W2 = Q*W
+    Q = A2 + B2 * x + C2 * y
+    Z = A1 + B1 * x + C1 * y
+    FA = 8 * Area**3
+    W = (A3 + B3 * x + C3 * y) / FA
+    W2 = Q * W
 
-    Ef1x = Lt1*(-B1*W2 + B3*(Z)*(Q)/FA)
-    Ef1y = Lt1*(-C1*W2 + C3*(Z)*(Q)/FA)
-    Ef2x = Lt2*(B1*W2 - B2*(Z)*W)
-    Ef2y = Lt2*(C1*W2 - C2*(Z)*W)
-    
-    bvec[3] += signA*Area*np.sum(Ws*(Ef1x*Ux + Ef1y*Uy))
-    bvec[7] += signA*Area*np.sum(Ws*(Ef2x*Ux + Ef2y*Uy))
-    
+    Ef1x = Lt1 * (-B1 * W2 + B3 * (Z) * (Q) / FA)
+    Ef1y = Lt1 * (-C1 * W2 + C3 * (Z) * (Q) / FA)
+    Ef2x = Lt2 * (B1 * W2 - B2 * (Z) * W)
+    Ef2y = Lt2 * (C1 * W2 - C2 * (Z) * W)
+
+    bvec[3] += signA * Area * np.sum(Ws * (Ef1x * Ux + Ef1y * Uy))
+    bvec[7] += signA * Area * np.sum(Ws * (Ef2x * Ux + Ef2y * Uy))
+
     return bvec
 
 
-@njit(c16[:](f8[:,:], c16[:,:], c16[:,:], f8[:,:], f8[:]), cache=True, nogil=True, parallel=False)
+@njit(
+    c16[:](f8[:, :], c16[:, :], c16[:, :], f8[:, :], f8[:]),
+    cache=True,
+    nogil=True,
+    parallel=False,
+)
 def ned2_tri_force_scat(glob_vertices, glob_Uinc, glob_Uinc_curl, DPTs, nhat):
-    ''' Nedelec-2 Triangle Stiffness matrix and forcing vector (For Boundary Condition of the Third Kind)
-
-    '''
-    local_edge_map = np.array([[0,1,0],[1,2,2]])
+    """Nedelec-2 Triangle Stiffness matrix and forcing vector (For Boundary Condition of the Third Kind)"""
+    local_edge_map = np.array([[0, 1, 0], [1, 2, 2]])
     bvec = np.zeros((8,), dtype=np.complex128)
 
-    orig = glob_vertices[:,0]
-    v2 = glob_vertices[:,1]
-    v3 = glob_vertices[:,2]
-    
-    e1 = v2-orig
-    e2 = v3-orig
+    orig = glob_vertices[:, 0]
+    v2 = glob_vertices[:, 1]
+    v3 = glob_vertices[:, 2]
+
+    e1 = v2 - orig
+    e2 = v3 - orig
     zhat = normalize(cross(e1, e2))
     xhat = normalize(e1)
     yhat = normalize(cross(zhat, xhat))
-    basis = np.zeros((3,3), dtype=np.float64)
-    basis[0,:] = xhat
-    basis[1,:] = yhat
-    basis[2,:] = zhat
-    
-    lcs_vertices = optim_matmul(basis, glob_vertices - orig[:,np.newaxis])
+    basis = np.zeros((3, 3), dtype=np.float64)
+    basis[0, :] = xhat
+    basis[1, :] = yhat
+    basis[2, :] = zhat
+
+    lcs_vertices = optim_matmul(basis, glob_vertices - orig[:, np.newaxis])
     lcs_Uinc = optim_matmul(basis, glob_Uinc)
     lcs_Uinc_curl = optim_matmul(basis, glob_Uinc_curl)
     lcs_nhat = optim_matmul_vec(basis, nhat)
     sgn = np.sign(lcs_nhat[2])
-    xs = lcs_vertices[0,:]
-    ys = lcs_vertices[1,:]
-    
+    xs = lcs_vertices[0, :]
+    ys = lcs_vertices[1, :]
+
     x1, x2, x3 = xs
     y1, y2, y3 = ys
 
-    a1 = x2*y3-y2*x3
-    a2 = x3*y1-y3*x1
-    a3 = x1*y2-y1*x2
-    b1 = y2-y3
-    b2 = y3-y1
-    b3 = y1-y2
-    c1 = x3-x2
-    c2 = x1-x3
-    c3 = x2-x1
+    a1 = x2 * y3 - y2 * x3
+    a2 = x3 * y1 - y3 * x1
+    a3 = x1 * y2 - y1 * x2
+    b1 = y2 - y3
+    b2 = y3 - y1
+    b3 = y1 - y2
+    c1 = x3 - x2
+    c2 = x1 - x3
+    c3 = x2 - x1
 
     As = np.array([a1, a2, a3])
     Bs = np.array([b1, b2, b3])
     Cs = np.array([c1, c2, c3])
 
     Ds = compute_distances(xs, ys, np.zeros_like(xs))
-    
+
     Area = 0.5 * np.abs((x1 - x3) * (y2 - y1) - (x1 - x2) * (y3 - y1))
     signA = -np.sign((x1 - x3) * (y2 - y1) - (x1 - x2) * (y3 - y1))
 
     Lt1, Lt2 = Ds[2, 0], Ds[1, 0]
-    
-    Ux_dir = lcs_Uinc[0,:]
-    Uy_dir = lcs_Uinc[1,:]
-    UxCurl = lcs_Uinc_curl[0,:]
-    UyCurl = lcs_Uinc_curl[1,:] 
-    
+
+    Ux_dir = lcs_Uinc[0, :]
+    Uy_dir = lcs_Uinc[1, :]
+    UxCurl = lcs_Uinc_curl[0, :]
+    UyCurl = lcs_Uinc_curl[1, :]
+
     Ux = Ux_dir + UyCurl * sgn
     Uy = Uy_dir - UxCurl * sgn
-    
 
-    x = x1*DPTs[1,:] + x2*DPTs[2,:] + x3*DPTs[3,:]
-    y = y1*DPTs[1,:] + y2*DPTs[2,:] + y3*DPTs[3,:]
+    x = x1 * DPTs[1, :] + x2 * DPTs[2, :] + x3 * DPTs[3, :]
+    y = y1 * DPTs[1, :] + y2 * DPTs[2, :] + y3 * DPTs[3, :]
 
-    Ws = DPTs[0,:]
+    Ws = DPTs[0, :]
 
     for ei in range(3):
         ei1, ei2 = local_edge_map[:, ei]
         Li = Ds[ei1, ei2]
-             
+
         A1, A2 = As[ei1], As[ei2]
         B1, B2 = Bs[ei1], Bs[ei2]
         C1, C2 = Cs[ei1], Cs[ei2]
 
-        Q = A2 + B2*x + C2*y
-        Z = A1 + B1*x + C1*y
-        A4 = (4*Area**2)
-        Q2 = Q/A4
-        Z2 = Z/A4
-        Ar2 = 1/(2*Area)
+        Q = A2 + B2 * x + C2 * y
+        Z = A1 + B1 * x + C1 * y
+        A4 = 4 * Area**2
+        Q2 = Q / A4
+        Z2 = Z / A4
+        Ar2 = 1 / (2 * Area)
 
-        Ee1x = (B1*Q2 - B2*Z2)*(Z)*Ar2
-        Ee1y = (C1*Q2 - C2*Z2)*(Z)*Ar2
-        Ee2x = (B1*Q2 - B2*Z2)*(Q)*Ar2
-        Ee2y = (C1*Q2 - C2*Z2)*(Q)*Ar2
+        Ee1x = (B1 * Q2 - B2 * Z2) * (Z) * Ar2
+        Ee1y = (C1 * Q2 - C2 * Z2) * (Z) * Ar2
+        Ee2x = (B1 * Q2 - B2 * Z2) * (Q) * Ar2
+        Ee2y = (C1 * Q2 - C2 * Z2) * (Q) * Ar2
 
-        bvec[ei] += signA*Area*Li*np.sum(Ws*(Ee1x*Ux + Ee1y*Uy))
-        bvec[ei+4] += signA*Area*Li*np.sum(Ws*(Ee2x*Ux + Ee2y*Uy))
-    
+        bvec[ei] += signA * Area * Li * np.sum(Ws * (Ee1x * Ux + Ee1y * Uy))
+        bvec[ei + 4] += signA * Area * Li * np.sum(Ws * (Ee2x * Ux + Ee2y * Uy))
+
     A1, A2, A3 = As
     B1, B2, B3 = Bs
     C1, C2, C3 = Cs
 
-    Q = A2 + B2*x + C2*y
-    Z = A1 + B1*x + C1*y
-    FA = (8*Area**3)
-    W = (A3 + B3*x + C3*y)/FA
-    W2 = Q*W
+    Q = A2 + B2 * x + C2 * y
+    Z = A1 + B1 * x + C1 * y
+    FA = 8 * Area**3
+    W = (A3 + B3 * x + C3 * y) / FA
+    W2 = Q * W
 
-    Ef1x = Lt1*(-B1*W2 + B3*(Z)*(Q)/FA)
-    Ef1y = Lt1*(-C1*W2 + C3*(Z)*(Q)/FA)
-    Ef2x = Lt2*(B1*W2 - B2*(Z)*W)
-    Ef2y = Lt2*(C1*W2 - C2*(Z)*W)
-    
-    bvec[3] += signA*Area*np.sum(Ws*(Ef1x*Ux + Ef1y*Uy))
-    bvec[7] += signA*Area*np.sum(Ws*(Ef2x*Ux + Ef2y*Uy))
-    
+    Ef1x = Lt1 * (-B1 * W2 + B3 * (Z) * (Q) / FA)
+    Ef1y = Lt1 * (-C1 * W2 + C3 * (Z) * (Q) / FA)
+    Ef2x = Lt2 * (B1 * W2 - B2 * (Z) * W)
+    Ef2y = Lt2 * (C1 * W2 - C2 * (Z) * W)
+
+    bvec[3] += signA * Area * np.sum(Ws * (Ef1x * Ux + Ef1y * Uy))
+    bvec[7] += signA * Area * np.sum(Ws * (Ef2x * Ux + Ef2y * Uy))
+
     return bvec
 
-@njit(c16[:](f8[:,:], i8[:,:], c16[:], i8[:], c16[:,:,:], f8[:,:], i8[:,:]), cache=True, nogil=True, parallel=False)
-def compute_force_entries(vertices_global, tris, Bvec, surf_triangle_indices, Uglobal_all, DPTs, tri_to_field):
+
+@njit(
+    c16[:](f8[:, :], i8[:, :], c16[:], i8[:], c16[:, :, :], f8[:, :], i8[:, :]),
+    cache=True,
+    nogil=True,
+    parallel=False,
+)
+def compute_force_entries(
+    vertices_global, tris, Bvec, surf_triangle_indices, Uglobal_all, DPTs, tri_to_field
+):
     Niter = surf_triangle_indices.shape[0]
-    for i in prange(Niter): # type: ignore
+    for i in prange(Niter):  # type: ignore
         itri = surf_triangle_indices[i]
 
         vertex_ids = tris[:, itri]
 
-        Ulocal = Uglobal_all[:,:, i]
+        Ulocal = Uglobal_all[:, :, i]
 
-        bvec = ned2_tri_force(vertices_global[:,vertex_ids], Ulocal, DPTs)
-        
+        bvec = ned2_tri_force(vertices_global[:, vertex_ids], Ulocal, DPTs)
+
         indices = tri_to_field[:, itri]
-        
+
         Bvec[indices] += bvec
     return Bvec
 
-@njit(c16[:](f8[:,:], i8[:,:], c16[:], i8[:], c16[:,:,:],c16[:,:,:], f8[:,:], i8[:,:], f8[:,:]), cache=True, nogil=True, parallel=False)
-def compute_force_entries_scat(vertices_global, tris, Bvec, surf_triangle_indices, Uglobal_all, Uglobal_all_curl, DPTs, tri_to_field, normals):
+
+@njit(
+    c16[:](
+        f8[:, :],
+        i8[:, :],
+        c16[:],
+        i8[:],
+        c16[:, :, :],
+        c16[:, :, :],
+        f8[:, :],
+        i8[:, :],
+        f8[:, :],
+    ),
+    cache=True,
+    nogil=True,
+    parallel=False,
+)
+def compute_force_entries_scat(
+    vertices_global,
+    tris,
+    Bvec,
+    surf_triangle_indices,
+    Uglobal_all,
+    Uglobal_all_curl,
+    DPTs,
+    tri_to_field,
+    normals,
+):
     Niter = surf_triangle_indices.shape[0]
-    for i in prange(Niter): # type: ignore
+    for i in prange(Niter):  # type: ignore
         itri = surf_triangle_indices[i]
 
         vertex_ids = tris[:, itri]
 
-        Uglobal = Uglobal_all[:,:, i]
-        UglobalCurl = Uglobal_all_curl[:,:,i]
+        Uglobal = Uglobal_all[:, :, i]
+        UglobalCurl = Uglobal_all_curl[:, :, i]
 
-        bvec = ned2_tri_force_scat(vertices_global[:,vertex_ids], Uglobal, UglobalCurl, DPTs, normals[:,i])
-        
+        bvec = ned2_tri_force_scat(
+            vertices_global[:, vertex_ids], Uglobal, UglobalCurl, DPTs, normals[:, i]
+        )
+
         indices = tri_to_field[:, itri]
-        
+
         Bvec[indices] += bvec
     return Bvec
 
 
-@njit(c16[:,:](f8[:,:], c16), cache=True, nogil=True, parallel=False)
+@njit(c16[:, :](f8[:, :], c16), cache=True, nogil=True, parallel=False)
 def ned2_tri_stiff(glob_vertices, gamma):
-    ''' Nedelec-2 Triangle Stiffness matrix and forcing vector (For Boundary Condition of the Third Kind)
+    """Nedelec-2 Triangle Stiffness matrix and forcing vector (For Boundary Condition of the Third Kind)"""
+    local_edge_map = np.array([[0, 1, 0], [1, 2, 2]])
+    Bmat = np.zeros((8, 8), dtype=np.complex128)
 
-    '''
-    local_edge_map = np.array([[0,1,0],[1,2,2]])
-    Bmat = np.zeros((8,8), dtype=np.complex128)
+    orig = glob_vertices[:, 0]
+    v2 = glob_vertices[:, 1]
+    v3 = glob_vertices[:, 2]
 
-    orig = glob_vertices[:,0]
-    v2 = glob_vertices[:,1]
-    v3 = glob_vertices[:,2]
-    
-    e1 = v2-orig
-    e2 = v3-orig
+    e1 = v2 - orig
+    e2 = v3 - orig
     zhat = normalize(cross(e1, e2))
     xhat = normalize(e1)
     yhat = normalize(cross(zhat, xhat))
-    basis = np.zeros((3,3), dtype=np.float64)
-    basis[0,:] = xhat
-    basis[1,:] = yhat
-    basis[2,:] = zhat
-    lcs_vertices = optim_matmul(basis, glob_vertices - orig[:,np.newaxis])
-    
-    xs = lcs_vertices[0,:]
-    ys = lcs_vertices[1,:]
-    
+    basis = np.zeros((3, 3), dtype=np.float64)
+    basis[0, :] = xhat
+    basis[1, :] = yhat
+    basis[2, :] = zhat
+    lcs_vertices = optim_matmul(basis, glob_vertices - orig[:, np.newaxis])
+
+    xs = lcs_vertices[0, :]
+    ys = lcs_vertices[1, :]
+
     x1, x2, x3 = xs
     y1, y2, y3 = ys
 
-    b1 = y2-y3
-    b2 = y3-y1
-    b3 = y1-y2
-    c1 = x3-x2
-    c2 = x1-x3
-    c3 = x2-x1
+    b1 = y2 - y3
+    b2 = y3 - y1
+    b3 = y1 - y2
+    c1 = x3 - x2
+    c2 = x1 - x3
+    c3 = x2 - x1
 
     Ds = compute_distances(xs, ys, np.zeros_like(xs))
 
@@ -427,21 +489,20 @@ def ned2_tri_stiff(glob_vertices, gamma):
     GLs = (GL1, GL2, GL3)
 
     Area = 0.5 * np.abs((x1 - x3) * (y2 - y1) - (x1 - x2) * (y3 - y1))
-    
-    letters = [1,2,3,4,5,6]
+
+    letters = [1, 2, 3, 4, 5, 6]
 
     tA, tB, tC = letters[0], letters[1], letters[2]
     GtA, GtB, GtC = GLs[0], GLs[1], GLs[2]
-    
-    Lt1, Lt2 = Ds[2, 0], Ds[1, 0]
-    
 
-    COEFF = gamma/(2*Area)**2
+    Lt1, Lt2 = Ds[2, 0], Ds[1, 0]
+
+    COEFF = gamma / (2 * Area) ** 2
     AREA_COEFF = AREA_COEFF_CACHE_BASE * Area
     for ei in range(3):
         ei1, ei2 = local_edge_map[:, ei]
         Li = Ds[ei1, ei2]
-        
+
         A = letters[ei1]
         B = letters[ei2]
 
@@ -458,103 +519,272 @@ def ned2_tri_stiff(glob_vertices, gamma):
             GC = GLs[ej1]
             GD = GLs[ej2]
 
-            DAC = dot(GA,GC)
-            DAD = dot(GA,GD)
-            DBC = dot(GB,GC)
-            DBD = dot(GB,GD)
-            LL = Li*Lj
-            
-            Bmat[ei,ej] += LL*(AREA_COEFF[A,B,C,D]*DAC-AREA_COEFF[A,B,C,C]*DAD-AREA_COEFF[A,A,C,D]*DBC+AREA_COEFF[A,A,C,C]*DBD)
-            Bmat[ei,ej+4] += LL*(AREA_COEFF[A,B,D,D]*DAC-AREA_COEFF[A,B,C,D]*DAD-AREA_COEFF[A,A,D,D]*DBC+AREA_COEFF[A,A,C,D]*DBD)
-            Bmat[ei+4,ej] += LL*(AREA_COEFF[B,B,C,D]*DAC-AREA_COEFF[B,B,C,C]*DAD-AREA_COEFF[A,B,C,D]*DBC+AREA_COEFF[A,B,C,C]*DBD)
-            Bmat[ei+4,ej+4] += LL*(AREA_COEFF[B,B,D,D]*DAC-AREA_COEFF[B,B,C,D]*DAD-AREA_COEFF[A,B,D,D]*DBC+AREA_COEFF[A,B,C,D]*DBD)
-            
-        FA = dot(GA,GtC)
-        FB = dot(GA,GtA)
-        FC = dot(GB,GtC)
-        FD = dot(GB,GtA)
-        FE = dot(GA,GtB)
-        FF = dot(GB,GtB)
+            DAC = dot(GA, GC)
+            DAD = dot(GA, GD)
+            DBC = dot(GB, GC)
+            DBD = dot(GB, GD)
+            LL = Li * Lj
 
-        Bmat[ei,3] += Li*Lt1*(AREA_COEFF[A,B,tA,tB]*FA-AREA_COEFF[A,B,tB,tC]*FB-AREA_COEFF[A,A,tA,tB]*FC+AREA_COEFF[A,A,tB,tC]*FD)
-        Bmat[ei,7] += Li*Lt2*(AREA_COEFF[A,B,tB,tC]*FB-AREA_COEFF[A,B,tC,tA]*FE-AREA_COEFF[A,A,tB,tC]*FD+AREA_COEFF[A,A,tC,tA]*FF)
-        Bmat[3,ei] += Lt1*Li*(AREA_COEFF[tA,tB,A,B]*FA-AREA_COEFF[tA,tB,A,A]*FC-AREA_COEFF[tB,tC,A,B]*FB+AREA_COEFF[tB,tC,A,A]*FD)
-        Bmat[7,ei] += Lt2*Li*(AREA_COEFF[tB,tC,A,B]*FB-AREA_COEFF[tB,tC,A,A]*FD-AREA_COEFF[tC,tA,A,B]*FE+AREA_COEFF[tC,tA,A,A]*FF)
-        Bmat[ei+4,3] += Li*Lt1*(AREA_COEFF[B,B,tA,tB]*FA-AREA_COEFF[B,B,tB,tC]*FB-AREA_COEFF[A,B,tA,tB]*FC+AREA_COEFF[A,B,tB,tC]*FD)
-        Bmat[ei+4,7] += Li*Lt2*(AREA_COEFF[B,B,tB,tC]*FB-AREA_COEFF[B,B,tC,tA]*FE-AREA_COEFF[A,B,tB,tC]*FD+AREA_COEFF[A,B,tC,tA]*FF)
-        Bmat[3,ei+4] += Lt1*Li*(AREA_COEFF[tA,tB,B,B]*FA-AREA_COEFF[tA,tB,A,B]*FC-AREA_COEFF[tB,tC,B,B]*FB+AREA_COEFF[tB,tC,A,B]*FD)
-        Bmat[7,ei+4] += Lt2*Li*(AREA_COEFF[tB,tC,B,B]*FB-AREA_COEFF[tB,tC,A,B]*FD-AREA_COEFF[tC,tA,B,B]*FE+AREA_COEFF[tC,tA,A,B]*FF)
-    
-    H1 = dot(GtA,GtC)
-    H2 = dot(GtA,GtA)
-    H3 = dot(GtA,GtB)
+            Bmat[ei, ej] += LL * (
+                AREA_COEFF[A, B, C, D] * DAC
+                - AREA_COEFF[A, B, C, C] * DAD
+                - AREA_COEFF[A, A, C, D] * DBC
+                + AREA_COEFF[A, A, C, C] * DBD
+            )
+            Bmat[ei, ej + 4] += LL * (
+                AREA_COEFF[A, B, D, D] * DAC
+                - AREA_COEFF[A, B, C, D] * DAD
+                - AREA_COEFF[A, A, D, D] * DBC
+                + AREA_COEFF[A, A, C, D] * DBD
+            )
+            Bmat[ei + 4, ej] += LL * (
+                AREA_COEFF[B, B, C, D] * DAC
+                - AREA_COEFF[B, B, C, C] * DAD
+                - AREA_COEFF[A, B, C, D] * DBC
+                + AREA_COEFF[A, B, C, C] * DBD
+            )
+            Bmat[ei + 4, ej + 4] += LL * (
+                AREA_COEFF[B, B, D, D] * DAC
+                - AREA_COEFF[B, B, C, D] * DAD
+                - AREA_COEFF[A, B, D, D] * DBC
+                + AREA_COEFF[A, B, C, D] * DBD
+            )
 
-    Bmat[3,3] += Lt1*Lt1*(AREA_COEFF[tA,tB,tA,tB]*dot(GtC,GtC)-AREA_COEFF[tA,tB,tB,tC]*H1-AREA_COEFF[tB,tC,tA,tB]*H1+AREA_COEFF[tB,tC,tB,tC]*H2)
-    Bmat[3,7] += Lt1*Lt2*(AREA_COEFF[tA,tB,tB,tC]*H1-AREA_COEFF[tA,tB,tC,tA]*dot(GtB,GtC)-AREA_COEFF[tB,tC,tB,tC]*H2+AREA_COEFF[tB,tC,tC,tA]*H3)
-    Bmat[7,3] += Lt2*Lt1*(AREA_COEFF[tB,tC,tA,tB]*H1-AREA_COEFF[tB,tC,tB,tC]*H2-AREA_COEFF[tC,tA,tA,tB]*dot(GtB,GtC)+AREA_COEFF[tC,tA,tB,tC]*H3)
-    Bmat[7,7] += Lt2*Lt2*(AREA_COEFF[tB,tC,tB,tC]*H2-AREA_COEFF[tB,tC,tC,tA]*H3-AREA_COEFF[tC,tA,tB,tC]*H3+AREA_COEFF[tC,tA,tC,tA]*dot(GtB,GtB))
+        FA = dot(GA, GtC)
+        FB = dot(GA, GtA)
+        FC = dot(GB, GtC)
+        FD = dot(GB, GtA)
+        FE = dot(GA, GtB)
+        FF = dot(GB, GtB)
+
+        Bmat[ei, 3] += (
+            Li
+            * Lt1
+            * (
+                AREA_COEFF[A, B, tA, tB] * FA
+                - AREA_COEFF[A, B, tB, tC] * FB
+                - AREA_COEFF[A, A, tA, tB] * FC
+                + AREA_COEFF[A, A, tB, tC] * FD
+            )
+        )
+        Bmat[ei, 7] += (
+            Li
+            * Lt2
+            * (
+                AREA_COEFF[A, B, tB, tC] * FB
+                - AREA_COEFF[A, B, tC, tA] * FE
+                - AREA_COEFF[A, A, tB, tC] * FD
+                + AREA_COEFF[A, A, tC, tA] * FF
+            )
+        )
+        Bmat[3, ei] += (
+            Lt1
+            * Li
+            * (
+                AREA_COEFF[tA, tB, A, B] * FA
+                - AREA_COEFF[tA, tB, A, A] * FC
+                - AREA_COEFF[tB, tC, A, B] * FB
+                + AREA_COEFF[tB, tC, A, A] * FD
+            )
+        )
+        Bmat[7, ei] += (
+            Lt2
+            * Li
+            * (
+                AREA_COEFF[tB, tC, A, B] * FB
+                - AREA_COEFF[tB, tC, A, A] * FD
+                - AREA_COEFF[tC, tA, A, B] * FE
+                + AREA_COEFF[tC, tA, A, A] * FF
+            )
+        )
+        Bmat[ei + 4, 3] += (
+            Li
+            * Lt1
+            * (
+                AREA_COEFF[B, B, tA, tB] * FA
+                - AREA_COEFF[B, B, tB, tC] * FB
+                - AREA_COEFF[A, B, tA, tB] * FC
+                + AREA_COEFF[A, B, tB, tC] * FD
+            )
+        )
+        Bmat[ei + 4, 7] += (
+            Li
+            * Lt2
+            * (
+                AREA_COEFF[B, B, tB, tC] * FB
+                - AREA_COEFF[B, B, tC, tA] * FE
+                - AREA_COEFF[A, B, tB, tC] * FD
+                + AREA_COEFF[A, B, tC, tA] * FF
+            )
+        )
+        Bmat[3, ei + 4] += (
+            Lt1
+            * Li
+            * (
+                AREA_COEFF[tA, tB, B, B] * FA
+                - AREA_COEFF[tA, tB, A, B] * FC
+                - AREA_COEFF[tB, tC, B, B] * FB
+                + AREA_COEFF[tB, tC, A, B] * FD
+            )
+        )
+        Bmat[7, ei + 4] += (
+            Lt2
+            * Li
+            * (
+                AREA_COEFF[tB, tC, B, B] * FB
+                - AREA_COEFF[tB, tC, A, B] * FD
+                - AREA_COEFF[tC, tA, B, B] * FE
+                + AREA_COEFF[tC, tA, A, B] * FF
+            )
+        )
+
+    H1 = dot(GtA, GtC)
+    H2 = dot(GtA, GtA)
+    H3 = dot(GtA, GtB)
+
+    Bmat[3, 3] += (
+        Lt1
+        * Lt1
+        * (
+            AREA_COEFF[tA, tB, tA, tB] * dot(GtC, GtC)
+            - AREA_COEFF[tA, tB, tB, tC] * H1
+            - AREA_COEFF[tB, tC, tA, tB] * H1
+            + AREA_COEFF[tB, tC, tB, tC] * H2
+        )
+    )
+    Bmat[3, 7] += (
+        Lt1
+        * Lt2
+        * (
+            AREA_COEFF[tA, tB, tB, tC] * H1
+            - AREA_COEFF[tA, tB, tC, tA] * dot(GtB, GtC)
+            - AREA_COEFF[tB, tC, tB, tC] * H2
+            + AREA_COEFF[tB, tC, tC, tA] * H3
+        )
+    )
+    Bmat[7, 3] += (
+        Lt2
+        * Lt1
+        * (
+            AREA_COEFF[tB, tC, tA, tB] * H1
+            - AREA_COEFF[tB, tC, tB, tC] * H2
+            - AREA_COEFF[tC, tA, tA, tB] * dot(GtB, GtC)
+            + AREA_COEFF[tC, tA, tB, tC] * H3
+        )
+    )
+    Bmat[7, 7] += (
+        Lt2
+        * Lt2
+        * (
+            AREA_COEFF[tB, tC, tB, tC] * H2
+            - AREA_COEFF[tB, tC, tC, tA] * H3
+            - AREA_COEFF[tC, tA, tB, tC] * H3
+            + AREA_COEFF[tC, tA, tC, tA] * dot(GtB, GtB)
+        )
+    )
 
     Bmat = Bmat * COEFF
     return Bmat
 
-@njit(c16[:](f8[:,:], i8[:,:], c16[:], i8[:], c16), cache=True, nogil=True, parallel=False)
+
+@njit(
+    c16[:](f8[:, :], i8[:, :], c16[:], i8[:], c16),
+    cache=True,
+    nogil=True,
+    parallel=False,
+)
 def compute_bc_entries(vertices, tris, Bmat, surf_triangle_indices, gamma):
     N = 64
     Niter = surf_triangle_indices.shape[0]
-    for i in prange(Niter): # type: ignore
+    for i in prange(Niter):  # type: ignore
         itri = surf_triangle_indices[i]
 
         vertex_ids = tris[:, itri]
 
-        Bsub = ned2_tri_stiff(vertices[:,vertex_ids], gamma)
-        
-        Bmat[itri*N:(itri+1)*N] = Bmat[itri*N:(itri+1)*N] + Bsub.ravel()
+        Bsub = ned2_tri_stiff(vertices[:, vertex_ids], gamma)
+
+        Bmat[itri * N : (itri + 1) * N] = Bmat[itri * N : (itri + 1) * N] + Bsub.ravel()
     return Bmat
 
-def assemble_robin_bc_bvec(field: Nedelec2,
-                           surf_triangle_indices: np.ndarray,
-                           Ufunc: Callable,
-                           DPTs: np.ndarray):
+
+def assemble_robin_bc_bvec(
+    field: Nedelec2,
+    surf_triangle_indices: np.ndarray,
+    Ufunc: Callable,
+    DPTs: np.ndarray,
+):
 
     Bvec = np.zeros((field.n_field,), dtype=np.complex128)
 
     vertices = field.mesh.nodes
 
-    xflat, yflat, zflat = generate_points_3d(vertices, field.mesh.tris, DPTs, surf_triangle_indices)
+    xflat, yflat, zflat = generate_points_3d(
+        vertices, field.mesh.tris, DPTs, surf_triangle_indices
+    )
 
     U_global = Ufunc(xflat, yflat, zflat)
 
     U_global_all = U_global.reshape((3, DPTs.shape[1], surf_triangle_indices.shape[0]))
 
-    Bvec = compute_force_entries(vertices, field.mesh.tris, Bvec, surf_triangle_indices, U_global_all, DPTs, field.tri_to_field)
+    Bvec = compute_force_entries(
+        vertices,
+        field.mesh.tris,
+        Bvec,
+        surf_triangle_indices,
+        U_global_all,
+        DPTs,
+        field.tri_to_field,
+    )
     return Bvec
 
-def assemble_robin_bc_bvec_scat(field: Nedelec2,
-                                surf_triangle_indices: np.ndarray,
-                                Ufunc: Callable,
-                                UfuncCurl: Callable,
-                                DPTs: np.ndarray,
-                                normals: np.ndarray):
+
+def assemble_robin_bc_bvec_scat(
+    field: Nedelec2,
+    surf_triangle_indices: np.ndarray,
+    Ufunc: Callable,
+    UfuncCurl: Callable,
+    DPTs: np.ndarray,
+    normals: np.ndarray,
+):
 
     Bvec = np.zeros((field.n_field,), dtype=np.complex128)
 
     vertices = field.mesh.nodes
 
-    xflat, yflat, zflat = generate_points_3d(vertices, field.mesh.tris, DPTs, surf_triangle_indices)
+    xflat, yflat, zflat = generate_points_3d(
+        vertices, field.mesh.tris, DPTs, surf_triangle_indices
+    )
 
     U_global = Ufunc(xflat, yflat, zflat)
     U_global_curl = UfuncCurl(xflat, yflat, zflat)
-    
+
     U_global_all = U_global.reshape((3, DPTs.shape[1], surf_triangle_indices.shape[0]))
-    U_global_all_curl = U_global_curl.reshape((3, DPTs.shape[1], surf_triangle_indices.shape[0]))
-    
-    Bvec = compute_force_entries_scat(vertices, field.mesh.tris, Bvec, surf_triangle_indices, U_global_all, U_global_all_curl, DPTs, field.tri_to_field, normals)
+    U_global_all_curl = U_global_curl.reshape(
+        (3, DPTs.shape[1], surf_triangle_indices.shape[0])
+    )
+
+    Bvec = compute_force_entries_scat(
+        vertices,
+        field.mesh.tris,
+        Bvec,
+        surf_triangle_indices,
+        U_global_all,
+        U_global_all_curl,
+        DPTs,
+        field.tri_to_field,
+        normals,
+    )
     return Bvec
 
-def assemble_robin_bc(field: Nedelec2,
-                      Bmat: np.ndarray,
-                      surf_triangle_indices: np.ndarray,
-                      gamma: np.ndarray):
+
+def assemble_robin_bc(
+    field: Nedelec2,
+    Bmat: np.ndarray,
+    surf_triangle_indices: np.ndarray,
+    gamma: np.ndarray,
+):
     vertices = field.mesh.nodes
-    Bmat = compute_bc_entries(vertices, field.mesh.tris, Bmat, surf_triangle_indices, gamma)
+    Bmat = compute_bc_entries(
+        vertices, field.mesh.tris, Bmat, surf_triangle_indices, gamma
+    )
     return Bmat
