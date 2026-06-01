@@ -14,7 +14,7 @@ mm = 0.001  # Define a millimeter
 th = 1.0  # mm
 
 model = em.Simulation("StriplineWithVias")
-model.check_version("2.6.0")  # Checks version compatibility.
+model.check_version("2.6.1")  # Checks version compatibility.
 
 # As usual we start by creating our layouter
 ly = em.geo.PCBNew(
