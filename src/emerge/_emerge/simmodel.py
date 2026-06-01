@@ -341,11 +341,15 @@ class Simulation:
     #                       PUBLIC FUNCTIONS                  #
     ############################################################
 
-    def ping(self, message: str, channel: str = "EMerge") -> None:
-        """Send a message to a ntfy app channel (Default is EMerge)."""
+    def ping(self, message: str, channel: str) -> None:
+        """Send a message to a ntfy app channel. Messages are public. Pick a channel name that only you would guess."""
         import urllib.request
         import urllib.parse
 
+        if channel.lower().strip() == "emerge":
+            DEBUG_COLLECTOR.add_report(
+                "You are using the EMerge ping channel. All pings are public! Everybody can read them who is subscribed to the same channel. This is being broadcast. Please use private channels."
+            )
         url = f"https://ntfy.sh/{channel}"
         data = f"{self.modelname}: {message}".encode("utf-8")
         req = urllib.request.Request(url, data=data, method="POST")
