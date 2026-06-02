@@ -64,7 +64,7 @@ class MWBoundaryConditionSet(BoundaryConditionSet):
         self.UserDefinedPort: type[UserDefinedPort] = self._construct_bc(UserDefinedPort)
         self.CoaxPort: type[CoaxPort] = self._construct_bc(CoaxPort)
         self.ScatteredField: type[ScatteredField] = self._construct_bc(ScatteredField)
-
+        self.ThinConductor: type[ThinConductor] = self._construct_bc(ThinConductor)
         self._cell: PeriodicCell | None = None
 
     def get_conductors(self) -> list[BoundaryCondition]:
@@ -76,6 +76,9 @@ class MWBoundaryConditionSet(BoundaryConditionSet):
         """
         bcs = self.oftype(PEC)
         for bc in self.oftype(SurfaceImpedance):
+            if bc.sigma > 10.0:
+                bcs.append(bc)
+        for bc in self.oftype(ThinConductor):
             if bc.sigma > 10.0:
                 bcs.append(bc)
         return bcs
@@ -1693,6 +1696,9 @@ class SurfaceImpedance(RobinBC, Saveable):
 
         The surface impedance model treats a 2D surface selection as a finite conductor. It is not
         intended to be used for dielectric materials.
+        
+        It is intended for modelling the walls of conductors. It is not intended for thin
+        conducting surfaces like striplines. In that case use ThinConductor.
 
         The surface resistivity is computed based on the material properties: σ, ε and μ. 
 
@@ -1731,7 +1737,7 @@ class SurfaceImpedance(RobinBC, Saveable):
         
         self._sr: float = surface_roughness
         self._sr_model: str = sr_model
-        self._Zf: Callable | None = None
+        self._Zf: Callable | None = impedance_function
     
     def get_basis(self) -> np.ndarray | None:
         return None
@@ -1771,6 +1777,116 @@ class SurfaceImpedance(RobinBC, Saveable):
         if self.thickness is not None:
             eps_c = eps - 1j * sigma / w0
             gamma_m = 1j * w0 * np.sqrt(mu*eps_c)
+            R = R / np.tanh(gamma_m * self.thickness)
+            logger.debug(f'Impedance scaler due to thickness: {1/ np.tanh(gamma_m * self.thickness) :.4f}')
+        if self._sr_model=='Hammerstad-Jensen' and self._sr > 0.0:
+            R = R * (1 + 2/np.pi * np.arctan(1.4*(self._sr/d_skin)**2))
+        return 1j*k0*Z0/R
+    
+class ThinConductor(RobinBC, Saveable):
+    
+    _include_stiff: bool = True
+    _include_mass: bool = False
+    _include_force: bool = False
+    _color: str = "#49e8ed"
+    _name: str = "ThinConductor"
+    skip_fields = ('_Zf',)
+    dim: int = 2
+    
+    def __init__(self, 
+                 face: FaceSelection | GeoSurface,
+                 material: Material | None = None,
+                 thickness: float | None = None,
+                 surface_conductance: float | None = None,
+                 surface_roughness: float = 0,
+                 sr_model: Literal['Hammerstad-Jensen'] = 'Hammerstad-Jensen',
+                 impedance_function: Callable | None = None,
+                 ):
+        """Generates a SurfaceImpedance bounary condition.
+
+        The surface impedance model treats a 2D surface selection as a finite conductor. It is not
+        intended to be used for dielectric materials.
+
+        The surface resistivity is computed based on the material properties: σ, ε and μ. 
+
+        The user may also supply the surface condutivity directly. 
+
+        Optionally, a surface roughness in meters RMS may be supplied. In the current implementation
+        The Hammersstad-Jensen model is used increasing the resistivity by a factor (1 + 2/π tan⁻¹(1.4(Δ/δ)²).
+
+        Args:
+            face (FaceSelection | GeoSurface): The face to apply this condition to.
+            material (Material | None, optional): The matrial to assign. Defaults to None.
+            surface_conductance (float | None, optional): The specific bulk conductivity to use. Defaults to None.
+            surface_roughness (float, optional): The surface roughness. Defaults to 0.
+            thickness (float | None, optional): The layer thickness. Defaults to None
+            sr_model (Literal["Hammerstad-Jensen", optional): The surface roughness model. Defaults to 'Hammerstad-Jensen'.
+            impedance_function (Callable, optional): A user defined surface impedance function as function of frequency.
+        """
+        super().__init__(face)
+
+        self._material: Material | None = material
+        self._mur: float | complex = 1.0
+        self._epsr: float | complex = 1.0
+        self.sigma: float = 0.0
+        self.thickness: float | None = thickness
+        
+        if isinstance(face, GeoObject) and thickness is None:
+            self.thickness = face._load('thickness')
+            
+        if material is not None:
+            self.sigma = material.cond.scalar(1e9)
+            self._mur = material.ur
+            self._epsr = material.er
+        
+        if surface_conductance is not None:
+            self.sigma = surface_conductance
+        
+        self._sr: float = surface_roughness
+        self._sr_model: str = sr_model
+        self._Zf: Callable | None = impedance_function
+    
+    def get_basis(self) -> np.ndarray | None:
+        return None
+
+    def get_inv_basis(self) -> np.ndarray | None:
+        return None
+    
+    def get_beta(self, k0: float) -> float:
+        ''' Return the out of plane propagation constant. βz.'''
+
+        return k0
+
+    def get_gamma(self, k0: float) -> complex:
+        """Computes the γ-constant for matrix assembly. This constant is required for the Robin boundary condition.
+
+        Args:
+            k0 (float): The free space propagation constant.
+
+        Returns:
+            complex: The γ-constant
+        """
+        w0 = k0*C0
+        f0 = w0/(2*np.pi)
+        if self._Zf is not None:
+            return 1j*k0*Z0/self._Zf(f0)
+        
+        sigma = self.sigma
+        mur = self._material.ur.scalar(f0)
+        er = self._material.er.scalar(f0)
+        eps = EPS0*er
+        mu = MU0*mur
+        rho = 1/sigma
+        d_skin = (2*rho/(w0*mu) * ((1+(w0*eps*rho)**2)**0.5 + rho*w0*eps))**(0.5)
+        logger.debug(f'Computed skin depth δ={d_skin*1e6:.2}μm')
+        
+        R = (1+1j)*rho/d_skin
+
+        #R = (w0*mu/(2*sigma))**0.5
+        if self.thickness is not None:
+            eps_c = eps - 1j * sigma / w0
+            gamma_m = 1j * w0 * (mu*eps_c)**0.5
+            gamma_m = (1 + 1j) / d_skin
             R = R / np.tanh(gamma_m * self.thickness)
             logger.debug(f'Impedance scaler due to thickness: {1/ np.tanh(gamma_m * self.thickness) :.4f}')
         if self._sr_model=='Hammerstad-Jensen' and self._sr > 0.0:

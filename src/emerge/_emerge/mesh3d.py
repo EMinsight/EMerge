@@ -1215,6 +1215,27 @@ class Mesh3D(Mesh, Saveable):
             smesh.normals = signflip * smesh.normals
         return smesh
 
+    def get_normal(self, itri: int) -> np.ndarray:
+        """Returns a triangle normal which with an
+        arbitrarily assigned normal direction. 
+        (Deterministic but not consistent with faces)
+
+        Args:
+            itri (int): The triangle index
+
+        Returns:
+            np.ndarray: _description_
+        """
+        i1, i2, i3 = self.tris[:,itri]
+        p0, p1, p2 = (
+            self.nodes[:, i1],
+            self.nodes[:, i2],
+            self.nodes[:, i3],
+        )
+
+        normal = np.cross(p1 - p0, p2 - p0)
+        norm = np.linalg.norm(normal)
+        return norm
 
 class SurfaceMesh(Mesh):
     """The surface mesh class is used to assemble the Modal port matrix.

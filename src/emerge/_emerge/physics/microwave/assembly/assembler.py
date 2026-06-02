@@ -25,6 +25,7 @@ from ..microwave_bc import (
     PortBC,
     Periodic,
     MWBoundaryConditionSet,
+    ThinConductor,
 )
 from ....elements.nedelec2 import Nedelec2
 from ....elements.nedleg2 import NedelecLegrange2
@@ -359,6 +360,7 @@ class Assembler:
         self.cached_cscmap: CSCMapping | None = None
         self.settings: Settings = settings
         self.SELECT_INDEX: int = None
+        self._partitioned: bool = False
 
     def assemble_bma_matrices(
         self,
@@ -413,6 +415,7 @@ class Assembler:
 
         # TODO: Simplified to all "conductors" loosely defined. Must change to implementing line robin boundary conditions.
         pecs: list[BoundaryCondition] = bc_set.get_conductors()
+        
         if len(pecs) > 0:
             logger.debug(f".total of equiv. {len(pecs)} PEC BCs implemented for BMA")
 
@@ -494,7 +497,7 @@ class Assembler:
             if mat.frequency_dependent:
                 is_frequency_dependent = True
                 break
-
+        
         # Prepare the 3x3 material property tensors.
         er = np.zeros((3, 3, field.mesh.n_tets), dtype=np.complex128)
         tand = np.zeros((3, 3, field.mesh.n_tets), dtype=np.complex128)
@@ -512,7 +515,9 @@ class Assembler:
         er = er * (1 - 1j * tand) - 1j * cond / (W0 * EPS0)
 
         is_frequency_dependent = is_frequency_dependent or np.any((cond > 0) & (cond < self.settings.mw_3d_peclim))  # type: ignore
-
+        
+        NF = field.n_field
+        
         # Only used cahced matrices if they are there, it is asked and there are no frequency dependent material properties.
         if (
             cache_matrices
@@ -534,10 +539,10 @@ class Assembler:
 
         # COMBINE THE MASS AND STIFFNESS MATRIX
         K: csc_matrix = self.cached_cscmap.to_csc(Evec - Bvec * (K0**2))
-
-        NF = field.n_field
+        
 
         # ISOLATE BOUNDARY CONDITIONS TO ASSEMBLE
+        thin_conductor_bcs: list[ThinConductor] = [bc for bc in bcs if isinstance(bc, ThinConductor)]
         pec_bcs: list[PEC] = [bc for bc in bcs if isinstance(bc, PEC)]
         robin_bcs: list[RobinBC] = [bc for bc in bcs if isinstance(bc, RobinBC)]
         port_bcs: list[PortBC] = [bc for bc in bcs if isinstance(bc, PortBC)]
@@ -554,6 +559,7 @@ class Assembler:
         ############################################################
 
         logger.debug("Implementing PEC Boundary Conditions.")
+        
         # pec_ids is a list of degree of freedom indices that are 0 because
         # the E-field there is 0. For pec_ids these are references to the
         # degree of freedom, for the pec_tris these are references to the
@@ -613,7 +619,13 @@ class Assembler:
 
             # The contributions will be added to the mass+stiffness matrix A.
             # We assemble in B.
+            
             B_matrix_robin = field.empty_tri_matrix()
+            B_matrix_robin_2 = None
+            
+            if len(thin_conductor_bcs) > 0:
+                B_matrix_robin_2 = B_matrix_robin.copy().astype(np.complex128)
+            
             for bc in robin_bcs:
                 logger.trace(f".Implementing {bc}")
                 for tag in bc.tags:
@@ -631,7 +643,8 @@ class Assembler:
                     if bc._assemble_matrix:
                         # The assembler adds the contributions to the Bemptry matrix
                         B_matrix_robin = assemble_robin_bc(field, B_matrix_robin, tri_ids, gamma)  # type: ignore
-
+                        if isinstance(bc, ThinConductor):
+                            B_matrix_robin_2 = assemble_robin_bc(field, B_matrix_robin_2, tri_ids, gamma)
                     # The the forcing vector b-entries for excited ports are added.
                     # Don't include ScatteredField boundary conditions.
                     if (
@@ -658,7 +671,12 @@ class Assembler:
                             B_matrix_robin += mat
             # Add the total contribution of B_matrix_robin to K
             K += field.generate_csc(B_matrix_robin)
-
+            
+            if B_matrix_robin_2 is not None:
+                logger.debug('Assembling opposite side matrix entries.')
+                rows, cols = field.empty_tri_rowcol(other_side=True)
+                K += field.generate_csc(B_matrix_robin_2, (rows, cols))
+        
         ############################################################
         #                   PERIODIC BOUNDARY CONDITIONS          #
         ############################################################

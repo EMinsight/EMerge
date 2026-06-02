@@ -781,10 +781,12 @@ def assemble_robin_bc(
     field: Nedelec2,
     Bmat: np.ndarray,
     surf_triangle_indices: np.ndarray,
-    gamma: np.ndarray,
+    gamma: np.ndarray, 
 ):
+    
     vertices = field.mesh.nodes
     Bmat = compute_bc_entries(
         vertices, field.mesh.tris, Bmat, surf_triangle_indices, gamma
     )
+    
     return Bmat

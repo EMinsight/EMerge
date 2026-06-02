@@ -37,6 +37,7 @@ from .microwave_bc import (
     LumpedPort,
     PortBC,
     ScatteredField,
+    ThinConductor,
 )
 from .microwave_data import MWData
 from .assembly.assembler import Assembler
@@ -589,6 +590,13 @@ class Microwave3D:
             self._define_lumped_port_integration_points(port)
 
         self.bc._selections_post_boolean_fragment()
+        
+        # Process thin conductor DOF split
+        thin_conductor_bcs = self.bc.oftype(ThinConductor)
+        if len(thin_conductor_bcs) > 0:
+            logger.debug('Processing thin conductors')
+            self.basis.partition_dof([x.tags for x in thin_conductor_bcs])
+            self.basis._partitioned = True
 
     def _check_meshed(self) -> None:
         """Checks if a mesh is generated"""
