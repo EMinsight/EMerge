@@ -17,6 +17,8 @@
 
 # Last Cleanup: 2025-01-01
 from typing import Literal
+
+
 class Settings:
     def __init__(self):
         self.mw_2dbc: bool = True
@@ -30,7 +32,7 @@ class Settings:
         # Bulk conductivity limit (S/m) beyond which a conductor is assigned PEC
         # instead of a SurfaceImpedance boundary condition.
 
-        self.mw_3d_peclim: float = 1e8 
+        self.mw_3d_peclim: float = 1e8
         # Bulk conductivity limit (S/m) beyond which 3D conductors are considered PEC.
 
         self.mw_cap_sp_single: bool = True
@@ -57,12 +59,14 @@ class Settings:
         self.save_after_sim: bool = True
         # Save simulation only if it completes successfully.
 
-        self.save_method: Literal['joblib', 'msgpack'] = 'joblib'
+        self.save_method: Literal["joblib", "msgpack"] = "joblib"
         # Serialization method used for saving simulations.
 
         self.check_ram: bool = True
         # If a RAM memory check should be done and halt the solver.
-        
+
         self.safe_mode: bool = False
         # Executes extra diagnosis checks to ensure a proper matrix problem
+
+
 DEFAULT_SETTINGS = Settings()

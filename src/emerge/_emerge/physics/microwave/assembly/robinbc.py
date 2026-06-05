@@ -21,10 +21,47 @@ import numpy as np
 from numba import njit, f8, c16, i8, types, prange
 from ....mth.optimized import cross
 from ....elements import Nedelec2
+from ....compiled.volakis import (
+    SCALE_LENGTH,
+    _ne1_tri,
+    _ne2_tri,
+    _nf1_tri,
+    _nf2_tri,
+)
 from typing import Callable
 from loguru import logger
+import functools
 
-_FACTORIALS = np.array([1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880], dtype=np.int64)
+#
+# Toggle this to True when you want to use standard Python breakpoints
+DEBUG_MODE = False
+
+
+def njit(*args, **kwargs):
+    """
+    Drop-in replacement for numba.njit.
+    If DEBUG_MODE is True, it turns into a transparent 'do-nothing' wrapper.
+    If DEBUG_MODE is False, it forwards everything to the real Numba compiler.
+    """
+    if DEBUG_MODE:
+        # Case A: Used without parentheses -> @njit
+        if len(args) == 1 and callable(args[0]):
+            return args[0]
+
+        # Case B: Used with signatures/kwargs -> @njit(cache=True)
+        def decorator(func):
+            @functools.wraps(func)
+            def wrapper(*func_args, **func_kwargs):
+                return func(*func_args, **func_kwargs)
+
+            return wrapper
+
+        return decorator
+    else:
+        # Import Numba lazily only when debugging is turned off
+        import numba
+
+        return numba.njit(*args, **kwargs)
 
 
 @njit(cache=True, fastmath=True, nogil=True)
@@ -45,49 +82,9 @@ def optim_matmul_vec(B: np.ndarray, data: np.ndarray):
     return dnew
 
 
-@njit(f8(i8, i8, i8, i8), cache=True, fastmath=True, nogil=True)
-def area_coeff(a, b, c, d):
-    klmn = np.array([0, 0, 0, 0, 0, 0, 0])
-    klmn[a] += 1
-    klmn[b] += 1
-    klmn[c] += 1
-    klmn[d] += 1
-    output = (
-        2
-        * (
-            _FACTORIALS[klmn[1]]
-            * _FACTORIALS[klmn[2]]
-            * _FACTORIALS[klmn[3]]
-            * _FACTORIALS[klmn[4]]
-            * _FACTORIALS[klmn[5]]
-            * _FACTORIALS[klmn[6]]
-        )
-        / _FACTORIALS[(np.sum(klmn[1:]) + 2)]
-    )
-    return output
-
-
-NFILL = 5
-AREA_COEFF_CACHE_BASE = np.zeros((NFILL, NFILL, NFILL, NFILL), dtype=np.float64)
-for I in range(NFILL):
-    for J in range(NFILL):
-        for K in range(NFILL):
-            for L in range(NFILL):
-                AREA_COEFF_CACHE_BASE[I, J, K, L] = area_coeff(I, J, K, L)
-
-
-@njit(f8(f8[:], f8[:]), cache=True, fastmath=True, nogil=True)
+@njit(c16[:](c16[:, :], c16[:, :]), cache=True, fastmath=True, nogil=True)
 def dot(a: np.ndarray, b: np.ndarray):
-    return a[0] * b[0] + a[1] * b[1]
-
-
-@njit(f8[:](f8[:], f8[:]), cache=True, fastmath=True, nogil=True)
-def cross(a: np.ndarray, b: np.ndarray):
-    crossv = np.empty((3,), dtype=np.float64)
-    crossv[0] = a[1] * b[2] - a[2] * b[1]
-    crossv[1] = a[2] * b[0] - a[0] * b[2]
-    crossv[2] = a[0] * b[1] - a[1] * b[0]
-    return crossv
+    return a[0, :] * b[0, :] + a[1, :] * b[1, :]
 
 
 @njit(
@@ -142,15 +139,13 @@ def generate_points_3d(vertices, tris, DPTs, surf_triangle_indices):
     return xflat, yflat, zflat
 
 
-@njit(f8[:, :](f8[:], f8[:], f8[:]), cache=True, nogil=True, fastmath=True)
-def compute_distances(xs: np.ndarray, ys: np.ndarray, zs: np.ndarray) -> np.ndarray:
+@njit(f8[:, :](f8[:], f8[:]), cache=True, nogil=True, fastmath=True)
+def compute_distances(xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
     N = xs.shape[0]
     Ds = np.empty((N, N), dtype=np.float64)
     for i in range(N):
         for j in range(i, N):
-            Ds[i, j] = np.sqrt(
-                (xs[i] - xs[j]) ** 2 + (ys[i] - ys[j]) ** 2 + (zs[i] - zs[j]) ** 2
-            )
+            Ds[i, j] = np.sqrt((xs[i] - xs[j]) ** 2 + (ys[i] - ys[j]) ** 2)
             Ds[j, i] = Ds[i, j]
     return Ds
 
@@ -160,33 +155,54 @@ def normalize(a: np.ndarray):
     return a / ((a[0] ** 2 + a[1] ** 2 + a[2] ** 2) ** 0.5)
 
 
-@njit(c16[:](f8[:, :], c16[:, :], f8[:, :]), cache=True, nogil=True, parallel=False)
-def ned2_tri_force(glob_vertices, glob_Uinc, DPTs):
-    """Nedelec-2 Triangle Stiffness matrix and forcing vector (For Boundary Condition of the Third Kind)"""
-    local_edge_map = np.array([[0, 1, 0], [1, 2, 2]])
-    bvec = np.zeros((8,), dtype=np.complex128)
+@njit(c16[:, :](c16[:, :], c16[:, :]), cache=True, nogil=True)
+def matmul(Mat, Vec):
+    ## Matrix multiplication of a 2x2 Matrix with a Vector
+    Vout = np.empty((2, Vec.shape[1]), dtype=np.complex128)
+    Vout[0, :] = Mat[0, 0] * Vec[0, :] + Mat[0, 1] * Vec[1, :]
+    Vout[1, :] = Mat[1, 0] * Vec[0, :] + Mat[1, 1] * Vec[1, :]
+    return Vout
 
-    orig = glob_vertices[:, 0]
-    v2 = glob_vertices[:, 1]
-    v3 = glob_vertices[:, 2]
 
-    e1 = v2 - orig
-    e2 = v3 - orig
-    zhat = normalize(cross(e1, e2))
-    xhat = normalize(e1)
+@njit(types.Tuple((f8[:, :], f8[:, :]))(f8[:, :]), cache=True, nogil=True)
+def construct_local_vertices(glob_vertices):
+    origin = glob_vertices[:, 0]
+    vertex_2 = glob_vertices[:, 1]
+    vertex_3 = glob_vertices[:, 2]
+
+    edge_1 = vertex_2 - origin
+    edge_2 = vertex_3 - origin
+
+    zhat = normalize(cross(edge_1, edge_2))
+    xhat = normalize(edge_1)
     yhat = normalize(cross(zhat, xhat))
+
     basis = np.zeros((3, 3), dtype=np.float64)
     basis[0, :] = xhat
     basis[1, :] = yhat
     basis[2, :] = zhat
-    lcs_vertices = optim_matmul(basis, glob_vertices - orig[:, np.newaxis])
-    lcs_Uinc = optim_matmul(basis, glob_Uinc)
 
-    xs = lcs_vertices[0, :]
-    ys = lcs_vertices[1, :]
+    return basis, optim_matmul(basis, glob_vertices - origin[:, np.newaxis])
 
-    x1, x2, x3 = xs
-    y1, y2, y3 = ys
+
+############################################################
+#                         ASSEMBLY                        #
+############################################################
+# fmt: off
+DPTS = np.array([
+    [0.10995174365532, 0.10995174365532, 0.10995174365532, 0.22338158967801, 0.22338158967801, 0.22338158967801],  # weights
+    [0.81684757298046, 0.09157621350977, 0.09157621350977, 0.10810301816807, 0.44594849091597, 0.44594849091597],  # L1
+    [0.09157621350977, 0.81684757298046, 0.09157621350977, 0.44594849091597, 0.10810301816807, 0.44594849091597],  # L2
+    [0.09157621350977, 0.09157621350977, 0.81684757298046, 0.44594849091597, 0.44594849091597, 0.10810301816807],  # L3
+], dtype=np.float64)
+# fmt: on
+
+
+@njit(types.Tuple((f8[:], f8[:], f8[:], f8))(f8[:], f8[:]), cache=True, nogil=True)
+def tri_coefficients(vxs, vys):
+
+    x1, x2, x3 = vxs
+    y1, y2, y3 = vys
 
     a1 = x2 * y3 - y2 * x3
     a2 = x3 * y1 - y3 * x1
@@ -198,191 +214,90 @@ def ned2_tri_force(glob_vertices, glob_Uinc, DPTs):
     c2 = x1 - x3
     c3 = x2 - x1
 
+    sA = 0.5 * ((x1 - x3) * (y2 - y1) - (x1 - x2) * (y3 - y1))
     As = np.array([a1, a2, a3])
     Bs = np.array([b1, b2, b3])
     Cs = np.array([c1, c2, c3])
+    return As, Bs, Cs, sA
 
-    Ds = compute_distances(xs, ys, np.zeros_like(xs))
 
-    Area = 0.5 * np.abs((x1 - x3) * (y2 - y1) - (x1 - x2) * (y3 - y1))
-    signA = -np.sign((x1 - x3) * (y2 - y1) - (x1 - x2) * (y3 - y1))
+@njit(c16[:](f8[:, :], c16[:, :]), cache=True, nogil=True, parallel=False)
+def ned2_tri_force(glob_vertices, glob_Uinc):
+    """Nedelec-2 Triangle forcing vector (For Boundary Condition of the Third Kind)"""
+    bvec = np.zeros((8,), dtype=np.complex128)
 
-    Lt1, Lt2 = Ds[2, 0], Ds[1, 0]
+    basis, local_vertices = construct_local_vertices(glob_vertices)
+    txs = local_vertices[0, :]
+    tys = local_vertices[1, :]
+    Ds = compute_distances(txs, tys)
+    aas, bbs, ccs, A = tri_coefficients(txs, tys)
+    sign = np.sign(A)
+    A = np.abs(A)
+    coeff = np.empty((3, 3), dtype=np.float64)
+    coeff[0, :] = aas / (2 * A)
+    coeff[1, :] = bbs / (2 * A)
+    coeff[2, :] = ccs / (2 * A)
+
+    lcs_Uinc = optim_matmul(basis, glob_Uinc)
+
+    WEIGHTS = DPTS[0, :]
+    DPTS1 = DPTS[1, :]
+    DPTS2 = DPTS[2, :]
+    DPTS3 = DPTS[3, :]
+
+    xs = txs[0] * DPTS1 + txs[1] * DPTS2 + txs[2] * DPTS3
+    ys = tys[0] * DPTS1 + tys[1] * DPTS2 + tys[2] * DPTS3
+
+    coords = np.empty((2, xs.shape[0]), dtype=np.float64)
+    coords[0, :] = xs
+    coords[1, :] = ys
 
     Ux = lcs_Uinc[0, :]
     Uy = lcs_Uinc[1, :]
+    Uinc_2d = np.empty((2, xs.shape[0]), dtype=np.complex128)
+    Uinc_2d[0, :] = Ux
+    Uinc_2d[1, :] = Uy
 
-    x = x1 * DPTs[1, :] + x2 * DPTs[2, :] + x3 * DPTs[3, :]
-    y = y1 * DPTs[1, :] + y2 * DPTs[2, :] + y3 * DPTs[3, :]
+    ivec = np.array([0, 1, 0, 0, 0, 1, 0, 0])
+    jvec = np.array([1, 2, 2, 1, 1, 2, 2, 1])
+    kvec = np.array([0, 0, 0, 2, 0, 0, 0, 2])
 
-    Ws = DPTs[0, :]
+    Lvec = np.empty(8, dtype=np.float64)
+    for idof in range(8):
+        Lvec[idof] = (
+            Ds[ivec[idof], jvec[idof]]
+            if idof < 3 or (4 <= idof < 7)
+            else Ds[jvec[idof], kvec[idof]]
+        )
 
-    for ei in range(3):
-        ei1, ei2 = local_edge_map[:, ei]
-        Li = Ds[ei1, ei2]
+    for idof in range(8):
+        i1 = ivec[idof]
+        j1 = jvec[idof]
+        k1 = kvec[idof]
 
-        A1, A2 = As[ei1], As[ei2]
-        B1, B2 = Bs[ei1], Bs[ei2]
-        C1, C2 = Cs[ei1], Cs[ei2]
+        if idof < 3:
+            fdof = _ne1_tri(coeff, coords, i1, j1, k1)
+        elif idof == 3:
+            fdof = _nf1_tri(coeff, coords, i1, j1, k1)
+        elif idof < 7:
+            fdof = _ne2_tri(coeff, coords, i1, j1, k1)
+        else:
+            fdof = _nf2_tri(coeff, coords, i1, j1, k1)
 
-        Q = A2 + B2 * x + C2 * y
-        Z = A1 + B1 * x + C1 * y
-        A4 = 4 * Area**2
-        Q2 = Q / A4
-        Z2 = Z / A4
-        Ar2 = 1 / (2 * Area)
-
-        Ee1x = (B1 * Q2 - B2 * Z2) * (Z) * Ar2
-        Ee1y = (C1 * Q2 - C2 * Z2) * (Z) * Ar2
-        Ee2x = (B1 * Q2 - B2 * Z2) * (Q) * Ar2
-        Ee2y = (C1 * Q2 - C2 * Z2) * (Q) * Ar2
-
-        bvec[ei] += signA * Area * Li * np.sum(Ws * (Ee1x * Ux + Ee1y * Uy))
-        bvec[ei + 4] += signA * Area * Li * np.sum(Ws * (Ee2x * Ux + Ee2y * Uy))
-
-    A1, A2, A3 = As
-    B1, B2, B3 = Bs
-    C1, C2, C3 = Cs
-
-    Q = A2 + B2 * x + C2 * y
-    Z = A1 + B1 * x + C1 * y
-    FA = 8 * Area**3
-    W = (A3 + B3 * x + C3 * y) / FA
-    W2 = Q * W
-
-    Ef1x = Lt1 * (-B1 * W2 + B3 * (Z) * (Q) / FA)
-    Ef1y = Lt1 * (-C1 * W2 + C3 * (Z) * (Q) / FA)
-    Ef2x = Lt2 * (B1 * W2 - B2 * (Z) * W)
-    Ef2y = Lt2 * (C1 * W2 - C2 * (Z) * W)
-
-    bvec[3] += signA * Area * np.sum(Ws * (Ef1x * Ux + Ef1y * Uy))
-    bvec[7] += signA * Area * np.sum(Ws * (Ef2x * Ux + Ef2y * Uy))
-
+        bvec[idof] = -sign * A * np.sum(WEIGHTS * (fdof[0, :] * Ux + fdof[1, :] * Uy))
+    if SCALE_LENGTH == True:
+        bvec = bvec * Lvec
     return bvec
 
 
 @njit(
-    c16[:](f8[:, :], c16[:, :], c16[:, :], f8[:, :], f8[:]),
-    cache=True,
-    nogil=True,
-    parallel=False,
-)
-def ned2_tri_force_scat(glob_vertices, glob_Uinc, glob_Uinc_curl, DPTs, nhat):
-    """Nedelec-2 Triangle Stiffness matrix and forcing vector (For Boundary Condition of the Third Kind)"""
-    local_edge_map = np.array([[0, 1, 0], [1, 2, 2]])
-    bvec = np.zeros((8,), dtype=np.complex128)
-
-    orig = glob_vertices[:, 0]
-    v2 = glob_vertices[:, 1]
-    v3 = glob_vertices[:, 2]
-
-    e1 = v2 - orig
-    e2 = v3 - orig
-    zhat = normalize(cross(e1, e2))
-    xhat = normalize(e1)
-    yhat = normalize(cross(zhat, xhat))
-    basis = np.zeros((3, 3), dtype=np.float64)
-    basis[0, :] = xhat
-    basis[1, :] = yhat
-    basis[2, :] = zhat
-
-    lcs_vertices = optim_matmul(basis, glob_vertices - orig[:, np.newaxis])
-    lcs_Uinc = optim_matmul(basis, glob_Uinc)
-    lcs_Uinc_curl = optim_matmul(basis, glob_Uinc_curl)
-    lcs_nhat = optim_matmul_vec(basis, nhat)
-    sgn = np.sign(lcs_nhat[2])
-    xs = lcs_vertices[0, :]
-    ys = lcs_vertices[1, :]
-
-    x1, x2, x3 = xs
-    y1, y2, y3 = ys
-
-    a1 = x2 * y3 - y2 * x3
-    a2 = x3 * y1 - y3 * x1
-    a3 = x1 * y2 - y1 * x2
-    b1 = y2 - y3
-    b2 = y3 - y1
-    b3 = y1 - y2
-    c1 = x3 - x2
-    c2 = x1 - x3
-    c3 = x2 - x1
-
-    As = np.array([a1, a2, a3])
-    Bs = np.array([b1, b2, b3])
-    Cs = np.array([c1, c2, c3])
-
-    Ds = compute_distances(xs, ys, np.zeros_like(xs))
-
-    Area = 0.5 * np.abs((x1 - x3) * (y2 - y1) - (x1 - x2) * (y3 - y1))
-    signA = -np.sign((x1 - x3) * (y2 - y1) - (x1 - x2) * (y3 - y1))
-
-    Lt1, Lt2 = Ds[2, 0], Ds[1, 0]
-
-    Ux_dir = lcs_Uinc[0, :]
-    Uy_dir = lcs_Uinc[1, :]
-    UxCurl = lcs_Uinc_curl[0, :]
-    UyCurl = lcs_Uinc_curl[1, :]
-
-    Ux = Ux_dir + UyCurl * sgn
-    Uy = Uy_dir - UxCurl * sgn
-
-    x = x1 * DPTs[1, :] + x2 * DPTs[2, :] + x3 * DPTs[3, :]
-    y = y1 * DPTs[1, :] + y2 * DPTs[2, :] + y3 * DPTs[3, :]
-
-    Ws = DPTs[0, :]
-
-    for ei in range(3):
-        ei1, ei2 = local_edge_map[:, ei]
-        Li = Ds[ei1, ei2]
-
-        A1, A2 = As[ei1], As[ei2]
-        B1, B2 = Bs[ei1], Bs[ei2]
-        C1, C2 = Cs[ei1], Cs[ei2]
-
-        Q = A2 + B2 * x + C2 * y
-        Z = A1 + B1 * x + C1 * y
-        A4 = 4 * Area**2
-        Q2 = Q / A4
-        Z2 = Z / A4
-        Ar2 = 1 / (2 * Area)
-
-        Ee1x = (B1 * Q2 - B2 * Z2) * (Z) * Ar2
-        Ee1y = (C1 * Q2 - C2 * Z2) * (Z) * Ar2
-        Ee2x = (B1 * Q2 - B2 * Z2) * (Q) * Ar2
-        Ee2y = (C1 * Q2 - C2 * Z2) * (Q) * Ar2
-
-        bvec[ei] += signA * Area * Li * np.sum(Ws * (Ee1x * Ux + Ee1y * Uy))
-        bvec[ei + 4] += signA * Area * Li * np.sum(Ws * (Ee2x * Ux + Ee2y * Uy))
-
-    A1, A2, A3 = As
-    B1, B2, B3 = Bs
-    C1, C2, C3 = Cs
-
-    Q = A2 + B2 * x + C2 * y
-    Z = A1 + B1 * x + C1 * y
-    FA = 8 * Area**3
-    W = (A3 + B3 * x + C3 * y) / FA
-    W2 = Q * W
-
-    Ef1x = Lt1 * (-B1 * W2 + B3 * (Z) * (Q) / FA)
-    Ef1y = Lt1 * (-C1 * W2 + C3 * (Z) * (Q) / FA)
-    Ef2x = Lt2 * (B1 * W2 - B2 * (Z) * W)
-    Ef2y = Lt2 * (C1 * W2 - C2 * (Z) * W)
-
-    bvec[3] += signA * Area * np.sum(Ws * (Ef1x * Ux + Ef1y * Uy))
-    bvec[7] += signA * Area * np.sum(Ws * (Ef2x * Ux + Ef2y * Uy))
-
-    return bvec
-
-
-@njit(
-    c16[:](f8[:, :], i8[:, :], c16[:], i8[:], c16[:, :, :], f8[:, :], i8[:, :]),
+    c16[:](f8[:, :], i8[:, :], c16[:], i8[:], c16[:, :, :], i8[:, :]),
     cache=True,
     nogil=True,
     parallel=False,
 )
 def compute_force_entries(
-    vertices_global, tris, Bvec, surf_triangle_indices, Uglobal_all, DPTs, tri_to_field
+    vertices_global, tris, Bvec, surf_triangle_indices, Uglobal_all, tri_to_field
 ):
     Niter = surf_triangle_indices.shape[0]
     for i in prange(Niter):  # type: ignore
@@ -392,53 +307,7 @@ def compute_force_entries(
 
         Ulocal = Uglobal_all[:, :, i]
 
-        bvec = ned2_tri_force(vertices_global[:, vertex_ids], Ulocal, DPTs)
-
-        indices = tri_to_field[:, itri]
-
-        Bvec[indices] += bvec
-    return Bvec
-
-
-@njit(
-    c16[:](
-        f8[:, :],
-        i8[:, :],
-        c16[:],
-        i8[:],
-        c16[:, :, :],
-        c16[:, :, :],
-        f8[:, :],
-        i8[:, :],
-        f8[:, :],
-    ),
-    cache=True,
-    nogil=True,
-    parallel=False,
-)
-def compute_force_entries_scat(
-    vertices_global,
-    tris,
-    Bvec,
-    surf_triangle_indices,
-    Uglobal_all,
-    Uglobal_all_curl,
-    DPTs,
-    tri_to_field,
-    normals,
-):
-    Niter = surf_triangle_indices.shape[0]
-    for i in prange(Niter):  # type: ignore
-        itri = surf_triangle_indices[i]
-
-        vertex_ids = tris[:, itri]
-
-        Uglobal = Uglobal_all[:, :, i]
-        UglobalCurl = Uglobal_all_curl[:, :, i]
-
-        bvec = ned2_tri_force_scat(
-            vertices_global[:, vertex_ids], Uglobal, UglobalCurl, DPTs, normals[:, i]
-        )
+        bvec = ned2_tri_force(vertices_global[:, vertex_ids], Ulocal)
 
         indices = tri_to_field[:, itri]
 
@@ -449,242 +318,79 @@ def compute_force_entries_scat(
 @njit(c16[:, :](f8[:, :], c16), cache=True, nogil=True, parallel=False)
 def ned2_tri_stiff(glob_vertices, gamma):
     """Nedelec-2 Triangle Stiffness matrix and forcing vector (For Boundary Condition of the Third Kind)"""
-    local_edge_map = np.array([[0, 1, 0], [1, 2, 2]])
     Bmat = np.zeros((8, 8), dtype=np.complex128)
 
-    orig = glob_vertices[:, 0]
-    v2 = glob_vertices[:, 1]
-    v3 = glob_vertices[:, 2]
+    basis, local_vertices = construct_local_vertices(glob_vertices)
+    txs = local_vertices[0, :]
+    tys = local_vertices[1, :]
 
-    e1 = v2 - orig
-    e2 = v3 - orig
-    zhat = normalize(cross(e1, e2))
-    xhat = normalize(e1)
-    yhat = normalize(cross(zhat, xhat))
-    basis = np.zeros((3, 3), dtype=np.float64)
-    basis[0, :] = xhat
-    basis[1, :] = yhat
-    basis[2, :] = zhat
-    lcs_vertices = optim_matmul(basis, glob_vertices - orig[:, np.newaxis])
+    Ds = compute_distances(txs, tys)
+    aas, bbs, ccs, A = tri_coefficients(txs, tys)
+    A = np.abs(A)
+    coeff = np.empty((3, 3), dtype=np.float64)
+    coeff[0, :] = aas / (2 * A)
+    coeff[1, :] = bbs / (2 * A)
+    coeff[2, :] = ccs / (2 * A)
 
-    xs = lcs_vertices[0, :]
-    ys = lcs_vertices[1, :]
+    WEIGHTS = DPTS[0, :]
+    DPTS1 = DPTS[1, :]
+    DPTS2 = DPTS[2, :]
+    DPTS3 = DPTS[3, :]
 
-    x1, x2, x3 = xs
-    y1, y2, y3 = ys
+    xs = txs[0] * DPTS1 + txs[1] * DPTS2 + txs[2] * DPTS3
+    ys = tys[0] * DPTS1 + tys[1] * DPTS2 + tys[2] * DPTS3
 
-    b1 = y2 - y3
-    b2 = y3 - y1
-    b3 = y1 - y2
-    c1 = x3 - x2
-    c2 = x1 - x3
-    c3 = x2 - x1
+    coords = np.empty((2, xs.shape[0]), dtype=np.float64)
+    coords[0, :] = xs
+    coords[1, :] = ys
 
-    Ds = compute_distances(xs, ys, np.zeros_like(xs))
+    ivec = np.array([0, 1, 0, 0, 0, 1, 0, 0])
+    jvec = np.array([1, 2, 2, 1, 1, 2, 2, 1])
+    kvec = np.array([0, 0, 0, 2, 0, 0, 0, 2])
 
-    GL1 = np.array([b1, c1])
-    GL2 = np.array([b2, c2])
-    GL3 = np.array([b3, c3])
-
-    GLs = (GL1, GL2, GL3)
-
-    Area = 0.5 * np.abs((x1 - x3) * (y2 - y1) - (x1 - x2) * (y3 - y1))
-
-    letters = [1, 2, 3, 4, 5, 6]
-
-    tA, tB, tC = letters[0], letters[1], letters[2]
-    GtA, GtB, GtC = GLs[0], GLs[1], GLs[2]
-
-    Lt1, Lt2 = Ds[2, 0], Ds[1, 0]
-
-    COEFF = gamma / (2 * Area) ** 2
-    AREA_COEFF = AREA_COEFF_CACHE_BASE * Area
-    for ei in range(3):
-        ei1, ei2 = local_edge_map[:, ei]
-        Li = Ds[ei1, ei2]
-
-        A = letters[ei1]
-        B = letters[ei2]
-
-        GA = GLs[ei1]
-        GB = GLs[ei2]
-
-        for ej in range(3):
-            ej1, ej2 = local_edge_map[:, ej]
-            Lj = Ds[ej1, ej2]
-
-            C = letters[ej1]
-            D = letters[ej2]
-
-            GC = GLs[ej1]
-            GD = GLs[ej2]
-
-            DAC = dot(GA, GC)
-            DAD = dot(GA, GD)
-            DBC = dot(GB, GC)
-            DBD = dot(GB, GD)
-            LL = Li * Lj
-
-            Bmat[ei, ej] += LL * (
-                AREA_COEFF[A, B, C, D] * DAC
-                - AREA_COEFF[A, B, C, C] * DAD
-                - AREA_COEFF[A, A, C, D] * DBC
-                + AREA_COEFF[A, A, C, C] * DBD
-            )
-            Bmat[ei, ej + 4] += LL * (
-                AREA_COEFF[A, B, D, D] * DAC
-                - AREA_COEFF[A, B, C, D] * DAD
-                - AREA_COEFF[A, A, D, D] * DBC
-                + AREA_COEFF[A, A, C, D] * DBD
-            )
-            Bmat[ei + 4, ej] += LL * (
-                AREA_COEFF[B, B, C, D] * DAC
-                - AREA_COEFF[B, B, C, C] * DAD
-                - AREA_COEFF[A, B, C, D] * DBC
-                + AREA_COEFF[A, B, C, C] * DBD
-            )
-            Bmat[ei + 4, ej + 4] += LL * (
-                AREA_COEFF[B, B, D, D] * DAC
-                - AREA_COEFF[B, B, C, D] * DAD
-                - AREA_COEFF[A, B, D, D] * DBC
-                + AREA_COEFF[A, B, C, D] * DBD
-            )
-
-        FA = dot(GA, GtC)
-        FB = dot(GA, GtA)
-        FC = dot(GB, GtC)
-        FD = dot(GB, GtA)
-        FE = dot(GA, GtB)
-        FF = dot(GB, GtB)
-
-        Bmat[ei, 3] += (
-            Li
-            * Lt1
-            * (
-                AREA_COEFF[A, B, tA, tB] * FA
-                - AREA_COEFF[A, B, tB, tC] * FB
-                - AREA_COEFF[A, A, tA, tB] * FC
-                + AREA_COEFF[A, A, tB, tC] * FD
-            )
+    Ls = np.ones((8, 8), dtype=np.float64)
+    for idof in range(8):
+        Le = (
+            Ds[ivec[idof], jvec[idof]]
+            if idof < 3 or (4 <= idof < 7)
+            else Ds[jvec[idof], kvec[idof]]
         )
-        Bmat[ei, 7] += (
-            Li
-            * Lt2
-            * (
-                AREA_COEFF[A, B, tB, tC] * FB
-                - AREA_COEFF[A, B, tC, tA] * FE
-                - AREA_COEFF[A, A, tB, tC] * FD
-                + AREA_COEFF[A, A, tC, tA] * FF
-            )
-        )
-        Bmat[3, ei] += (
-            Lt1
-            * Li
-            * (
-                AREA_COEFF[tA, tB, A, B] * FA
-                - AREA_COEFF[tA, tB, A, A] * FC
-                - AREA_COEFF[tB, tC, A, B] * FB
-                + AREA_COEFF[tB, tC, A, A] * FD
-            )
-        )
-        Bmat[7, ei] += (
-            Lt2
-            * Li
-            * (
-                AREA_COEFF[tB, tC, A, B] * FB
-                - AREA_COEFF[tB, tC, A, A] * FD
-                - AREA_COEFF[tC, tA, A, B] * FE
-                + AREA_COEFF[tC, tA, A, A] * FF
-            )
-        )
-        Bmat[ei + 4, 3] += (
-            Li
-            * Lt1
-            * (
-                AREA_COEFF[B, B, tA, tB] * FA
-                - AREA_COEFF[B, B, tB, tC] * FB
-                - AREA_COEFF[A, B, tA, tB] * FC
-                + AREA_COEFF[A, B, tB, tC] * FD
-            )
-        )
-        Bmat[ei + 4, 7] += (
-            Li
-            * Lt2
-            * (
-                AREA_COEFF[B, B, tB, tC] * FB
-                - AREA_COEFF[B, B, tC, tA] * FE
-                - AREA_COEFF[A, B, tB, tC] * FD
-                + AREA_COEFF[A, B, tC, tA] * FF
-            )
-        )
-        Bmat[3, ei + 4] += (
-            Lt1
-            * Li
-            * (
-                AREA_COEFF[tA, tB, B, B] * FA
-                - AREA_COEFF[tA, tB, A, B] * FC
-                - AREA_COEFF[tB, tC, B, B] * FB
-                + AREA_COEFF[tB, tC, A, B] * FD
-            )
-        )
-        Bmat[7, ei + 4] += (
-            Lt2
-            * Li
-            * (
-                AREA_COEFF[tB, tC, B, B] * FB
-                - AREA_COEFF[tB, tC, A, B] * FD
-                - AREA_COEFF[tC, tA, B, B] * FE
-                + AREA_COEFF[tC, tA, A, B] * FF
-            )
-        )
+        Ls[idof, :] *= Le
+        Ls[:, idof] *= Le
 
-    H1 = dot(GtA, GtC)
-    H2 = dot(GtA, GtA)
-    H3 = dot(GtA, GtB)
+    for idof1 in range(8):
+        i1 = ivec[idof1]
+        j1 = jvec[idof1]
+        k1 = kvec[idof1]
 
-    Bmat[3, 3] += (
-        Lt1
-        * Lt1
-        * (
-            AREA_COEFF[tA, tB, tA, tB] * dot(GtC, GtC)
-            - AREA_COEFF[tA, tB, tB, tC] * H1
-            - AREA_COEFF[tB, tC, tA, tB] * H1
-            + AREA_COEFF[tB, tC, tB, tC] * H2
-        )
-    )
-    Bmat[3, 7] += (
-        Lt1
-        * Lt2
-        * (
-            AREA_COEFF[tA, tB, tB, tC] * H1
-            - AREA_COEFF[tA, tB, tC, tA] * dot(GtB, GtC)
-            - AREA_COEFF[tB, tC, tB, tC] * H2
-            + AREA_COEFF[tB, tC, tC, tA] * H3
-        )
-    )
-    Bmat[7, 3] += (
-        Lt2
-        * Lt1
-        * (
-            AREA_COEFF[tB, tC, tA, tB] * H1
-            - AREA_COEFF[tB, tC, tB, tC] * H2
-            - AREA_COEFF[tC, tA, tA, tB] * dot(GtB, GtC)
-            + AREA_COEFF[tC, tA, tB, tC] * H3
-        )
-    )
-    Bmat[7, 7] += (
-        Lt2
-        * Lt2
-        * (
-            AREA_COEFF[tB, tC, tB, tC] * H2
-            - AREA_COEFF[tB, tC, tC, tA] * H3
-            - AREA_COEFF[tC, tA, tB, tC] * H3
-            + AREA_COEFF[tC, tA, tC, tA] * dot(GtB, GtB)
-        )
-    )
+        if idof1 < 3:
+            fdof1 = _ne1_tri(coeff, coords, i1, j1, k1)
+        elif idof1 == 3:
+            fdof1 = _nf1_tri(coeff, coords, i1, j1, k1)
+        elif idof1 < 7:
+            fdof1 = _ne2_tri(coeff, coords, i1, j1, k1)
+        else:
+            fdof1 = _nf2_tri(coeff, coords, i1, j1, k1)
 
-    Bmat = Bmat * COEFF
-    return Bmat
+        for idof2 in range(8):
+            i2 = ivec[idof2]
+            j2 = jvec[idof2]
+            k2 = kvec[idof2]
+
+            if idof2 < 3:
+                fdof2 = _ne1_tri(coeff, coords, i2, j2, k2)
+            elif idof2 == 3:
+                fdof2 = _nf1_tri(coeff, coords, i2, j2, k2)
+            elif idof2 < 7:
+                fdof2 = _ne2_tri(coeff, coords, i2, j2, k2)
+            else:
+                fdof2 = _nf2_tri(coeff, coords, i2, j2, k2)
+
+            Bmat[idof1, idof2] = gamma * np.sum(dot(fdof1, fdof2) * WEIGHTS)
+
+    if SCALE_LENGTH == True:
+        Bmat = Bmat * Ls
+    return Bmat * A
 
 
 @njit(
@@ -700,7 +406,6 @@ def compute_bc_entries(vertices, tris, Bmat, surf_triangle_indices, gamma):
         itri = surf_triangle_indices[i]
 
         vertex_ids = tris[:, itri]
-
         Bsub = ned2_tri_stiff(vertices[:, vertex_ids], gamma)
 
         Bmat[itri * N : (itri + 1) * N] = Bmat[itri * N : (itri + 1) * N] + Bsub.ravel()
@@ -711,20 +416,18 @@ def assemble_robin_bc_bvec(
     field: Nedelec2,
     surf_triangle_indices: np.ndarray,
     Ufunc: Callable,
-    DPTs: np.ndarray,
 ):
-
     Bvec = np.zeros((field.n_field,), dtype=np.complex128)
 
     vertices = field.mesh.nodes
 
     xflat, yflat, zflat = generate_points_3d(
-        vertices, field.mesh.tris, DPTs, surf_triangle_indices
+        vertices, field.mesh.tris, DPTS, surf_triangle_indices
     )
 
     U_global = Ufunc(xflat, yflat, zflat)
 
-    U_global_all = U_global.reshape((3, DPTs.shape[1], surf_triangle_indices.shape[0]))
+    U_global_all = U_global.reshape((3, DPTS.shape[1], surf_triangle_indices.shape[0]))
 
     Bvec = compute_force_entries(
         vertices,
@@ -732,9 +435,144 @@ def assemble_robin_bc_bvec(
         Bvec,
         surf_triangle_indices,
         U_global_all,
-        DPTs,
         field.tri_to_field,
     )
+    return Bvec
+
+
+def assemble_robin_bc(
+    field: Nedelec2,
+    Bmat: np.ndarray,
+    surf_triangle_indices: np.ndarray,
+    gamma: np.ndarray,
+):
+
+    vertices = field.mesh.nodes
+    Bmat = compute_bc_entries(
+        vertices, field.mesh.tris, Bmat, surf_triangle_indices, gamma
+    )
+
+    return Bmat
+
+
+############################################################
+#                      SCATTERED FIELD                     #
+############################################################
+
+
+@njit(
+    c16[:](f8[:, :], c16[:, :], c16[:, :], f8[:]),
+    cache=True,
+    nogil=True,
+    parallel=False,
+)
+def ned2_tri_force_scat(glob_vertices, glob_Uinc, glob_Uinc_curl, nhat):
+    """Nedelec-2 Triangle forcing vector (scattered field, Robin BC)"""
+    bvec = np.zeros((8,), dtype=np.complex128)
+
+    basis, local_vertices = construct_local_vertices(glob_vertices)
+    txs = local_vertices[0, :]
+    tys = local_vertices[1, :]
+
+    Ds = compute_distances(txs, tys)
+
+    aas, bbs, ccs, A = tri_coefficients(txs, tys)
+    sign = np.sign(A)
+    A = np.abs(A)
+    coeff = np.empty((3, 3), dtype=np.float64)
+    coeff[0, :] = aas / (2 * A)
+    coeff[1, :] = bbs / (2 * A)
+    coeff[2, :] = ccs / (2 * A)
+
+    lcs_Uinc = optim_matmul(basis, glob_Uinc)
+    lcs_Uinc_curl = optim_matmul(basis, glob_Uinc_curl)
+    lcs_nhat = optim_matmul_vec(basis, nhat)
+    sgn = np.sign(lcs_nhat[2])
+
+    WEIGHTS = DPTS[0, :]
+    xs = txs[0] * DPTS[1, :] + txs[1] * DPTS[2, :] + txs[2] * DPTS[3, :]
+    ys = tys[0] * DPTS[1, :] + tys[1] * DPTS[2, :] + tys[2] * DPTS[3, :]
+
+    coords = np.empty((2, xs.shape[0]), dtype=np.float64)
+    coords[0, :] = xs
+    coords[1, :] = ys
+
+    Ux = lcs_Uinc[0, :] + lcs_Uinc_curl[1, :] * sgn
+    Uy = lcs_Uinc[1, :] - lcs_Uinc_curl[0, :] * sgn
+
+    ivec = np.array([0, 1, 0, 0, 0, 1, 0, 0])
+    jvec = np.array([1, 2, 2, 1, 1, 2, 2, 1])
+    kvec = np.array([0, 0, 0, 2, 0, 0, 0, 2])
+
+    Lvec = np.empty(8, dtype=np.float64)
+    for idof in range(8):
+        Lvec[idof] = (
+            Ds[ivec[idof], jvec[idof]]
+            if idof < 3 or (4 <= idof < 7)
+            else Ds[jvec[idof], kvec[idof]]
+        )
+
+    for idof in range(8):
+        i1 = ivec[idof]
+        j1 = jvec[idof]
+        k1 = kvec[idof]
+
+        if idof < 3:
+            fdof = _ne1_tri(coeff, coords, i1, j1, k1)
+        elif idof == 3:
+            fdof = _nf1_tri(coeff, coords, i1, j1, k1)
+        elif idof < 7:
+            fdof = _ne2_tri(coeff, coords, i1, j1, k1)
+        else:
+            fdof = _nf2_tri(coeff, coords, i1, j1, k1)
+
+        bvec[idof] = -sign * A * np.sum(WEIGHTS * (fdof[0, :] * Ux + fdof[1, :] * Uy))
+    if SCALE_LENGTH == True:
+        bvec = bvec * Lvec
+    return bvec
+
+
+@njit(
+    c16[:](
+        f8[:, :],
+        i8[:, :],
+        c16[:],
+        i8[:],
+        c16[:, :, :],
+        c16[:, :, :],
+        i8[:, :],
+        f8[:, :],
+    ),
+    cache=True,
+    nogil=True,
+    parallel=False,
+)
+def compute_force_entries_scat(
+    vertices_global,
+    tris,
+    Bvec,
+    surf_triangle_indices,
+    Uglobal_all,
+    Uglobal_all_curl,
+    tri_to_field,
+    normals,
+):
+    Niter = surf_triangle_indices.shape[0]
+    for i in prange(Niter):  # type: ignore
+        itri = surf_triangle_indices[i]
+
+        vertex_ids = tris[:, itri]
+
+        Uglobal = Uglobal_all[:, :, i]
+        UglobalCurl = Uglobal_all_curl[:, :, i]
+
+        bvec = ned2_tri_force_scat(
+            vertices_global[:, vertex_ids], Uglobal, UglobalCurl, normals[:, i]
+        )
+
+        indices = tri_to_field[:, itri]
+
+        Bvec[indices] += bvec
     return Bvec
 
 
@@ -743,7 +581,6 @@ def assemble_robin_bc_bvec_scat(
     surf_triangle_indices: np.ndarray,
     Ufunc: Callable,
     UfuncCurl: Callable,
-    DPTs: np.ndarray,
     normals: np.ndarray,
 ):
 
@@ -752,15 +589,15 @@ def assemble_robin_bc_bvec_scat(
     vertices = field.mesh.nodes
 
     xflat, yflat, zflat = generate_points_3d(
-        vertices, field.mesh.tris, DPTs, surf_triangle_indices
+        vertices, field.mesh.tris, DPTS, surf_triangle_indices
     )
 
     U_global = Ufunc(xflat, yflat, zflat)
     U_global_curl = UfuncCurl(xflat, yflat, zflat)
 
-    U_global_all = U_global.reshape((3, DPTs.shape[1], surf_triangle_indices.shape[0]))
+    U_global_all = U_global.reshape((3, DPTS.shape[1], surf_triangle_indices.shape[0]))
     U_global_all_curl = U_global_curl.reshape(
-        (3, DPTs.shape[1], surf_triangle_indices.shape[0])
+        (3, DPTS.shape[1], surf_triangle_indices.shape[0])
     )
 
     Bvec = compute_force_entries_scat(
@@ -770,23 +607,7 @@ def assemble_robin_bc_bvec_scat(
         surf_triangle_indices,
         U_global_all,
         U_global_all_curl,
-        DPTs,
         field.tri_to_field,
         normals,
     )
     return Bvec
-
-
-def assemble_robin_bc(
-    field: Nedelec2,
-    Bmat: np.ndarray,
-    surf_triangle_indices: np.ndarray,
-    gamma: np.ndarray, 
-):
-    
-    vertices = field.mesh.nodes
-    Bmat = compute_bc_entries(
-        vertices, field.mesh.tris, Bmat, surf_triangle_indices, gamma
-    )
-    
-    return Bmat

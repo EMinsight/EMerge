@@ -187,6 +187,7 @@ class Legrange2(FEMBasis, Saveable):
         xs: np.ndarray,
         ys: np.ndarray,
         zs: np.ndarray,
+        tet_mapping: np.ndarray,
         tetids: np.ndarray | None = None,
         usenan: bool = True,
     ) -> np.ndarray:
@@ -203,6 +204,7 @@ class Legrange2(FEMBasis, Saveable):
             self.mesh.nodes,
             self.tet_to_field,
             tetids,
+            tet_mapping,
         )
         n_zeros = np.isnan(vals).sum()
         if not usenan and n_zeros > 0:
@@ -217,6 +219,7 @@ class Legrange2(FEMBasis, Saveable):
         ys: np.ndarray,
         zs: np.ndarray,
         c: np.ndarray,
+        tet_mapping: np.ndarray,
         tetids: np.ndarray | None = None,
         usenan: bool = True,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -232,6 +235,7 @@ class Legrange2(FEMBasis, Saveable):
             self.mesh.nodes,
             self.tet_to_field,
             tetids,
+            tet_mapping,
         )
         n_zeros = np.isnan(vx).sum()
         if not usenan and n_zeros > 0:

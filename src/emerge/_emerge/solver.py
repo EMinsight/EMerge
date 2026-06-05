@@ -1995,7 +1995,8 @@ class SolveRoutine:
         """
         if matrix_type is MatrixType.UNKNOWN:
             matrix_type = classify_matrix(A)
-            logger.info(f"Analysed matrix A as {matrix_type}")
+
+        logger.info(f"Solving Matrix of type: {matrix_type}")
 
         if b.ndim == 1:
             b = b.reshape((b.shape[0], 1))

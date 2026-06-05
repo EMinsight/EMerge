@@ -42,7 +42,7 @@ rin = 12.5 * mil
 lfeed = 100 * mil
 
 # A usual we start our simulation file
-model = em.Simulation("ComblineFilter")
+model = em.Simulation("ComblineFilter", loglevel="DEBUG")
 model.check_version("2.6.1")  # Checks version compatibility.
 
 # The filter consists of quarter lamba cylindrical pins inside an airbox.
@@ -102,7 +102,7 @@ feed2out = em.geo.subtract(feed2out, feed2in)
 model.commit_geometry()
 
 # We define our frequency range and a fine sampling.
-model.mw.set_frequency_range(6e9, 8e9, 21)
+model.mw.set_frequency_range(6e9, 8e9, 31)
 
 model.mw.set_resolution(0.1)
 # To improve simulation quality we refine the faces at the top of the cylinders.
@@ -126,10 +126,9 @@ data = model.mw.run_sweep(parallel=True)
 
 # Next we will use the Vector Fitting algorithm to model our S-parameters with a Rational function
 
-fdense = np.linspace(6e9, 9e9, 2001)
-
-S11 = data.scalar.grid.model_S(1, 1, fdense)
-S21 = data.scalar.grid.model_S(2, 1, fdense)
+fdense = data.scalar.grid.dense_f(2001)
+S11 = data.scalar.grid.model_S(1, 1)
+S21 = data.scalar.grid.model_S(2, 1)
 
 plot_sp(fdense, [S11, S21], labels=["S11", "S21"])
 

@@ -257,7 +257,7 @@ def leg2_tet_stiff(tet_vertices, cond_tet):
             )
 
             Amat[iv1, iv2] = np.sum(dotNiNj * WEIGHTS)
-
+    
     return Amat * V
 
 

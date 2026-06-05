@@ -180,9 +180,9 @@ class Mesh3D(Mesh, Saveable):
 
         ## Memory
         # These
-        self.geonodes: list[int] = (
-            []
-        )  # All nodes that are characteristic of the geometry (excluding mesh nodes)
+        self.geonodes: list[
+            int
+        ] = []  # All nodes that are characteristic of the geometry (excluding mesh nodes)
 
         # These quantities link more abstract geometric entities such as boxes/faces etc to their
         # respective triangles, nodes etc. They link GMSH tags to mesh indices
@@ -1217,7 +1217,7 @@ class Mesh3D(Mesh, Saveable):
 
     def get_normal(self, itri: int) -> np.ndarray:
         """Returns a triangle normal which with an
-        arbitrarily assigned normal direction. 
+        arbitrarily assigned normal direction.
         (Deterministic but not consistent with faces)
 
         Args:
@@ -1226,7 +1226,7 @@ class Mesh3D(Mesh, Saveable):
         Returns:
             np.ndarray: _description_
         """
-        i1, i2, i3 = self.tris[:,itri]
+        i1, i2, i3 = self.tris[:, itri]
         p0, p1, p2 = (
             self.nodes[:, i1],
             self.nodes[:, i2],
@@ -1235,7 +1235,8 @@ class Mesh3D(Mesh, Saveable):
 
         normal = np.cross(p1 - p0, p2 - p0)
         norm = np.linalg.norm(normal)
-        return norm
+        return normal / norm
+
 
 class SurfaceMesh(Mesh):
     """The surface mesh class is used to assemble the Modal port matrix.

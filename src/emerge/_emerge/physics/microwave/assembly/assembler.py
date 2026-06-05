@@ -26,6 +26,7 @@ from ..microwave_bc import (
     Periodic,
     MWBoundaryConditionSet,
     ThinConductor,
+    ModalPort,
 )
 from ....elements.nedelec2 import Nedelec2
 from ....elements.nedleg2 import NedelecLegrange2
@@ -45,6 +46,13 @@ _PBC_DSMAX = 1e-15
 ############################################################
 
 
+def do_assemble_wpbc(bc: BoundaryCondition) -> bool:
+    if isinstance(bc, ModalPort):
+        if bc.mixed_materials == True:
+            return True
+    return False
+
+
 def diagnose_matrix(mat: csc_matrix, basis: Nedelec2):
     """
     Performs high-fidelity diagnostics on the FEM system matrix.
@@ -61,9 +69,9 @@ def diagnose_matrix(mat: csc_matrix, basis: Nedelec2):
         report.append(f"CRITICAL: Non-square matrix detected ({mat.shape})")
         failed = True
 
-    if n_dofs != basis.nfield:
+    if n_dofs != basis.n_field:
         report.append(
-            f"CRITICAL: DoF mismatch! Matrix size {n_dofs} != Basis nfield {basis.nfield}"
+            f"CRITICAL: DoF mismatch! Matrix size {n_dofs} != Basis nfield {basis.n_field}"
         )
         failed = True
 
@@ -415,7 +423,7 @@ class Assembler:
 
         # TODO: Simplified to all "conductors" loosely defined. Must change to implementing line robin boundary conditions.
         pecs: list[BoundaryCondition] = bc_set.get_conductors()
-        
+
         if len(pecs) > 0:
             logger.debug(f".total of equiv. {len(pecs)} PEC BCs implemented for BMA")
 
@@ -480,6 +488,7 @@ class Assembler:
         from ....mth.pairing import pair_coordinates
         from .periodicbc import gen_periodic_matrix
         from .robin_abc_order2 import abc_order_2_matrix
+        from .wpbc import assemble_wpbc, assemble_wpbc_bvec
 
         # PREDEFINE CONSTANTS
         W0 = 2 * np.pi * frequency
@@ -497,7 +506,7 @@ class Assembler:
             if mat.frequency_dependent:
                 is_frequency_dependent = True
                 break
-        
+
         # Prepare the 3x3 material property tensors.
         er = np.zeros((3, 3, field.mesh.n_tets), dtype=np.complex128)
         tand = np.zeros((3, 3, field.mesh.n_tets), dtype=np.complex128)
@@ -514,10 +523,12 @@ class Assembler:
         # Define the complex dielectric constant:
         er = er * (1 - 1j * tand) - 1j * cond / (W0 * EPS0)
 
-        is_frequency_dependent = is_frequency_dependent or np.any((cond > 0) & (cond < self.settings.mw_3d_peclim))  # type: ignore
-        
+        is_frequency_dependent = is_frequency_dependent or np.any(
+            (cond > 0) & (cond < self.settings.mw_3d_peclim)
+        )  # type: ignore
+
         NF = field.n_field
-        
+
         # Only used cahced matrices if they are there, it is asked and there are no frequency dependent material properties.
         if (
             cache_matrices
@@ -539,10 +550,11 @@ class Assembler:
 
         # COMBINE THE MASS AND STIFFNESS MATRIX
         K: csc_matrix = self.cached_cscmap.to_csc(Evec - Bvec * (K0**2))
-        
 
         # ISOLATE BOUNDARY CONDITIONS TO ASSEMBLE
-        thin_conductor_bcs: list[ThinConductor] = [bc for bc in bcs if isinstance(bc, ThinConductor)]
+        thin_conductor_bcs: list[ThinConductor] = [
+            bc for bc in bcs if isinstance(bc, ThinConductor)
+        ]
         pec_bcs: list[PEC] = [bc for bc in bcs if isinstance(bc, PEC)]
         robin_bcs: list[RobinBC] = [bc for bc in bcs if isinstance(bc, RobinBC)]
         port_bcs: list[PortBC] = [bc for bc in bcs if isinstance(bc, PortBC)]
@@ -559,7 +571,7 @@ class Assembler:
         ############################################################
 
         logger.debug("Implementing PEC Boundary Conditions.")
-        
+
         # pec_ids is a list of degree of freedom indices that are 0 because
         # the E-field there is 0. For pec_ids these are references to the
         # degree of freedom, for the pec_tris these are references to the
@@ -567,6 +579,7 @@ class Assembler:
 
         pec_ids: list[int] = []
         pec_tris: list[int] = []
+        # non_pec_ids: list[int] = []  # PEC DoF that aren't actually PEC
 
         # Conductivity above al imit, consider it all PEC
         ipec = 0
@@ -574,6 +587,7 @@ class Assembler:
         # Volumetric PEC. Thus tets which are all PEC need to have all the
         # field indices of degrees of freedom of that tetrahedron be set to 0.
         # No E-field inside the TET
+
         for itet in range(field.n_tets):
             if cond[0, 0, itet] > self.settings.mw_3d_peclim:
                 ipec += 1
@@ -609,30 +623,30 @@ class Assembler:
         ############################################################
         #                 ROBIN BOUNDARY CONDITIONS                #
         ############################################################
-        # robin boundary conditions are all ports, absorbing boundary dconditions and surface impedance etc.
+        # Robin boundary conditions are all ports, absorbing boundary dconditions and surface impedance etc.
 
         if len(robin_bcs) > 0:
             logger.debug("Implementing Robin Boundary Conditions.")
 
-            # We compute the FEM matric contributions using Gaussian quadrature.
-            gauss_points = gaus_quad_tri(4)
-
             # The contributions will be added to the mass+stiffness matrix A.
             # We assemble in B.
-            
+
             B_matrix_robin = field.empty_tri_matrix()
             B_matrix_robin_2 = None
-            
+
             if len(thin_conductor_bcs) > 0:
                 B_matrix_robin_2 = B_matrix_robin.copy().astype(np.complex128)
-            
+
             for bc in robin_bcs:
                 logger.trace(f".Implementing {bc}")
+                # if do_assemble_wpbc(bc):
+                #     continue
                 for tag in bc.tags:
                     face_tags = [tag]
 
                     # Get all Robin BC face triangle and edge
                     tri_ids = mesh.get_triangles(face_tags)
+
                     edge_ids = list(mesh.tri_to_edge[:, tri_ids].flatten())
 
                     # Compute the γ parameter which is a generic scaling factor
@@ -642,9 +656,14 @@ class Assembler:
 
                     if bc._assemble_matrix:
                         # The assembler adds the contributions to the Bemptry matrix
-                        B_matrix_robin = assemble_robin_bc(field, B_matrix_robin, tri_ids, gamma)  # type: ignore
+                        B_matrix_robin = assemble_robin_bc(
+                            field, B_matrix_robin, tri_ids, gamma
+                        )  # type: ignore
+
                         if isinstance(bc, ThinConductor):
-                            B_matrix_robin_2 = assemble_robin_bc(field, B_matrix_robin_2, tri_ids, gamma)
+                            B_matrix_robin_2 = assemble_robin_bc(
+                                field, B_matrix_robin_2, tri_ids, gamma
+                            )
                     # The the forcing vector b-entries for excited ports are added.
                     # Don't include ScatteredField boundary conditions.
                     if (
@@ -654,7 +673,7 @@ class Assembler:
                     ):
                         for number, Ufunc in bc._iter_modes(K0):
                             # Assemble and store in the port_vectors dictionary.
-                            b_p = assemble_robin_bc_bvec(field, tri_ids, Ufunc, gauss_points)  # type: ignore
+                            b_p = assemble_robin_bc_bvec(field, tri_ids, Ufunc)  # type: ignore
                             port_vectors[number] += b_p  # type: ignore
                             logger.trace(
                                 f"..included force vector term with norm {np.linalg.norm(b_p):.3f}"
@@ -669,14 +688,43 @@ class Assembler:
                             logger.debug("Implementing second order ABC correction.")
                             mat = abc_order_2_matrix(field, tri_ids, c2)
                             B_matrix_robin += mat
+
+            # for bc in robin_bcs:
+            #     if not do_assemble_wpbc(bc):
+            #         continue
+
+            #     logger.trace(f".Implementing WPBC {bc}")
+            #     for tag in bc.tags:
+            #         face_tags = [tag]
+            #         tri_ids = mesh.get_triangles(face_tags)
+
+            #         Efunc, Hfunc, mu = bc.get_mode_EH(K0)
+            #         omega = K0 * C0
+            #         nhat = bc._normal
+            #         mu = MU0
+            #         # Matrix contribution (once per port)
+            #         K = assemble_wpbc(field, K, tri_ids, Efunc, Hfunc, nhat, omega, mu)
+
+            #         # Forcing vector (once per excited mode)
+            #         if bc._include_force and bc.driven:
+            #             number = [x for x in bc._iter_modes(K0)][0][0]
+            #             amplitude = 1.0
+            #             b_p = assemble_wpbc_bvec(
+            #                 field, tri_ids, Efunc, Hfunc, nhat, omega, mu, amplitude
+            #             )
+            #             port_vectors[number] += b_p
+            #             logger.trace(
+            #                 f"..included wpbc force vector with norm {np.linalg.norm(b_p):.3f}"
+            #             )
+
             # Add the total contribution of B_matrix_robin to K
             K += field.generate_csc(B_matrix_robin)
-            
+
             if B_matrix_robin_2 is not None:
-                logger.debug('Assembling opposite side matrix entries.')
+                logger.debug("Assembling opposite side matrix entries.")
                 rows, cols = field.empty_tri_rowcol(other_side=True)
                 K += field.generate_csc(B_matrix_robin_2, (rows, cols))
-        
+
         ############################################################
         #                   PERIODIC BOUNDARY CONDITIONS          #
         ############################################################
@@ -746,6 +794,7 @@ class Assembler:
         ############################################################
 
         pec_ids_set = set(pec_ids)
+
         solve_ids = np.array([i for i in range(NF) if i not in pec_ids_set])
 
         # Because there are periodic boundaries which reduce the sets of degrees of freedom
@@ -764,6 +813,8 @@ class Assembler:
         logger.debug(f"Number of tets: {mesh.n_tets:,}")
         logger.debug(f"Number of DoF: {K.shape[0]:,}")
         logger.debug(f"Number of non-zero: {K.nnz:,}")
+
+        # K.eliminate_zeros()
 
         simjob = SimJob(
             K, port_vectors, K0 * 299792458 / (2 * np.pi), symmetric=not has_periodic
@@ -834,7 +885,9 @@ class Assembler:
 
         er = er * (1 - 1j * tand) - 1j * cond / (W0 * EPS0)
 
-        is_frequency_dependent = is_frequency_dependent or np.any((cond > 0) & (cond < self.settings.mw_3d_peclim))  # type: ignore
+        is_frequency_dependent = is_frequency_dependent or np.any(
+            (cond > 0) & (cond < self.settings.mw_3d_peclim)
+        )  # type: ignore
 
         if (
             cache_matrices
@@ -930,19 +983,24 @@ class Assembler:
                     gamma = bc.get_gamma(K0)
                     logger.trace(f"..robin bc γ={gamma:.3f}")
 
-                    if (
-                        not bc.pml
-                    ):  # Flag that can be turned on by the user if the simulation domain termination is PML and thus no RBC is to be implemented
-                        B_matrix_robin = assemble_robin_bc(field, B_matrix_robin, tri_ids, gamma)  # type: ignore
+                    if not bc.pml:  # Flag that can be turned on by the user if the simulation domain termination is PML and thus no RBC is to be implemented
+                        B_matrix_robin = assemble_robin_bc(
+                            field, B_matrix_robin, tri_ids, gamma
+                        )  # type: ignore
                     else:
                         B_matrix_robin *= 0.0
 
                     if isinstance(bc, ScatteredField):
-
                         # Implement forcing vector terms
                         for bf in bc._iter_fields(K0):
                             normals = field.mesh.outward_normals(tri_ids)
-                            b_p = assemble_robin_bc_bvec_scat(field, tri_ids, bf.Uinc, bf.Uinc_curl, gauss_points, normals)  # type: ignore
+                            b_p = assemble_robin_bc_bvec_scat(
+                                field,
+                                tri_ids,
+                                bf.Uinc,
+                                bf.Uinc_curl,
+                                normals,
+                            )  # type: ignore
                             if bf in background_fields.items():
                                 background_fields[bf] += b_p
                             else:
@@ -1074,6 +1132,7 @@ class Assembler:
         """
 
         from .curlcurl import tet_mass_stiffness_matrices
+
         from .robinbc import assemble_robin_bc
         from ....mth.pairing import pair_coordinates
         from .periodicbc import gen_periodic_matrix
@@ -1151,7 +1210,6 @@ class Assembler:
 
             B_matrix_robin = field.empty_tri_matrix()
             for bc in robin_bcs:
-
                 for tag in bc.tags:
                     face_tags = [tag]
 
@@ -1168,7 +1226,9 @@ class Assembler:
 
                     if bc._assemble_matrix:
                         # The assembler adds the contributions to the Bemptry matrix
-                        B_matrix_robin = assemble_robin_bc(field, B_matrix_robin, tri_ids, gamma)  # type: ignore
+                        B_matrix_robin = assemble_robin_bc(
+                            field, B_matrix_robin, tri_ids, gamma
+                        )  # type: ignore
 
                 ## Second order absorbing boundary correction
                 if bc._isabc:

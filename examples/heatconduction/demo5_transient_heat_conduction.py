@@ -131,5 +131,4 @@ plot(
     ylabel="Temperature [degC]",
 )
 
-
 sim.reset(data=True)

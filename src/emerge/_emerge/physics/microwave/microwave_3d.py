@@ -590,11 +590,11 @@ class Microwave3D:
             self._define_lumped_port_integration_points(port)
 
         self.bc._selections_post_boolean_fragment()
-        
+
         # Process thin conductor DOF split
         thin_conductor_bcs = self.bc.oftype(ThinConductor)
         if len(thin_conductor_bcs) > 0:
-            logger.debug('Processing thin conductors')
+            logger.debug("Processing thin conductors")
             self.basis.partition_dof([x.tags for x in thin_conductor_bcs])
             self.basis._partitioned = True
 
@@ -2453,10 +2453,10 @@ class Microwave3D:
                 k0,
                 fieldfunction,
                 const,
-                4,
+                5,
             )
             mode_p = sparam_mode_power(
-                self.mesh.nodes, tri_vertices, bc, mode_nr, k0, const, 4
+                self.mesh.nodes, tri_vertices, bc, mode_nr, k0, const, 5
             )
 
             return field_p, mode_p

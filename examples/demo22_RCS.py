@@ -89,7 +89,7 @@ ff3d = field.farfield_3d(scatter_object.boundary())
 # For farfield integration this is not necessary because numerically the integral of external sources always yields 0.
 d = model.display
 d.populate()  # Adds all geometries
-d.add_field(field.relative.grid(N=1000).vector("E"))  # Adds a vector polot
+d.add_field(field.relative.grid(N=5000).vector("E"))  # Adds a vector polot
 d.add_field(
     ff3d.surfplot("RCS", rmax=0.6, offset=(0, 0, 1.2))
 )  # Adds the 3D Farfield plot
