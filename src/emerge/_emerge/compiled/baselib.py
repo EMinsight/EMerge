@@ -160,6 +160,18 @@ class CompiledLib:
         return ned2_tri_interp(coords, solutions, tris, nodes, tri_to_field)
 
     @staticmethod
+    def ned2_tri_interp_ezgrad(
+        coords: np.ndarray,
+        solutions: np.ndarray,
+        tris: np.ndarray,
+        nodes: np.ndarray,
+        tri_to_field: np.ndarray,
+    ):
+        from .base.interp import ned2_tri_interp_grad
+
+        return ned2_tri_interp_grad(coords, solutions, tris, nodes, tri_to_field)
+
+    @staticmethod
     def ned2_tri_interp_curl(
         coords: np.ndarray,
         solutions: np.ndarray,

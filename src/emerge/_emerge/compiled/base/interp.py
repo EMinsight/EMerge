@@ -1033,6 +1033,145 @@ def ned2_tri_interp_full(
     return Ex, Ey, Ez
 
 
+@njit(c16[:, :](f8[:], f8[:, :]), cache=True, nogil=True)
+def _lv_grad(coeff, coords):
+    a1, b1, c1 = coeff
+    xs = coords[0, :]
+    ys = coords[1, :]
+    out = np.empty((2, xs.shape[0]), dtype=np.complex128)
+    out[0, :] = b1 * (4 * a1 + 4 * b1 * xs + 4 * c1 * ys - 1)
+    out[1, :] = c1 * (4 * a1 + 4 * b1 * xs + 4 * c1 * ys - 1)
+    return out
+
+
+@njit(c16[:, :](f8[:, :], f8[:, :]), cache=True, nogil=True)
+def _le_grad(coeff, coords):
+    a1, b1, c1 = coeff[:, 0]
+    a2, b2, c2 = coeff[:, 1]
+    xs = coords[0, :]
+    ys = coords[1, :]
+    out = np.empty((2, xs.shape[0]), dtype=np.complex128)
+    out[0, :] = 4 * b1 * (a2 + b2 * xs + c2 * ys) + 4 * b2 * (a1 + b1 * xs + c1 * ys)
+    out[1, :] = 4 * c1 * (a2 + b2 * xs + c2 * ys) + 4 * c2 * (a1 + b1 * xs + c1 * ys)
+    return out
+
+
+@njit(
+    types.Tuple((c16[:], c16[:]))(f8[:, :], c16[:], i8[:, :], f8[:, :], i8[:, :]),
+    cache=True,
+    nogil=True,
+)
+def ned2_tri_interp_grad(
+    coords: np.ndarray,
+    solutions: np.ndarray,
+    tris: np.ndarray,
+    nodes: np.ndarray,
+    tri_to_field: np.ndarray,
+):
+    """
+    Computes the spatial gradient of the out-of-plane Ez component
+    of a mixed Nedelec-2 / Lagrange-2 basis on triangles.
+
+    Ez is represented by Lagrange-2 basis functions:
+      - 3 vertex DoFs  (LV_1, LV_2, LV_3)  -> tri_to_field[8:11, :]
+      - 3 edge DoFs    (LE_1, LE_2, LE_3)   -> tri_to_field[11:14, :]
+
+    Vertex basis gradient : _lv_grad(coeff_i,   coords)  -> (2, npts)
+    Edge   basis gradient : _le_grad(coeff_ij,  coords)  -> (2, npts)
+      where coeff_ij = [[a_i,a_j],[b_i,b_j],[c_i,c_j]]
+
+    Returns
+    -------
+    dEz_dx : (nNodes,) complex128
+    dEz_dy : (nNodes,) complex128
+    """
+    nNodes = coords.shape[1]
+
+    dEz_dx = np.full((nNodes,), np.nan, dtype=np.complex128)
+    dEz_dy = np.full((nNodes,), np.nan, dtype=np.complex128)
+
+    nodes = nodes[:2, :]
+
+    # Edge-to-vertex connectivity: edge 0 -> (v0,v1), edge 1 -> (v1,v2), edge 2 -> (v0,v2)
+    l_edge_ids = np.array([[0, 1, 0], [1, 2, 2]])
+
+    for itri in range(tris.shape[1]):
+        iv1, iv2, iv3 = tris[:, itri]
+
+        v1 = nodes[:, iv1]
+        v2 = nodes[:, iv2]
+        v3 = nodes[:, iv3]
+
+        # ---- inside test (same as ned2_tri_interp) -------------------------
+        bv1 = v2 - v1
+        bv2 = v3 - v1
+        blocal = np.zeros((2, 2))
+        blocal[:, 0] = bv1
+        blocal[:, 1] = bv2
+        basis = np.linalg.pinv(blocal)
+
+        coords_offset = coords - v1[:, np.newaxis]
+        coords_local = basis @ coords_offset
+
+        inside = (
+            ((coords_local[0, :] + coords_local[1, :]) <= 1 + EPS)
+            & (coords_local[0, :] >= -EPS)
+            & (coords_local[1, :] >= -EPS)
+        )
+
+        if inside.sum() == 0:
+            continue
+
+        # ---- geometry ------------------------------------------------------
+        xvs = nodes[0, tris[:, itri]]
+        yvs = nodes[1, tris[:, itri]]
+
+        a_s, b_s, c_s, A = tri_coefficients(xvs, yvs)
+
+        # ---- DoF extraction ------------------------------------------------
+        field_ids = tri_to_field[:, itri]
+
+        # Vertex Lagrange DoFs: indices 8,9,10  ->  LV_1, LV_2, LV_3
+        lv_dofs = solutions[field_ids[8:11]]  # shape (3,)
+
+        # Edge Lagrange DoFs:   indices 11,12,13 -> LE_1, LE_2, LE_3
+        le_dofs = solutions[field_ids[11:14]]  # shape (3,)
+
+        # ---- coordinates of points inside this triangle --------------------
+        pts_inside = coords[:, inside]  # shape (2, n_in)
+
+        # ---- gradient accumulator ------------------------------------------
+        grad_x = np.zeros(pts_inside.shape[1], dtype=np.complex128)
+        grad_y = np.zeros(pts_inside.shape[1], dtype=np.complex128)
+
+        # -- vertex contributions: sum_i  LV_i * grad(phi_v_i) ---------------
+        for iv in range(3):
+            coeff_v = np.array([a_s[iv], b_s[iv], c_s[iv]])
+            g = _lv_grad(coeff_v, pts_inside)  # (2, n_in)
+            grad_x += lv_dofs[iv] * g[0, :]
+            grad_y += lv_dofs[iv] * g[1, :]
+
+        # -- edge contributions: sum_e  LE_e * grad(phi_e_ij) ----------------
+        for ie in range(3):
+            edgeids = l_edge_ids[:, ie]  # [i, j]
+            coeff_e = np.empty((3, 2))
+            coeff_e[0, 0] = a_s[edgeids[0]]
+            coeff_e[0, 1] = a_s[edgeids[1]]
+            coeff_e[1, 0] = b_s[edgeids[0]]
+            coeff_e[1, 1] = b_s[edgeids[1]]
+            coeff_e[2, 0] = c_s[edgeids[0]]
+            coeff_e[2, 1] = c_s[edgeids[1]]
+
+            g = _le_grad(coeff_e, pts_inside)  # (2, n_in)
+            grad_x += le_dofs[ie] * g[0, :]
+            grad_y += le_dofs[ie] * g[1, :]
+
+        dEz_dx[inside] = grad_x
+        dEz_dy[inside] = grad_y
+
+    return dEz_dx, dEz_dy
+
+
 @njit(
     types.Tuple((c16[:], c16[:], c16[:]))(
         f8[:, :], c16[:], i8[:, :], f8[:, :], i8[:, :], c16[:, :, :], c16

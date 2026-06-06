@@ -30,15 +30,10 @@ from ...settings import Settings
 from ...simstate import SimState
 from ...logsettings import DEBUG_COLLECTOR
 
-from .microwave_bc import (
-    MWBoundaryConditionSet,
-    PEC,
-    ModalPort,
-    LumpedPort,
-    PortBC,
-    ScatteredField,
-    ThinConductor,
-)
+from .bcs.boundary_condition_set import MWBoundaryConditionSet
+from .bcs.boundary_conditions import PEC, ThinConductor, ScatteredField
+from .bcs.port_bcs import ModalPort, LumpedPort, PortBC
+
 from .microwave_data import MWData
 from .assembly.assembler import Assembler
 from .port_functions import compute_avg_power_flux

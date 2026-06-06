@@ -17,17 +17,17 @@
 
 # Last Cleanup: 2025-01-01
 import numpy as np
-from ..microwave_bc import (
+from ..bcs import (
     PEC,
     BoundaryCondition,
     ScatteredField,
     RobinBC,
     PortBC,
-    Periodic,
     MWBoundaryConditionSet,
     ThinConductor,
     ModalPort,
 )
+from ....periodic import Periodic
 from ....elements.nedelec2 import Nedelec2
 from ....elements.nedleg2 import NedelecLegrange2
 from ....mth.csc_cast import CSCMapping
