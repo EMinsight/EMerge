@@ -23,6 +23,8 @@ from ...geometry import GeoObject
 from ...selection import FaceSelection, DomainSelection, EdgeSelection, Selection, encode_data
 from ...physics.microwave.microwave_bc import PortBC, ModalPort
 from ...cs import Anchor
+from pathlib import Path
+from importlib.resources import files
 
 from emsutil.pyvista import EMergeDisplay, setdefault, cmap_names, _AnimObject
 import numpy as np
@@ -128,6 +130,29 @@ class PVDisplay(EMergeDisplay):
         self._plot._render = True
         self._plot.render()
 
+    def _get_emerge_path(self, filename: str) -> str:
+        """Generates a filename for the EMerge package directory in the PyVista folder
+
+        Args:
+            filename (str): _description_
+
+        Returns:
+            str: _description_
+        """
+        return str(Path(files("emerge")) / "_emerge" / "plot" / "pyvista" / filename)
+    
+    def show(self, screenshot: str | None = None, off_screen: bool = False):
+        """Shows the Pyvista display."""
+        logo_path = self._get_emerge_path("EMS_small.png")
+        self._plot.add_logo_widget(
+            logo_path, 
+            position=(0.87, 0.87), 
+            size=(0.10, 0.10),
+            opacity=0.7
+        )
+        super().show(screenshot, off_screen)
+        
+        
     def _add_selectable_points(self) -> None:
         self._clear_selectable_objects()
         mesh = self._state.mesh
@@ -270,6 +295,7 @@ class PVDisplay(EMergeDisplay):
                    texture: str | None = None,
                    opacity: float = 1.0,
                    draw_line: bool = True,
+                   pbr: bool = True,
                    *args, **kwargs):
         
         if isinstance(obj, GeoObject):
@@ -285,7 +311,8 @@ class PVDisplay(EMergeDisplay):
                       metal=obj._metal, 
                       opacity=opacity,
                       color=obj.color_rgb, 
-                      texture=texture)
+                      texture=texture,
+                      pbr=pbr)
 
         if draw_line:
             mesh_obj = self._volume_edges(_select(obj))
@@ -314,10 +341,13 @@ class PVDisplay(EMergeDisplay):
             self.add_object(obj, opacity=opacity, **kwargs)
     
     def populate(self, opacity: float = 1.0, **kwargs) -> None:
+        """Populate the view with all objects in your simulation model
+
+        Args:
+            opacity (float, optional): The max opacity to use for all geometries. Defaults to 1.0.
+        """
         for obj in self._state.current_geo_state:
             self.add_object(obj, opacity=opacity, **kwargs)
-
-    
           
     def add_scatter(self, xs: np.ndarray, ys: np.ndarray, zs: np.ndarray):
         """Adds a scatter point cloud

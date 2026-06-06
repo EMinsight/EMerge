@@ -36,9 +36,9 @@ f2 = 1.60e9             # stop frequency
 
 # --- Create simulation object -------------------------------------------
 model = em.Simulation('PatchAntenna')
-
 model.check_version("2.6.1") # Checks version compatibility.
-
+#em.lib.PEC.color = "#fffb2c"
+model.display.set_theme(em.themes.Vintage)
 # --- Define geometry primitives -----------------------------------------
 # Substrate block centered at origin in XY, thickness in Z (negative down)
 dielectric = em.geo.Box(wsub, hsub, th,
