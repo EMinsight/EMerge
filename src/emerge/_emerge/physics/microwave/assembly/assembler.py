@@ -26,6 +26,7 @@ from ..bcs import (
     MWBoundaryConditionSet,
     ThinConductor,
     ModalPort,
+    WavePortIH,
 )
 from ....periodic import Periodic
 from ....elements.nedelec2 import Nedelec2
@@ -33,10 +34,10 @@ from ....elements.nedleg2 import NedelecLegrange2
 from ....mth.csc_cast import CSCMapping
 from emsutil import Material
 from ....settings import Settings
-from scipy.sparse import csc_matrix
+from scipy.sparse import csc_matrix, coo_matrix
 from loguru import logger
 from ..simjob import SimJob
-from ....const import MU0, EPS0, C0
+from ....const import EPS0, C0
 import math
 
 _PBC_DSMAX = 1e-15
@@ -47,9 +48,8 @@ _PBC_DSMAX = 1e-15
 
 
 def do_assemble_wpbc(bc: BoundaryCondition) -> bool:
-    if isinstance(bc, ModalPort):
-        if bc.mixed_materials == True:
-            return True
+    if isinstance(bc, WavePortIH):
+        return True
     return False
 
 
@@ -484,11 +484,10 @@ class Assembler:
         # are actually used.
         from .curlcurl import tet_mass_stiffness_matrices
         from .robinbc import assemble_robin_bc, assemble_robin_bc_bvec
-        from ....mth.optimized import gaus_quad_tri
         from ....mth.pairing import pair_coordinates
         from .periodicbc import gen_periodic_matrix
         from .robin_abc_order2 import abc_order_2_matrix
-        from .wpbc import assemble_wpbc, assemble_wpbc_bvec
+        from .wpbc import assemble_wpbc
 
         # PREDEFINE CONSTANTS
         W0 = 2 * np.pi * frequency
@@ -639,8 +638,10 @@ class Assembler:
 
             for bc in robin_bcs:
                 logger.trace(f".Implementing {bc}")
-                # if do_assemble_wpbc(bc):
-                #     continue
+
+                if isinstance(bc, WavePortIH):
+                    continue
+
                 for tag in bc.tags:
                     face_tags = [tag]
 
@@ -689,34 +690,6 @@ class Assembler:
                             mat = abc_order_2_matrix(field, tri_ids, c2)
                             B_matrix_robin += mat
 
-            # for bc in robin_bcs:
-            #     if not do_assemble_wpbc(bc):
-            #         continue
-
-            #     logger.trace(f".Implementing WPBC {bc}")
-            #     for tag in bc.tags:
-            #         face_tags = [tag]
-            #         tri_ids = mesh.get_triangles(face_tags)
-
-            #         Efunc, Hfunc, mu = bc.get_mode_EH(K0)
-            #         omega = K0 * C0
-            #         nhat = bc._normal
-            #         mu = MU0
-            #         # Matrix contribution (once per port)
-            #         K = assemble_wpbc(field, K, tri_ids, Efunc, Hfunc, nhat, omega, mu)
-
-            #         # Forcing vector (once per excited mode)
-            #         if bc._include_force and bc.driven:
-            #             number = [x for x in bc._iter_modes(K0)][0][0]
-            #             amplitude = 1.0
-            #             b_p = assemble_wpbc_bvec(
-            #                 field, tri_ids, Efunc, Hfunc, nhat, omega, mu, amplitude
-            #             )
-            #             port_vectors[number] += b_p
-            #             logger.trace(
-            #                 f"..included wpbc force vector with norm {np.linalg.norm(b_p):.3f}"
-            #             )
-
             # Add the total contribution of B_matrix_robin to K
             K += field.generate_csc(B_matrix_robin)
 
@@ -724,6 +697,53 @@ class Assembler:
                 logger.debug("Assembling opposite side matrix entries.")
                 rows, cols = field.empty_tri_rowcol(other_side=True)
                 K += field.generate_csc(B_matrix_robin_2, (rows, cols))
+
+            for bc in [bc for bc in robin_bcs if isinstance(bc, WavePortIH)]:
+                logger.info(f".Implementing WPBC {bc}")
+
+                tri_ids = []
+                for tag in bc.tags:
+                    face_tags = [tag]
+                    tri_ids.extend(mesh.get_triangles(face_tags))
+
+                tri_ids = np.array(sorted(list(set(tri_ids))))
+
+                tri1 = tri_ids[0]
+                tri_center = mesh.tri_centers[:, tri1]
+                tet_center = mesh.centers[:, mesh.tri_to_tet[0, tri1]]
+
+                inside = tet_center - tri_center
+                port_normal = mesh.get_normal(tri1)
+
+                # Align normal
+                if sum(inside * port_normal) < 0:
+                    port_normal = -port_normal
+
+                mode_profile, mode_xy, kappa_m = bc.get_modepf_kappa(
+                    K0, mesh.nodes, mesh.tris
+                )
+                gamma_m = bc.get_gamma(K0)
+                logger.info(f"..κm = {kappa_m}")
+                # Matrix contribution (once per port)
+                Bcoo, rows, cols, bvec = assemble_wpbc(
+                    field,
+                    tri_ids,
+                    mode_profile,
+                    mode_xy,
+                    kappa_m,
+                    gamma_m,
+                    K0,
+                    port_normal,
+                )
+
+                port_vectors[1] += bvec  # type: ignore
+                logger.trace(
+                    f"..included force vector term with norm {np.linalg.norm(bvec):.3f}"
+                )
+
+                K += coo_matrix(
+                    (Bcoo, (rows, cols)), shape=(field.n_field, field.n_field)
+                ).tocsc()
 
         ############################################################
         #                   PERIODIC BOUNDARY CONDITIONS          #

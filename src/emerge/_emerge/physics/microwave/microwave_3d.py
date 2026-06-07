@@ -32,7 +32,7 @@ from ...logsettings import DEBUG_COLLECTOR
 
 from .bcs.boundary_condition_set import MWBoundaryConditionSet
 from .bcs.boundary_conditions import PEC, ThinConductor, ScatteredField
-from .bcs.port_bcs import ModalPort, LumpedPort, PortBC
+from .bcs.port_bcs import ModalPort, LumpedPort, PortBC, WavePortIH
 
 from .microwave_data import MWData
 from .assembly.assembler import Assembler
@@ -1015,12 +1015,18 @@ class Microwave3D:
             Emode = np.zeros((nlf.n_field,), dtype=np.complex128)
             eigenmode = eigen_modes[:, i]
             Emode[solve_ids] = np.squeeze(eigenmode)
-            # Phase correct for a phase of 0 degree at the port maximum.
-            Emode = Emode * np.exp(-1j * np.angle(Emode[np.argmax(np.abs(Emode))]))
 
             # Compute the out of plane propagation constant
-            beta_base = np.emath.sqrt(-eigen_values[i])
-            beta = min(k0 * np.sqrt(ermax * urmax), beta_base)
+            beta = np.emath.sqrt(-eigen_values[i])
+            # beta = min(k0 * np.sqrt(ermax * urmax), beta_base)
+
+            # Correct for et = kz Et, ez = -j Ez
+            Emode[: nlf.n_xy] = Emode[: nlf.n_xy] / beta
+            Emode[nlf.n_xy :] = Emode[nlf.n_xy :] / (-1j)
+            # Phase correct for a phase of 0 degree at the port maximum.
+            Emode = Emode * np.exp(
+                -1j * np.angle(Emode[np.argmax(np.abs(Emode[: nlf.n_xy]))])
+            )
 
             residuals = -1
 
@@ -1062,9 +1068,8 @@ class Microwave3D:
 
             Efxy = Emode[: nlf.n_xy]
             Efz = Emode[nlf.n_xy :]
-            Ez = np.max(np.abs(Efz))
             Exy = np.max(np.abs(Efxy))
-
+            Ez = np.max(np.abs(Efz))
             # Final port post processing. If the port is to be considered a TEM mode port:
             if port.forced_modetype == "TEM" or TEM:
                 mode.modetype = "TEM"

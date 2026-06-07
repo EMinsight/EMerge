@@ -17,57 +17,52 @@ Due to the relatively coarse mesh, the resonance frequency is lower than in real
 """
 
 # --- Unit and simulation parameters --------------------------------------
-mm = 0.001              # meters per millimeter
+mm = 0.001  # meters per millimeter
 
 # --- Antenna geometry dimensions ----------------------------------------
-Wpatch = 53 * mm        # patch width (meters)
-Lpatch = 52 * mm        # patch length
-wline = 3.2 * mm        # feed line width
-wstub = 7 * mm          # stub width for inset feed
-lstub = 15.5 * mm       # stub (feed) length
-wsub = 100 * mm         # substrate width
-hsub = 100 * mm         # substrate length
-th = 1.524 * mm         # substrate thickness
-Rair = 100 * mm         # air sphere radius
+Wpatch = 53 * mm  # patch width (meters)
+Lpatch = 52 * mm  # patch length
+wline = 3.2 * mm  # feed line width
+wstub = 7 * mm  # stub width for inset feed
+lstub = 15.5 * mm  # stub (feed) length
+wsub = 100 * mm  # substrate width
+hsub = 100 * mm  # substrate length
+th = 1.524 * mm  # substrate thickness
+Rair = 100 * mm  # air sphere radius
 
 # Refined frequency range for antenna resonance around 1.54–1.6 GHz
-f1 = 1.55e9             # start frequency
-f2 = 1.60e9             # stop frequency
+f1 = 1.55e9  # start frequency
+f2 = 1.60e9  # stop frequency
 
 # --- Create simulation object -------------------------------------------
-model = em.Simulation('PatchAntenna')
-
-model.check_version("2.6.1") # Checks version compatibility.
-
+model = em.Simulation("PatchAntenna")
+model.check_version("2.6.1")  # Checks version compatibility.
 # --- Define geometry primitives -----------------------------------------
 # Substrate block centered at origin in XY, thickness in Z (negative down)
-dielectric = em.geo.Box(wsub, hsub, th,
-                        position=(-wsub/2, -hsub/2, -th))
+dielectric = em.geo.Box(wsub, hsub, th, position=(-wsub / 2, -hsub / 2, -th))
 
 # Air box above substrate (Z positive)
-air = em.geo.Sphere(Rair).background() 
+air = em.geo.Sphere(Rair).background()
 # Background makes sure no materials of overlapping domains are overwritten
 
 # Metal patch rectangle on top of substrate
-rpatch = em.geo.XYPlate(Wpatch, Lpatch,
-                        position=(-Wpatch/2, -Lpatch/2, 0))
+rpatch = em.geo.XYPlate(Wpatch, Lpatch, position=(-Wpatch / 2, -Lpatch / 2, 0))
 
-ground = em.geo.XYPlate(wsub, hsub, position=(-wsub/2, -hsub/2, -th)).set_material(em.lib.PEC)
+ground = em.geo.XYPlate(wsub, hsub, position=(-wsub / 2, -hsub / 2, -th)).set_material(
+    em.lib.PEC
+)
 
 # Define cutouts for inset feed: two rectangular plates to subtract
-cutout1 = em.geo.XYPlate(wstub, lstub,
-                        position=(-wline/2 - wstub, -Lpatch/2, 0))
-cutout2 = em.geo.XYPlate(wstub, lstub,
-                        position=( wline/2, -Lpatch/2, 0))
+cutout1 = em.geo.XYPlate(wstub, lstub, position=(-wline / 2 - wstub, -Lpatch / 2, 0))
+cutout2 = em.geo.XYPlate(wstub, lstub, position=(wline / 2, -Lpatch / 2, 0))
 # Feed line plate to add back between cutouts
-line = em.geo.XYPlate(wline, lstub,
-                        position=(-wline/2, -Lpatch/2, 0))
+line = em.geo.XYPlate(wline, lstub, position=(-wline / 2, -Lpatch / 2, 0))
 
 # Plate defining lumped port geometry (origin + width/height vectors)
 port = em.geo.Plate(
-    np.array([-wline/2, -Lpatch/2, -th]),  # lower port corner
-    np.array([wline, 0, 0]),                # width vector along X
-    np.array([0, 0, th])                    # height vector along Z
+    np.array([-wline / 2, -Lpatch / 2, -th]),  # lower port corner
+    np.array([wline, 0, 0]),  # width vector along X
+    np.array([0, 0, th]),  # height vector along Z
 )
 
 # Build final patch shape: subtract cutouts, add feed line
@@ -96,21 +91,19 @@ model.mesher.set_boundary_size(rpatch, 2 * mm)
 model.mesher.set_face_size(port, 1 * mm)
 
 # --- Generate mesh and preview ------------------------------------------
-model.generate_mesh()                             # build the finite-element mesh
-model.view(selections=[port])     # show the mesh around the port
+model.generate_mesh()  # build the finite-element mesh
+model.view(selections=[port])  # show the mesh around the port
 
 # --- Boundary conditions ------------------------------------------------
 # Define lumped port with specified orientation and impedance
 port_bc = model.mw.bc.LumpedPort(
-    port, 1,
-    width=wline, height=th,
-    direction=em.ZAX, Z0=50
+    port, 1, width=wline, height=th, direction=em.ZAX, Z0=50
 )
 
 # Predefining selection
 # The outside of the air box for the absorbing boundary
 boundary_selection = air.boundary()
-pec_selection = em.select(rpatch,ground)
+pec_selection = em.select(rpatch, ground)
 # The patch and ground surface for PEC
 
 # Assigning the boundary conditions
@@ -125,27 +118,32 @@ data = model.mw.run_sweep()
 # --- Post-process S-parameters ------------------------------------------
 freqs = data.scalar.grid.freq
 freq_dense = np.linspace(f1, f2, 1001)
-S11 = data.scalar.grid.model_S(1, 1, freq_dense)            # reflection coefficient
-plot_sp(freq_dense, S11)                       # plot return loss in dB
-smith(S11, f=freq_dense, labels='S11')         # Smith chart of S11
+S11 = data.scalar.grid.model_S(1, 1, freq_dense)  # reflection coefficient
+plot_sp(freq_dense, S11)  # plot return loss in dB
+smith(S11, f=freq_dense, labels="S11")  # Smith chart of S11
 
 # --- Far-field radiation pattern ----------------------------------------
 # Extract 2D cut at phi=0 plane and plot E-field magnitude
-ff1 = data.field.find(freq=1.575e9)\
-    .farfield_2d((0, 0, 1), (1, 0, 0), boundary_selection)
-ff2 = data.field.find(freq=1.575e9)\
-    .farfield_2d((0, 0, 1), (0, 1, 0), boundary_selection)
+ff1 = data.field.find(freq=1.575e9).farfield_2d(
+    (0, 0, 1), (1, 0, 0), boundary_selection
+)
+ff2 = data.field.find(freq=1.575e9).farfield_2d(
+    (0, 0, 1), (0, 1, 0), boundary_selection
+)
 
-plot_ff(ff1.ang*180/np.pi, [ff1.gain.norm, ff2.gain.norm], dB=True, ylabel='Gain [dBi]')                # linear plot vs theta
-plot_ff_polar(ff1.ang, [ff1.gain.norm, ff2.gain.norm], dB=True, dBfloor=-20)          # polar plot of radiation
+plot_ff(
+    ff1.ang * 180 / np.pi, [ff1.gain.norm, ff2.gain.norm], dB=True, ylabel="Gain [dBi]"
+)  # linear plot vs theta
+plot_ff_polar(
+    ff1.ang, [ff1.gain.norm, ff2.gain.norm], dB=True, dBfloor=-20
+)  # polar plot of radiation
 
 # --- 3D radiation visualization -----------------------------------------
 # Add geometry to 3D display
 model.display.populate()
 # Compute full 3D far-field and display surface colored by |E|q
 field = data.field.find(freq=1.59e9)
-ff3d = field.farfield_3d(boundary_selection, origin=(0,0,0))
-surf = ff3d.surfplot('normE', rmax=40 * mm,
-                    offset=(0, 0, 20 * mm))
+ff3d = field.farfield_3d(boundary_selection, origin=(0, 0, 0))
+surf = ff3d.surfplot("normE", rmax=40 * mm, offset=(0, 0, 20 * mm))
 model.display.add_surf(*surf.xyzf)
 model.display.show()

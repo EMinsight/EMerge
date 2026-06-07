@@ -214,11 +214,11 @@ def tri_coefficients(vxs, vys):
     c2 = x1 - x3
     c3 = x2 - x1
 
-    sA = 0.5 * ((x1 - x3) * (y2 - y1) - (x1 - x2) * (y3 - y1))
-    As = np.array([a1, a2, a3])
-    Bs = np.array([b1, b2, b3])
-    Cs = np.array([c1, c2, c3])
-    return As, Bs, Cs, sA
+    sA = 0.5 * (b1 * c2 - b2 * c1)
+    As = np.array([a1, a2, a3]) / (2 * sA)
+    Bs = np.array([b1, b2, b3]) / (2 * sA)
+    Cs = np.array([c1, c2, c3]) / (2 * sA)
+    return As, Bs, Cs, np.abs(sA)
 
 
 @njit(c16[:](f8[:, :], c16[:, :]), cache=True, nogil=True, parallel=False)
@@ -231,12 +231,10 @@ def ned2_tri_force(glob_vertices, glob_Uinc):
     tys = local_vertices[1, :]
     Ds = compute_distances(txs, tys)
     aas, bbs, ccs, A = tri_coefficients(txs, tys)
-    sign = np.sign(A)
-    A = np.abs(A)
     coeff = np.empty((3, 3), dtype=np.float64)
-    coeff[0, :] = aas / (2 * A)
-    coeff[1, :] = bbs / (2 * A)
-    coeff[2, :] = ccs / (2 * A)
+    coeff[0, :] = aas
+    coeff[1, :] = bbs
+    coeff[2, :] = ccs
 
     lcs_Uinc = optim_matmul(basis, glob_Uinc)
 
@@ -284,7 +282,7 @@ def ned2_tri_force(glob_vertices, glob_Uinc):
         else:
             fdof = _nf2_tri(coeff, coords, i1, j1, k1)
 
-        bvec[idof] = -sign * A * np.sum(WEIGHTS * (fdof[0, :] * Ux + fdof[1, :] * Uy))
+        bvec[idof] = -A * np.sum(WEIGHTS * (fdof[0, :] * Ux + fdof[1, :] * Uy))
     if SCALE_LENGTH == True:
         bvec = bvec * Lvec
     return bvec
@@ -328,9 +326,9 @@ def ned2_tri_stiff(glob_vertices, gamma):
     aas, bbs, ccs, A = tri_coefficients(txs, tys)
     A = np.abs(A)
     coeff = np.empty((3, 3), dtype=np.float64)
-    coeff[0, :] = aas / (2 * A)
-    coeff[1, :] = bbs / (2 * A)
-    coeff[2, :] = ccs / (2 * A)
+    coeff[0, :] = aas  # / (2 * A)
+    coeff[1, :] = bbs  # / (2 * A)
+    coeff[2, :] = ccs  # / (2 * A)
 
     WEIGHTS = DPTS[0, :]
     DPTS1 = DPTS[1, :]
@@ -477,12 +475,10 @@ def ned2_tri_force_scat(glob_vertices, glob_Uinc, glob_Uinc_curl, nhat):
     Ds = compute_distances(txs, tys)
 
     aas, bbs, ccs, A = tri_coefficients(txs, tys)
-    sign = np.sign(A)
-    A = np.abs(A)
     coeff = np.empty((3, 3), dtype=np.float64)
-    coeff[0, :] = aas / (2 * A)
-    coeff[1, :] = bbs / (2 * A)
-    coeff[2, :] = ccs / (2 * A)
+    coeff[0, :] = aas
+    coeff[1, :] = bbs
+    coeff[2, :] = ccs
 
     lcs_Uinc = optim_matmul(basis, glob_Uinc)
     lcs_Uinc_curl = optim_matmul(basis, glob_Uinc_curl)
@@ -526,7 +522,7 @@ def ned2_tri_force_scat(glob_vertices, glob_Uinc, glob_Uinc_curl, nhat):
         else:
             fdof = _nf2_tri(coeff, coords, i1, j1, k1)
 
-        bvec[idof] = -sign * A * np.sum(WEIGHTS * (fdof[0, :] * Ux + fdof[1, :] * Uy))
+        bvec[idof] = -A * np.sum(WEIGHTS * (fdof[0, :] * Ux + fdof[1, :] * Uy))
     if SCALE_LENGTH == True:
         bvec = bvec * Lvec
     return bvec

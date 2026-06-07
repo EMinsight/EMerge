@@ -100,20 +100,86 @@ class FieldFunctionClass:
             vals = np.nan_to_num(vals)
         return vals
 
-    def calcEzGrad(
-        self, xs: np.ndarray, ys: np.ndarray, usenan: bool = False
-    ) -> tuple[np.ndarray, np.ndarray]:
+    def calcExy(self, xs: np.ndarray, ys: np.ndarray, zs: np.ndarray) -> np.ndarray:
+        """Computes the global Ex, Ey, Ez vector field
+
+        Args:
+            xs (np.ndarray): x-coordinates
+            ys (np.ndarray): y-coordinates
+            zs (np.ndarray): z-coordinates
+
+        Returns:
+            np.ndarray: Efield vector field
+        """
+        xl, yl, zl = self.cs.in_local_cs(xs, ys, zs)
+        Fxl, Fyl, Fzl = self.calcE(xl, yl)
+        Fxl = np.nan_to_num(Fxl)
+        Fyl = np.nan_to_num(Fyl)
+        Fzl = np.nan_to_num(Fzl)
+        Fx, Fy, Fz = self.cs.in_global_basis(Fxl, Fyl, 0 * Fzl)
+        return np.array([Fx, Fy, Fz]) * self.constant
+
+    def calcEz(self, xs: np.ndarray, ys: np.ndarray, zs: np.ndarray) -> np.ndarray:
+        """Computes the global Ez vector field
+
+        Args:
+            xs (np.ndarray): x-coordinates
+            ys (np.ndarray): y-coordinates
+            zs (np.ndarray): z-coordinates
+
+        Returns:
+            np.ndarray: Efield vector field
+        """
+        xl, yl, zl = self.cs.in_local_cs(xs, ys, zs)
+        Fxl, Fyl, Fzl = self.calcE(xl, yl)
+        Fxl = np.nan_to_num(Fxl)
+        Fyl = np.nan_to_num(Fyl)
+        Fzl = np.nan_to_num(Fzl)
+        Fx, Fy, Fz = self.cs.in_global_basis(0 * Fxl, 0 * Fxl, Fzl)
+        return np.array([Fx, Fy, Fz]) * self.constant
+
+    def calcEzGrad(self, xs: np.ndarray, ys: np.ndarray, zs: np.ndarray) -> np.ndarray:
+        """COmpute the global ∇Ezm vector field
+
+        Args:
+            xs (np.ndarray): _description_
+            ys (np.ndarray): _description_
+            zs (np.ndarray): _description_
+
+        Returns:
+            np.ndarray: _description_
+        """
         from ..compiled import MATHLIB
 
-        coordinates = np.array([xs, ys])
+        xl, yl, zl = self.cs.in_local_cs(xs, ys, zs)
+        coordinates = np.array([xl, yl])
         gEzx, gEzy = MATHLIB.ned2_tri_interp_ezgrad(
             coordinates, self.field, self.tris, self.nodes, self.tri_to_field
         )
-        if not usenan:
-            gEzx = np.nan_to_num(gEzx)
-            gEzy = np.nan_to_num(gEzy)
+        gEzx = np.nan_to_num(gEzx)
+        gEzy = np.nan_to_num(gEzy)
+        Fx, Fy, Fz = self.cs.in_global_basis(gEzx, gEzy, 0 * gEzy)
+        return np.array([Fx, Fy, Fz]) * self.constant
 
-        return (gEzx, gEzy)
+    def calc_eff_modeprofile(
+        self, xs: np.ndarray, ys: np.ndarray, zs: np.ndarray
+    ) -> np.ndarray:
+        """Computes the global Electric mode profile
+
+        Args:
+            xs (np.ndarray): x-coordinates
+            ys (np.ndarray): y-coordinates
+            zs (np.ndarray): z-coordinates
+
+        Returns:
+            np.ndarray: Efield vector field
+        """
+
+        Exy = self.calcExy(xs, ys, zs)
+        gEzxy = self.calcEzGrad(xs, ys, zs)
+        gamma_m = self.beta * 1j
+        field = gamma_m * Exy - gEzxy
+        return field
 
     def calcH(
         self, xs: np.ndarray, ys: np.ndarray, usenan: bool = False

@@ -130,7 +130,7 @@ plot_sp(f, [S11, S21], labels=['S11','S21'], dblim=[-40,6], logx=True)
 field = sol.field[0]
 m.display.add_object(pcb, opacity=0.1)
 m.display.add_object(polies, opacity=0.5)
-m.display.animate().add_field(field.cutplane(1*mm, z=-0.75*th*mil).scalar('Ez','complex'), symmetrize=True)
+m.display.animate().add_field(field.cutplane(0.5*mm, z=-0.75*th*mil).scalar('Ez','complex'), symmetrize=True)
 m.display.add_portmode(port1, k0=field.k0)
 m.display.add_portmode(port2, k0=field.k0)
 m.display.show()

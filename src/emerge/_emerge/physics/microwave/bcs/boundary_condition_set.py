@@ -74,6 +74,7 @@ class MWBoundaryConditionSet(BoundaryConditionSet):
             UserDefinedPort
         )
         self.CoaxPort: type[CoaxPort] = self._construct_bc(CoaxPort)
+        self.WavePortIH: type[WavePortIH] = self._construct_bc(WavePortIH)
         self.ScatteredField: type[ScatteredField] = self._construct_bc(ScatteredField)
         self.ThinConductor: type[ThinConductor] = self._construct_bc(ThinConductor)
         self._cell: PeriodicCell | None = None

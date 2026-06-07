@@ -465,6 +465,40 @@ class ModalPort(PortBC, Saveable):
                 return out
 
             return modef
+        elif which == "gradE":
+
+            def modef(x, y, z):
+                amplitudes = self.port_modes[mode_nr]
+                out = np.zeros((3, x.shape[0]), dtype=np.complex128)
+                for amp, mode in zip(amplitudes, modes):
+                    if amp == 0:
+                        continue
+                    out += amp * (
+                        mode.norm_factor
+                        * self._qmode(k0)
+                        * mode.E_function.calcEzGrad(x, y, z)
+                        * mode.polarity
+                    )
+                return out
+
+            return modef
+        elif which == "Ez":
+
+            def modef(x, y, z):
+                amplitudes = self.port_modes[mode_nr]
+                out = np.zeros((3, x.shape[0]), dtype=np.complex128)
+                for amp, mode in zip(amplitudes, modes):
+                    if amp == 0:
+                        continue
+                    out += amp * (
+                        mode.norm_factor
+                        * self._qmode(k0)
+                        * mode.E_function.calcEz(x, y, z)
+                        * mode.polarity
+                    )
+                return out
+
+            return modef
         else:
 
             def modef(x, y, z):
@@ -514,7 +548,7 @@ class ModalPort(PortBC, Saveable):
         """
         mode = PortMode(field, E_function, H_function, k0, beta, residual, freq=freq)
 
-        if mode.energy < 1e-4:
+        if mode.energy * beta < 1e-6:
             logger.debug(f"Ignoring mode due to a low mode energy: {mode.energy}")
             return None
 
@@ -595,7 +629,7 @@ class ModalPort(PortBC, Saveable):
         y_global: np.ndarray,
         z_global: np.ndarray,
         k0: float,
-        which: Literal["E", "H"] = "E",
+        which: Literal["E", "H", "gradE"] = "E",
         mode_nr: int = 1,
     ) -> np.ndarray:
         Ex, Ey, Ez = self.global_field_function(k0, which, mode_nr)(
@@ -605,7 +639,7 @@ class ModalPort(PortBC, Saveable):
         return Exyz
 
 
-class WavePortIH(PortBC, Saveable):
+class WavePortIH(ModalPort, Saveable):
     _include_stiff: bool = True
     _include_mass: bool = False
     _include_force: bool = True
@@ -621,7 +655,6 @@ class WavePortIH(PortBC, Saveable):
         cs: CoordinateSystem | None = None,
         power: float = 1,
         number_of_modes: int = 1,
-        mixed_materials: bool = False,
         impedance_definition: Literal["PV", "PI", "VI"] = "PV",
     ):
         """Generes a Wave Port Inhomogeneous boundary condition for a port that requires eigenmode solutions for the mode.
@@ -643,7 +676,7 @@ class WavePortIH(PortBC, Saveable):
             mixed_materials (bool, optional): Wether the port consists of multiple different dielectrics. This requires
                 A recalculation of the port mode at every frequency
         """
-        super().__init__(face)
+        super(ModalPort, self).__init__(face)
 
         self.port_number: int = port_number
         self.active: bool = False
@@ -653,14 +686,14 @@ class WavePortIH(PortBC, Saveable):
         self.selected_mode: int = 0
         self.available_modes: dict[float, list[PortMode]] = defaultdict(list)
         self.port_modes: dict[int | float, tuple[complex, ...]] = dict()
-
+        self.forced_modetype = "TEM"
         for i in range(1, number_of_modes + 1):
             vec = [0.0 + 0.0j for _ in range(number_of_modes)]
             vec[i - 1] = 1.0 + 0.0j
             self.port_modes[i] = vec
 
         self._desired_number_of_modes: int = number_of_modes
-        self.mixed_materials: bool = mixed_materials
+        self.mixed_materials: bool = True
         self.initialized: bool = False
         self._first_k0: float | None = None
         self._last_k0: float | None = None
@@ -679,342 +712,20 @@ class WavePortIH(PortBC, Saveable):
         self.voltage_integration_line: list[Line] = []
         self.current_integration_line: list[Line] = []
 
-    def neff_estimate(self, k0: float) -> float:
-        if len(self.available_modes) == 0:
-            return None
-        else:
-            return self.get_modes(k0)[0].neff
-
-    @property
-    def _size_constraint(self) -> float:
-        area = self.selection.area
-        return np.sqrt(area / self.N_mesh_tris * 4 / np.sqrt(3))
-
-    def set_integration_line(
-        self,
-        c1: tuple[float, float, float],
-        c2: tuple[float, float, float],
-        N: int = 21,
-    ) -> None:
-        """Define the integration line start and end point
+    def get_modepf_kappa(
+        self, k0: float, nodes: np.ndarray, tris: np.ndarray
+    ) -> tuple[Callable, complex]:
+        """Return the modeprofile function γetm - ∇ez
 
         Args:
-            c1 (tuple[float, float, float]): The start coordinate
-            c2 (tuple[float, float, float]): The end coordinate
-            N (int, optional): The number of integration points. Defaults to 21.
+            k0 (_type_): _description_
         """
-        self.voltage_integration_line.append(Line.from_points(c1, c2, N))
-
-    def reset(self) -> None:
-        self.available_modes: dict[float, list[PortMode]] = defaultdict(list)
-        self.initialized: bool = False
-        self.plus_terminal: list[tuple[int, int]] = []
-        self.minus_terminal: list[tuple[int, int]] = []
-
-    def portZ0(self, k0: float) -> complex | float | None:
-        return self.get_modes(k0)[0].Z0
-
-    def modetype(self, k0: float) -> Literal["TEM", "TE", "TM"]:
-        return self.get_modes(k0)[0].modetype
-
-    def get_mode_EH(
-        self, k0: float
-    ) -> tuple[FieldFunctionClass, FieldFunctionClass, np.ndarray, float]:
         mode = self.get_modes(k0)[0]
-        return mode.E_function, mode.H_function, 1.0
-
-    def align_modes(self, *axes: tuple | np.ndarray | Axis) -> None:
-        """Set a reriees of Axis objects that define a sequence of mode field
-        alignments.
-
-        The modes will be sorted to maximize the inner product: |∬ E(x,y) · ax dS|
-
-        Args:
-            *axes (tuple, np.ndarray, Axis): The alignment vectors.
-        """
-        self.alignment_vectors = [_parse_axis(ax) for ax in axes]
-
-    def _get_alignment_vector(self, index: int) -> np.ndarray | None:
-        if len(self.alignment_vectors) > index:
-            return self.alignment_vectors[index].np
-        return None
-
-    def set_terminals(
-        self,
-        positive: Selection | GeoObject | None = None,
-        negative: Selection | GeoObject | None = None,
-        ground: Selection | GeoObject | None = None,
-    ) -> None:
-        """Define which objects/faces/selection should be assigned the positive terminal
-        and which one the negative terminal.
-
-        The terminal assignment will be used to find an integration line for the impedance calculation.
-
-        Note: Ground is currently unused.
-
-        Args:
-            positive (Selection | GeoObject | None, optional): The postive terminal. Defaults to None.
-            negative (Selection | GeoObject | None, optional): The negative terminal. Defaults to None.
-            ground (Selection | GeoObject | None, optional): _description_. Defaults to None.
-        """
-        if positive is not None:
-            self.plus_terminal = positive.dimtags
-        if negative is not None:
-            self.minus_terminal = negative.dimtags
-
-    @property
-    def nmodes(self) -> int:
-        if self._last_k0 is None:
-            DEBUG_COLLECTOR.add_report(
-                "The modal analysis turned up with no solutions. This can be because:\n"
-                " - You assigned the wrong materials to geometries.\n"
-                + " - You simulate at a frequency that is too low.\n"
-                + " - Your mode face is not appropriately supporting a modal solution."
-            )
-            raise ValueError(
-                "ModalPort is not properly configured. No modes are defined."
-            )
-        return len(self.available_modes[self._last_k0])
-
-    @property
-    def voltage(self) -> complex:
-        mode = self.get_modes(0)[0]
-        return np.sqrt(mode.Z0)
-
-    def _check_mode_betas(self) -> None:
-        """Performs a check if the port mode vectors are properly configured"""
-        if len(self.port_modes) <= 1:
-            return
-        for k0, modes in self.available_modes.items():
-            if len(modes) == 1:
-                continue
-            betas = [np.real(mode.beta) for mode in modes]
-            mean_beta = sum(betas) / len(betas)
-            std_beta = (
-                sum([(beta - mean_beta) ** 2 for beta in betas]) / len(betas)
-            ) ** 0.5
-            str_betas = ",".join([f"{beta:.1f}" for beta in betas])
-            if std_beta / mean_beta > 1e-2:
-                logger.warning(
-                    f"A variation in port mode propagation constants (k0={k0:.1f}) of {std_beta / mean_beta * 100:.2f}% is detected. Only multi mode ports with similar"
-                    + f"propagation constants are suppored. Betas are {str_betas}"
-                )
-                DEBUG_COLLECTOR.add_report(
-                    "A variation in port mode propagation constants (k0={k0:.1f}) is detected. Only multi mode ports with similar"
-                    + f"propagation constants are suppored. Betas are {str_betas}"
-                )
-
-    def sort_modes(self) -> None:
-        """Sorts the port modes based on propagation constant"""
-
-        if len(self.alignment_vectors) > 0:
-            logger.trace(
-                f"Sorting modes based on alignment vectors: {self.alignment_vectors}"
-            )
-            X, Y, Z = self.selection.sample(5)
-            X = X.flatten()
-            Y = Y.flatten()
-            Z = Z.flatten()
-            for k0, modes in self.available_modes.items():
-                logger.trace(f"Aligning modes for k0={k0:.3f} rad/m")
-                new_modes = []
-                for ax in self.alignment_vectors:
-                    logger.trace(f".mode vector {ax}")
-                    integrals = [
-                        _inner_product(m.E_function, X, Y, Z, ax) for m in modes
-                    ]
-                    integral, opt_mode = sorted(
-                        [pair for pair in zip(integrals, modes)],
-                        key=lambda x: abs(x[0]),
-                        reverse=True,
-                    )[0]
-                    opt_mode.polarity = np.sign(integral.real)
-                    logger.trace(
-                        f"Optimal mode = {opt_mode} ({integral}), polarization alignment = {opt_mode.polarity}"
-                    )
-                    new_modes.append(opt_mode)
-
-                self.available_modes[k0] = new_modes
-            return
-        for k0, modes in self.available_modes.items():
-            self.available_modes[k0] = sorted(modes, key=lambda m: m.beta, reverse=True)
-
-    def get_modes(self, k0: float) -> list[PortMode]:
-        """Returns a list of mode solution in the form of a PortMode object for a specific k0.
-
-        Args:
-            k0 (float): The propagation constant
-
-        Returns:
-            PortMode: The requested PortMode object
-        """
-        options = self.available_modes[
-            min(self.available_modes.keys(), key=lambda k: abs(k - k0))
-        ]
-        return options
-
-    def global_field_function(
-        self, k0: float = 0, which: Literal["E", "H"] = "E", mode_nr: int = 1
-    ) -> Callable:
-        """The field function used to compute the E-field.
-        This field-function is defined in global coordinates (not local coordinates)."""
-        modes = self.get_modes(k0)
-
-        if which == "E":
-
-            def modef(x, y, z):
-                amplitudes = self.port_modes[mode_nr]
-                out = np.zeros((3, x.shape[0]), dtype=np.complex128)
-                for amp, mode in zip(amplitudes, modes):
-                    if amp == 0:
-                        continue
-                    out += amp * (
-                        mode.norm_factor
-                        * self._qmode(k0)
-                        * mode.E_function(x, y, z)
-                        * mode.polarity
-                    )
-                return out
-
-            return modef
-        else:
-
-            def modef(x, y, z):
-                amplitudes = self.port_modes[mode_nr]
-                out = np.zeros((3, x.shape[0]), dtype=np.complex128)
-                for amp, mode in zip(amplitudes, modes):
-                    if amp == 0:
-                        continue
-                    out += amp * (
-                        mode.norm_factor
-                        * self._qmode(k0)
-                        * mode.H_function(x, y, z)
-                        * mode.polarity
-                    )
-                return out
-
-            return modef
-
-    def clear_modes(self) -> None:
-        """Clear all port mode data"""
-        self.available_modes = defaultdict(list)
-        self.initialized = False
-
-    def add_mode(
-        self,
-        field: np.ndarray,
-        E_function: Callable,
-        H_function: Callable,
-        beta: float,
-        k0: float,
-        residual: float,
-        freq: float,
-    ) -> PortMode | None:
-        """Add a mode function to the ModalPort
-
-        Args:
-            field (np.ndarray): The field value array
-            E_function (Callable): The E-field callable
-            H_function (Callable): The H-field callable
-            beta (float): The out-of-plane propagation constant
-            k0 (float): The free space phase constant
-            residual (float): The solution residual
-            freq (float): The frequency of the port mode
-
-        Returns:
-            PortMode: The port mode object.
-        """
-        mode = PortMode(field, E_function, H_function, k0, beta, residual, freq=freq)
-
-        if mode.energy < 1e-4:
-            logger.debug(f"Ignoring mode due to a low mode energy: {mode.energy}")
-            return None
-
-        self.available_modes[k0].append(mode)
-        self.initialized = True
-
-        self._last_k0 = k0
-        if self._first_k0 is None:
-            self._first_k0 = k0
-        else:
-            ref_field = self.get_modes(self._first_k0)[-1].modefield
-            polarity = np.sign(np.sum(field * ref_field).real)
-            logger.debug(f"Mode polarity = {polarity}")
-            mode.polarity = polarity
-
-        return mode
-
-    def get_basis(self) -> np.ndarray:
-        return self.cs._basis
-
-    def get_inv_basis(self) -> np.ndarray:
-        return self.cs._basis_inv
-
-    def get_beta(self, k0: float) -> float:
-        mode = self.get_modes(k0)[0]
-        if self.forced_modetype == "TEM":
-            beta = mode.beta / mode.k0 * k0
-        else:
-            freq = k0 * 299792458 / (2 * np.pi)
-            beta = np.sqrt(mode.beta**2 + k0**2 * (1 - ((mode.freq / freq) ** 2)))
-        return beta
-
-    def get_gamma(self, k0: float) -> complex:
-        return 1j * self.get_beta(k0)
-
-    def get_Uinc(
-        self,
-        x_global: np.ndarray,
-        y_global: np.ndarray,
-        z_global: np.ndarray,
-        k0,
-        mode_nr: int = 1,
-    ) -> np.ndarray:
-
         return (
-            -2
-            * 1j
-            * self.get_beta(k0)
-            * self.port_mode_3d_global(
-                x_global, y_global, z_global, k0, mode_nr=mode_nr
-            )
+            mode.E_function.calc_eff_modeprofile,
+            mode.E_function.calcExy,
+            mode.compute_kappa(nodes, tris),
         )
-
-    def port_mode_3d(
-        self,
-        x_local: np.ndarray,
-        y_local: np.ndarray,
-        k0: float,
-        which: Literal["E", "H"] = "E",
-        mode_nr: int = 1,
-    ) -> np.ndarray:
-        x_global, y_global, z_global = self.cs.in_global_cs(
-            x_local, y_local, 0 * x_local
-        )
-
-        Egxyz = self.port_mode_3d_global(
-            x_global, y_global, z_global, k0, which=which, mode_nr=mode_nr
-        )
-
-        Ex, Ey, Ez = self.cs.in_local_basis(Egxyz[0, :], Egxyz[1, :], Egxyz[2, :])
-
-        Exyz = np.array([Ex, Ey, Ez])
-        return Exyz
-
-    def port_mode_3d_global(
-        self,
-        x_global: np.ndarray,
-        y_global: np.ndarray,
-        z_global: np.ndarray,
-        k0: float,
-        which: Literal["E", "H"] = "E",
-        mode_nr: int = 1,
-    ) -> np.ndarray:
-        Ex, Ey, Ez = self.global_field_function(k0, which, mode_nr)(
-            x_global, y_global, z_global
-        )
-        Exyz = np.array([Ex, Ey, Ez])
-        return Exyz
 
 
 class FloquetPort(PortBC, Saveable):

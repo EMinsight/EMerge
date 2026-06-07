@@ -745,6 +745,7 @@ class Simulation:
                         label=True,
                         label_text=bc._name,
                         texture=bc._texture,
+                        pbr=False,
                     )
 
             if self._mw_active:
@@ -758,6 +759,7 @@ class Simulation:
                         label=True,
                         label_text=bc._name,
                         texture=bc._texture,
+                        pbr=False
                     )
 
         self.display.show(screenshot=screenshot, off_screen=off_screen)
