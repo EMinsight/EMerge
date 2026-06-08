@@ -1100,6 +1100,7 @@ def ned2_tri_interp_curl(
 
     nodes = nodes[:2, :]
     jB = 1j * beta
+    
     for itri in range(tris.shape[1]):
         iv1, iv2, iv3 = tris[:, itri]
 
@@ -1118,10 +1119,6 @@ def ned2_tri_interp_curl(
         coords_offset = coords - v1[:, np.newaxis]
         coords_local = basis @ (coords_offset)
 
-        field_ids = tri_to_field[:, itri]
-
-        Etri = solutions[field_ids]
-
         inside = (
             ((coords_local[0, :] + coords_local[1, :]) <= 1.0 + EPS)
             & (coords_local[0, :] >= -EPS)
@@ -1130,8 +1127,14 @@ def ned2_tri_interp_curl(
 
         if inside.sum() == 0:
             continue
-
+        
+        
         ######### INSIDE THE TRIANGLE #########
+        
+        field_ids = tri_to_field[:, itri]
+
+        Etri = solutions[field_ids]
+        
         dc = diadic[:, :, itri]
 
         coords_inside = coords[:2, inside == 1]
@@ -1153,43 +1156,53 @@ def ned2_tri_interp_curl(
         ex = np.zeros((coords_inside.shape[1],), dtype=np.complex128)
         ey = np.zeros((coords_inside.shape[1],), dtype=np.complex128)
         ez = np.zeros((coords_inside.shape[1],), dtype=np.complex128)
-
+        
         for idof in range(14):
             i = ivec[idof]
             j = jvec[idof]
             k = kvec[idof]
             if idof < 3:
                 ezc = _ne1_curl_tri(coeff, coords_inside, i, j, k)
+                Evec = _ne1_tri(coeff, coords_inside, i, j, k)
+                ex += - jB * Etri[idof] * Evec[1,:]
+                ey += jB * Etri[idof] * Evec[0,:]
                 ez += Etri[idof] * ezc
                 continue
             elif idof == 3:
-                ezc = _nf1_curl_tri(coeff, coords_inside, i, j, k)
+                ezc = _nf1_curl_tri(coeff, coords_inside, 0,1,2)
+                Evec = _nf1_tri(coeff, coords_inside, 0,1,2)
+                ex += - jB * Etri[idof] * Evec[1,:]
+                ey += jB * Etri[idof] * Evec[0,:]
                 ez += Etri[idof] * ezc
                 continue
             elif idof < 7:
                 ezc = _ne2_curl_tri(coeff, coords_inside, i, j, k)
+                Evec = _ne2_tri(coeff, coords_inside, i, j, k)
+                ex += - jB * Etri[idof] * Evec[1,:]
+                ey += jB * Etri[idof] * Evec[0,:]
                 ez += Etri[idof] * ezc
                 continue
             elif idof == 7:
-                ezc = _nf2_curl_tri(coeff, coords_inside, i, j, k)
+                ezc = _nf2_curl_tri(coeff, coords_inside, 0,1,2)
+                Evec = _nf2_tri(coeff, coords_inside, 0,1,2)
+                ex += - jB * Etri[idof] * Evec[1,:]
+                ey += jB * Etri[idof] * Evec[0,:]
                 ez += Etri[idof] * ezc
                 continue
             elif idof < 11:
-                Evec = _nv_curl_tri(coeff, coords_inside, i, j, k)
-                Egrad = _nv_grad_tri(coeff, coords_inside, i, j, k)
-                ex += Etri[idof] * (Evec[0, :] - jB * Egrad[0, :])
-                ey += Etri[idof] * (Evec[1, :] + jB * Egrad[1, :])
+                Evec = _nv_grad_tri(coeff, coords_inside, i, j, k)
+                ex += Etri[idof] * (Evec[1, :] )
+                ey += -Etri[idof] * (Evec[0, :] )
                 continue
             elif idof < 14:
-                Evec = _ne_curl_tri(coeff, coords_inside, i, j, k)
-                Egrad = _ne_grad_tri(coeff, coords_inside, i, j, k)
-                ex += Etri[idof] * (Evec[0, :] - jB * Egrad[0, :])
-                ey += Etri[idof] * (Evec[1, :] + jB * Egrad[1, :])
+                Evec = _ne_grad_tri(coeff, coords_inside, i, j, k)
+                ex += Etri[idof] * (Evec[1, :] )
+                ey += -Etri[idof] * (Evec[0, :] )
                 continue
 
-        Ex[inside] = ex * dc[0, 0]
-        Ey[inside] = ey * dc[1, 1]
-        Ez[inside] = ez * dc[2, 2]
+        Ex[inside==1] = ex * dc[0, 0]
+        Ey[inside==1] = ey * dc[1, 1]
+        Ez[inside==1] = ez * dc[2, 2]
     return Ex, Ey, Ez
 
 

@@ -1021,8 +1021,8 @@ class Microwave3D:
             # beta = min(k0 * np.sqrt(ermax * urmax), beta_base)
 
             # Correct for et = kz Et, ez = -j Ez
-            Emode[: nlf.n_xy] = Emode[: nlf.n_xy] / beta
-            Emode[nlf.n_xy :] = Emode[nlf.n_xy :] / (-1j)
+            #Emode[: nlf.n_xy] = Emode[: nlf.n_xy] / beta
+            #Emode[nlf.n_xy :] = Emode[nlf.n_xy :] / (-1j)
             # Phase correct for a phase of 0 degree at the port maximum.
             Emode = Emode * np.exp(
                 -1j * np.angle(Emode[np.argmax(np.abs(Emode[: nlf.n_xy]))])

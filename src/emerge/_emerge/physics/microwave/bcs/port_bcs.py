@@ -6,7 +6,6 @@ from ....const import Z0
 from ....logsettings import DEBUG_COLLECTOR
 from ....const import EPS0, MU0
 from ....cs import GCS
-from ....elements.nedleg2 import FieldFunctionClass
 
 from emsutil import Saveable
 from typing import Literal

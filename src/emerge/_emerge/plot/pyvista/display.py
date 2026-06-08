@@ -494,8 +494,8 @@ class PVDisplay(EMergeDisplay):
         Fz = F[2, :].reshape(X.shape).T
 
         if field == "H":
-            F = np.imag(F.T)
-            Fnorm = np.sqrt(Fx.imag**2 + Fy.imag**2 + Fz.imag**2).T
+            F = np.real(F.T)
+            Fnorm = np.sqrt(Fx.real**2 + Fy.real**2 + Fz.real**2).T
         else:
             F = np.real(F.T)
             Fnorm = np.sqrt(Fx.real**2 + Fy.real**2 + Fz.real**2).T

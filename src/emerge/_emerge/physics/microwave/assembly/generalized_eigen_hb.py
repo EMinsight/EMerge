@@ -241,7 +241,7 @@ def generalized_matrix_GQ(tri_vertices, local_edge_map, Ms, Mm, k0):
         F2 = _ne2_curl_tri(coeff, cs, i1, j1, k1)
         F3 = _ne1_tri(coeff, cs, i1, j1, k1)
         F4 = _ne2_tri(coeff, cs, i1, j1, k1)
-        F5 = _nv_grad_tri(coeff, cs, i1, j1, k1)
+        F5 = _nv_grad_tri(coeff, cs, iv1, j1, k1)
         F6 = _ne_grad_tri(coeff, cs, i1, j1, k1)
 
         for iv2 in range(3):
@@ -289,18 +289,18 @@ def generalized_matrix_GQ(tri_vertices, local_edge_map, Ms, Mm, k0):
             Dzt[iv1 + 3, iv2 + 4] = _gqi2(F6, H2, WEIGHTS)
 
             Dzz1[iv1, iv2] = _gqi2(
-                _nv_grad_tri(coeff, cs, i1, j1, k1),
-                matmul(Ms, _nv_grad_tri(coeff, cs, i2, j2, k2)),
+                _nv_grad_tri(coeff, cs, iv1, j1, k1),
+                matmul(Ms, _nv_grad_tri(coeff, cs, iv2, j2, k2)),
                 WEIGHTS,
             )
             Dzz1[iv1, iv2 + 3] = _gqi2(
-                _nv_grad_tri(coeff, cs, i1, j1, k1),
+                _nv_grad_tri(coeff, cs, iv1, j1, k1),
                 matmul(Ms, _ne_grad_tri(coeff, cs, i2, j2, k2)),
                 WEIGHTS,
             )
             Dzz1[iv1 + 3, iv2] = _gqi2(
                 _ne_grad_tri(coeff, cs, i1, j1, k1),
-                matmul(Ms, _nv_grad_tri(coeff, cs, i2, j2, k2)),
+                matmul(Ms, _nv_grad_tri(coeff, cs, iv2, j2, k2)),
                 WEIGHTS,
             )
             Dzz1[iv1 + 3, iv2 + 3] = _gqi2(
@@ -310,18 +310,18 @@ def generalized_matrix_GQ(tri_vertices, local_edge_map, Ms, Mm, k0):
             )
 
             Dzz2[iv1, iv2] = _gqi(
-                _nv_tri(coeff, cs, i1, j1, k1),
-                Mmz * _nv_tri(coeff, cs, i2, j2, k2),
+                _nv_tri(coeff, cs, iv1, j1, k1),
+                Mmz * _nv_tri(coeff, cs, iv2, j2, k2),
                 WEIGHTS,
             )
             Dzz2[iv1, iv2 + 3] = _gqi(
-                _nv_tri(coeff, cs, i1, j1, k1),
+                _nv_tri(coeff, cs, iv1, j1, k1),
                 Mmz * _ne_tri(coeff, cs, i2, j2, k2),
                 WEIGHTS,
             )
             Dzz2[iv1 + 3, iv2] = _gqi(
                 _ne_tri(coeff, cs, i1, j1, k1),
-                Mmz * _nv_tri(coeff, cs, i2, j2, k2),
+                Mmz * _nv_tri(coeff, cs, iv2, j2, k2),
                 WEIGHTS,
             )
             Dzz2[iv1 + 3, iv2 + 3] = _gqi(
