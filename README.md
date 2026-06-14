@@ -1,6 +1,5 @@
 ![GitHub License](https://img.shields.io/github/license/FennisRobert/EMerge)
 ![GitHub Release](https://img.shields.io/github/v/release/FennisRobert/EMerge)
-[![PySimHub](https://pysimhub.io/badge.svg)](https://pysimhub.io/projects/emerge)
 ![PyPI - Downloads](https://img.shields.io/pypi/dw/emerge)
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.17025518-blue)](https://doi.org/10.5281/zenodo.17025518)
 
