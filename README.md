@@ -5,7 +5,8 @@
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.17025518-blue)](https://doi.org/10.5281/zenodo.17025518)
 
 ## Introduction
-![LinkedInCover](https://github.com/user-attachments/assets/d9c194c8-eb34-49e5-96a6-9dfdfc787563)
+![LinkedInCover](https://github.com/user-attachments/assets/09142f09-8718-4943-a60a-7593ca738759)
+
 
 Hello everybody. Thanks for showing interest in my EM FEM library!
 
