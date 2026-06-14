@@ -77,6 +77,7 @@ class RobinBC(BoundaryCondition, Saveable):
         "E": (1.12500, -1.00000),
     }
     dim: int = 2
+    pml: bool = False
 
     def __init__(self, selection: GeoSurface | Selection):
         """A Generalization of any boundary condition of the third kind (Robin).
@@ -90,6 +91,8 @@ class RobinBC(BoundaryCondition, Saveable):
         """
         super().__init__(selection)
         self._assemble_matrix: bool = True
+        self.abctype: str = "A"
+        self.material: Material = AIR
 
     def dont_assemble(self) -> None:
         """Prevent this port boundary condition from being assembled in the
@@ -113,6 +116,10 @@ class RobinBC(BoundaryCondition, Saveable):
         self, x_local: np.ndarray, y_local: np.ndarray, k0: float, mode_nr: int = 1
     ) -> np.ndarray:
         raise NotImplementedError("get_Uinc not implemented for Port class")
+
+    def get_abccorr(self, k0: float) -> float:
+        f = k0 * C0 / (2 * np.pi)
+        return 1j * self.o2coeffs[self.abctype][1] / (self.material.neff(f) * k0)
 
 
 class AbsorbingBoundary(RobinBC, Saveable):
@@ -161,10 +168,6 @@ class AbsorbingBoundary(RobinBC, Saveable):
     def get_beta(self, k0: float) -> float:
         """Return the out of plane propagation constant. βz."""
         return k0
-
-    def get_abccorr(self, k0: float) -> float:
-        f = k0 * C0 / (2 * np.pi)
-        return 1j * self.o2coeffs[self.abctype][1] / (self.material.neff(f) * k0)
 
     def get_gamma(self, k0: float) -> complex:
         """Computes the γ-constant for matrix assembly. This constant is required for the Robin boundary condition.
@@ -537,14 +540,14 @@ class SurfaceImpedance(RobinBC, Saveable):
         d_skin = (
             2 * rho / (w0 * mu) * ((1 + (w0 * eps * rho) ** 2) ** 0.5 + rho * w0 * eps)
         ) ** 0.5
-        logger.debug(f"Computed skin depth δ={d_skin * 1e6:.2}μm")
+        logger.trace(f"Computed skin depth δ={d_skin * 1e6:.2}μm")
         R = (1 + 1j) * rho / d_skin
         # R = (w0*mu/(2*sigma))**0.5
         if self.thickness is not None:
             eps_c = eps - 1j * sigma / w0
             gamma_m = 1j * w0 * np.sqrt(mu * eps_c)
             R = R / np.tanh(gamma_m * self.thickness)
-            logger.debug(
+            logger.trace(
                 f"Impedance scaler due to thickness: {1 / np.tanh(gamma_m * self.thickness):.4f}"
             )
         if self._sr_model == "Hammerstad-Jensen" and self._sr > 0.0:
@@ -649,7 +652,7 @@ class ThinConductor(RobinBC, Saveable):
         d_skin = (
             2 * rho / (w0 * mu) * ((1 + (w0 * eps * rho) ** 2) ** 0.5 + rho * w0 * eps)
         ) ** (0.5)
-        logger.debug(f"Computed skin depth δ={d_skin * 1e6:.2}μm")
+        logger.trace(f"Computed skin depth δ={d_skin * 1e6:.2}μm")
 
         R = (1 + 1j) * rho / d_skin
 
@@ -659,7 +662,7 @@ class ThinConductor(RobinBC, Saveable):
             gamma_m = 1j * w0 * (mu * eps_c) ** 0.5
             gamma_m = (1 + 1j) / d_skin
             R = R / np.tanh(gamma_m * self.thickness)
-            logger.debug(
+            logger.trace(
                 f"Impedance scaler due to thickness: {1 / np.tanh(gamma_m * self.thickness):.4f}"
             )
         if self._sr_model == "Hammerstad-Jensen" and self._sr > 0.0:

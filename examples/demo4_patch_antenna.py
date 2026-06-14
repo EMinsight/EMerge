@@ -2,7 +2,6 @@ import emerge as em
 import numpy as np
 from emerge.plot import plot_sp, smith, plot_ff_polar, plot_ff
 
-
 """ PATCH ANTENNA DEMO
 
 This design is modeled after this Comsol Demo: https://www.comsol.com/model/microstrip-patch-antenna-11742
@@ -37,6 +36,7 @@ f2 = 1.60e9  # stop frequency
 # --- Create simulation object -------------------------------------------
 model = em.Simulation("PatchAntenna")
 model.check_version("2.6.1")  # Checks version compatibility.
+
 # --- Define geometry primitives -----------------------------------------
 # Substrate block centered at origin in XY, thickness in Z (negative down)
 dielectric = em.geo.Box(wsub, hsub, th, position=(-wsub / 2, -hsub / 2, -th))
@@ -73,7 +73,7 @@ rpatch.set_material(em.lib.PEC)
 
 # --- Assign materials and simulation settings ---------------------------
 # Dielectric material with some transparency for display
-dielectric.set_material(em.Material(3.38, color="#207020", opacity=0.9))
+dielectric.set_material(em.Material(3.38, color="EMERGE-DIEL", opacity=0.9))
 
 # Mesh resolution: fraction of wavelength
 model.mw.set_resolution(0.2)
@@ -144,6 +144,9 @@ model.display.populate()
 # Compute full 3D far-field and display surface colored by |E|q
 field = data.field.find(freq=1.59e9)
 ff3d = field.farfield_3d(boundary_selection, origin=(0, 0, 0))
-surf = ff3d.surfplot("normE", rmax=40 * mm, offset=(0, 0, 20 * mm))
-model.display.add_surf(*surf.xyzf)
+model.display.add_farfield3d(ff3d, rmax=40 * mm, offset=(0, 0, 40 * mm))
+model.display.cbar("Ey [V/m]", clim=(-1000, 1000)).animate().add_field(
+    field.grid(N=100_000, z_range=(-th, Rair)).scalar("Ey", "complex"), symmetrize=True
+)
+
 model.display.show()

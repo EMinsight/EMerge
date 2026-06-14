@@ -1146,7 +1146,7 @@ class MWField(Saveable):
 
         from .sc import stratton_chu
 
-        surface = self.basis.mesh.boundary_surface(faces.tags, origin)
+        surface = self.basis.mesh.boundary_surface(faces.tags, inward_normal=False)
 
         ehfield = self.interpolate(*surface.exyz)
 
@@ -1159,14 +1159,18 @@ class MWField(Saveable):
         if len(syms) == 0:
             return Eff, Hff, Ptot
 
+        factor = 1.0
         if len(syms) == 1:
+            factor = (0.5) ** 0.5
             perms = ((syms[0], "##", "##"),)
 
         elif len(syms) == 2:
+            factor = (0.25) ** 0.5
             s1, s2 = syms
             perms = ((s1, "##", "##"), (s2, "##", "##"), (s1, s2, "##"))
 
         elif len(syms) == 3:
+            factor = (0.125) ** 0.5
             s1, s2, s3 = syms
             perms = (
                 (s1, "##", "##"),
@@ -1192,7 +1196,7 @@ class MWField(Saveable):
             Eff = Eff + E2
             Hff = Hff + H2
 
-        return Eff, Hff, Ptot
+        return Eff * factor, Hff * factor, Ptot * (factor**2)
 
     def optycal_surface(self, faces: FaceSelection | GeoSurface | None = None) -> tuple:
         """Export this models exterior to an Optical acceptable dataset
@@ -1480,7 +1484,7 @@ class MWScalarNdim(Saveable):
         j: int,
         freq: np.ndarray | None = None,
         Npoles: int | Literal["auto"] = "auto",
-        inc_real: bool = False,
+        inc_real: bool = True,
         maxpoles: int = 30,
         minpoles: int = 1,
         _warn: bool = True,
@@ -1538,7 +1542,7 @@ class MWScalarNdim(Saveable):
         self,
         frequencies: np.ndarray | None = None,
         Npoles: int = 10,
-        inc_real: bool = False,
+        inc_real: bool = True,
         _warn: bool = True,
     ) -> np.ndarray:
         """Generates a full S-parameter matrix on the provided frequency points using the Vector Fitting algorithm.

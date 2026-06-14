@@ -42,31 +42,31 @@ import functools
 DEBUG_MODE = False
 
 
-def njit(*args, **kwargs):
-    """
-    Drop-in replacement for numba.njit.
-    If DEBUG_MODE is True, it turns into a transparent 'do-nothing' wrapper.
-    If DEBUG_MODE is False, it forwards everything to the real Numba compiler.
-    """
-    if DEBUG_MODE:
-        # Case A: Used without parentheses -> @njit
-        if len(args) == 1 and callable(args[0]):
-            return args[0]
+# def njit(*args, **kwargs):
+#     """
+#     Drop-in replacement for numba.njit.
+#     If DEBUG_MODE is True, it turns into a transparent 'do-nothing' wrapper.
+#     If DEBUG_MODE is False, it forwards everything to the real Numba compiler.
+#     """
+#     if DEBUG_MODE:
+#         # Case A: Used without parentheses -> @njit
+#         if len(args) == 1 and callable(args[0]):
+#             return args[0]
 
-        # Case B: Used with signatures/kwargs -> @njit(cache=True)
-        def decorator(func):
-            @functools.wraps(func)
-            def wrapper(*func_args, **func_kwargs):
-                return func(*func_args, **func_kwargs)
+#         # Case B: Used with signatures/kwargs -> @njit(cache=True)
+#         def decorator(func):
+#             @functools.wraps(func)
+#             def wrapper(*func_args, **func_kwargs):
+#                 return func(*func_args, **func_kwargs)
 
-            return wrapper
+#             return wrapper
 
-        return decorator
-    else:
-        # Import Numba lazily only when debugging is turned off
-        import numba
+#         return decorator
+#     else:
+#         # Import Numba lazily only when debugging is turned off
+#         import numba
 
-        return numba.njit(*args, **kwargs)
+#         return numba.njit(*args, **kwargs)
 
 
 ############################################################

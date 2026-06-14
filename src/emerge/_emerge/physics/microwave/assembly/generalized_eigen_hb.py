@@ -22,7 +22,7 @@ from scipy.sparse import csr_matrix
 from ....mth.optimized import local_mapping, matinv
 from numba import c16, types, f8, i8, njit, prange
 from ....compiled.legrange import _ne_grad_tri, _ne_tri, _nv_tri, _nv_grad_tri
-from ....compiled.volakis import (
+from ....compiled.savage import (
     _ne1_curl_tri,
     _ne2_curl_tri,
     _nf1_curl_tri,
@@ -53,7 +53,7 @@ def generelized_eigenvalue_matrix(
     field: NedelecLegrange2,
     er: np.ndarray,
     ur: np.ndarray,
-    basis: np.ndarray,
+    inward_normal: np.ndarray,
     k0: float,
 ) -> tuple[csr_matrix, csr_matrix]:
 
@@ -190,16 +190,16 @@ def _gqi2(v1, v2, W):
     cache=True,
     nogil=True,
 )
-def generalized_matrix_GQ(tri_vertices, local_edge_map, Ms, Mm, k0):
+def generalized_matrix_GQ(tri_vertices, local_edge_map, urinv, er, k0):
     """Nedelec-2 Triangle stiffness and mass submatrix"""
-    Att = np.zeros((8, 8), dtype=np.complex128)
+    Att_stiff = np.zeros((8, 8), dtype=np.complex128)
+    Att_mass = np.zeros((8, 8), dtype=np.complex128)
+
     Btt = np.zeros((8, 8), dtype=np.complex128)
+    Bzt = np.zeros((6, 8), dtype=np.complex128)
 
-    Dtt = np.zeros((8, 8), dtype=np.complex128)
-    Dzt = np.zeros((6, 8), dtype=np.complex128)
-
-    Dzz1 = np.zeros((6, 6), dtype=np.complex128)
-    Dzz2 = np.zeros((6, 6), dtype=np.complex128)
+    Bzz_stiff = np.zeros((6, 6), dtype=np.complex128)
+    Bzz_mass = np.zeros((6, 6), dtype=np.complex128)
 
     ivec = np.array([0, 1, 0, 0, 0, 1, 0, 0])
     jvec = np.array([1, 2, 2, 1, 1, 2, 2, 1])
@@ -227,192 +227,193 @@ def generalized_matrix_GQ(tri_vertices, local_edge_map, Ms, Mm, k0):
     coeff[1, :] = bbs
     coeff[2, :] = ccs
 
-    Msz = Ms[2, 2]
-    Mmz = Mm[2, 2]
-    Ms = Ms[:2, :2]
-    Mm = Mm[:2, :2]
+    urinv_z = urinv[2, 2]
+    er_z = er[2, 2]
+    urinv = urinv[:2, :2]
+    er = er[:2, :2]
+
+    nf1 = _nf1_tri(coeff, cs, 0, 1, 2)
+    nf2 = _nf2_tri(coeff, cs, 0, 1, 2)
+
+    nf1_curl = _nf1_curl_tri(coeff, cs, 0, 1, 2)
+    nf2_curl = _nf2_curl_tri(coeff, cs, 0, 1, 2)
 
     for iv1 in range(3):
         i1 = ivec[iv1]
         j1 = jvec[iv1]
         k1 = kvec[iv1]
 
-        F1 = _ne1_curl_tri(coeff, cs, i1, j1, k1)
-        F2 = _ne2_curl_tri(coeff, cs, i1, j1, k1)
-        F3 = _ne1_tri(coeff, cs, i1, j1, k1)
-        F4 = _ne2_tri(coeff, cs, i1, j1, k1)
-        F5 = _nv_grad_tri(coeff, cs, iv1, j1, k1)
-        F6 = _ne_grad_tri(coeff, cs, i1, j1, k1)
+        ne1curl = _ne1_curl_tri(coeff, cs, i1, j1, 0)
+        ne2curl = _ne2_curl_tri(coeff, cs, i1, j1, 0)
+        ne1 = _ne1_tri(coeff, cs, i1, j1, 0)
+        ne2 = _ne2_tri(coeff, cs, i1, j1, 0)
+        er_ne1 = matmul(er, ne1)
+        er_ne2 = matmul(er, ne2)
+        urinv_nvgrad = matmul(urinv, _nv_grad_tri(coeff, cs, iv1, 0, 0))
+        urinv_negrad = matmul(urinv, _ne_grad_tri(coeff, cs, i1, j1, 0))
 
         for iv2 in range(3):
             i2 = ivec[iv2]
             j2 = jvec[iv2]
             k2 = kvec[iv2]
 
-            H1 = matmul(Ms, _ne1_tri(coeff, cs, i2, j2, k2))
-            H2 = matmul(Ms, _ne2_tri(coeff, cs, i2, j2, k2))
+            ne1_j = _ne1_tri(coeff, cs, i2, j2, 0)
+            ne2_j = _ne2_tri(coeff, cs, i2, j2, 0)
 
-            Att[iv1, iv2] = _gqi(
-                F1, Msz * _ne1_curl_tri(coeff, cs, i2, j2, k2), WEIGHTS
+            Att_stiff[iv1, iv2] = _gqi(
+                urinv_z * ne1curl, _ne1_curl_tri(coeff, cs, i2, j2, 0), WEIGHTS
             )
-            Att[iv1 + 4, iv2] = _gqi(
-                F2, Msz * _ne1_curl_tri(coeff, cs, i2, j2, k2), WEIGHTS
+            Att_stiff[iv1 + 4, iv2] = _gqi(
+                urinv_z * ne2curl, _ne1_curl_tri(coeff, cs, i2, j2, 0), WEIGHTS
             )
-            Att[iv1, iv2 + 4] = _gqi(
-                F1, Msz * _ne2_curl_tri(coeff, cs, i2, j2, k2), WEIGHTS
+            Att_stiff[iv1, iv2 + 4] = _gqi(
+                urinv_z * ne1curl, _ne2_curl_tri(coeff, cs, i2, j2, 0), WEIGHTS
             )
-            Att[iv1 + 4, iv2 + 4] = _gqi(
-                F2, Msz * _ne2_curl_tri(coeff, cs, i2, j2, k2), WEIGHTS
-            )
-
-            Btt[iv1, iv2] = _gqi2(
-                F3, matmul(Mm, _ne1_tri(coeff, cs, i2, j2, k2)), WEIGHTS
-            )
-            Btt[iv1 + 4, iv2] = _gqi2(
-                F4, matmul(Mm, _ne1_tri(coeff, cs, i2, j2, k2)), WEIGHTS
-            )
-            Btt[iv1, iv2 + 4] = _gqi2(
-                F3, matmul(Mm, _ne2_tri(coeff, cs, i2, j2, k2)), WEIGHTS
-            )
-            Btt[iv1 + 4, iv2 + 4] = _gqi2(
-                F4, matmul(Mm, _ne2_tri(coeff, cs, i2, j2, k2)), WEIGHTS
+            Att_stiff[iv1 + 4, iv2 + 4] = _gqi(
+                urinv_z * ne2curl, _ne2_curl_tri(coeff, cs, i2, j2, 0), WEIGHTS
             )
 
-            Dtt[iv1, iv2] = _gqi2(F3, H1, WEIGHTS)
-            Dtt[iv1 + 4, iv2] = _gqi2(F4, H1, WEIGHTS)
-            Dtt[iv1, iv2 + 4] = _gqi2(F3, H2, WEIGHTS)
-            Dtt[iv1 + 4, iv2 + 4] = _gqi2(F4, H2, WEIGHTS)
+            Att_mass[iv1, iv2] = _gqi2(er_ne1, ne1_j, WEIGHTS)
+            Att_mass[iv1 + 4, iv2] = _gqi2(er_ne2, ne1_j, WEIGHTS)
+            Att_mass[iv1, iv2 + 4] = _gqi2(er_ne1, ne2_j, WEIGHTS)
+            Att_mass[iv1 + 4, iv2 + 4] = _gqi2(er_ne2, ne2_j, WEIGHTS)
 
-            Dzt[iv1, iv2] = _gqi2(F5, H1, WEIGHTS)
-            Dzt[iv1 + 3, iv2] = _gqi2(F6, H1, WEIGHTS)
-            Dzt[iv1, iv2 + 4] = _gqi2(F5, H2, WEIGHTS)
-            Dzt[iv1 + 3, iv2 + 4] = _gqi2(F6, H2, WEIGHTS)
+            urinv_ne1 = matmul(urinv, ne1)
+            urinv_ne2 = matmul(urinv, ne2)
 
-            Dzz1[iv1, iv2] = _gqi2(
-                _nv_grad_tri(coeff, cs, iv1, j1, k1),
-                matmul(Ms, _nv_grad_tri(coeff, cs, iv2, j2, k2)),
+            Btt[iv1, iv2] = _gqi2(urinv_ne1, ne1_j, WEIGHTS)
+            Btt[iv1 + 4, iv2] = _gqi2(urinv_ne2, ne1_j, WEIGHTS)
+            Btt[iv1, iv2 + 4] = _gqi2(urinv_ne1, ne2_j, WEIGHTS)
+            Btt[iv1 + 4, iv2 + 4] = _gqi2(urinv_ne2, ne2_j, WEIGHTS)
+
+            Bzt[iv1, iv2] = _gqi2(urinv_nvgrad, ne1_j, WEIGHTS)
+            Bzt[iv1 + 3, iv2] = _gqi2(urinv_negrad, ne1_j, WEIGHTS)
+            Bzt[iv1, iv2 + 4] = _gqi2(urinv_nvgrad, ne2_j, WEIGHTS)
+            Bzt[iv1 + 3, iv2 + 4] = _gqi2(urinv_negrad, ne2_j, WEIGHTS)
+
+            Bzz_stiff[iv1, iv2] = _gqi2(
+                urinv_nvgrad,
+                _nv_grad_tri(coeff, cs, iv2, 0, 0),
                 WEIGHTS,
             )
-            Dzz1[iv1, iv2 + 3] = _gqi2(
-                _nv_grad_tri(coeff, cs, iv1, j1, k1),
-                matmul(Ms, _ne_grad_tri(coeff, cs, i2, j2, k2)),
+            Bzz_stiff[iv1, iv2 + 3] = _gqi2(
+                urinv_nvgrad,
+                _ne_grad_tri(coeff, cs, i2, j2, 0),
                 WEIGHTS,
             )
-            Dzz1[iv1 + 3, iv2] = _gqi2(
-                _ne_grad_tri(coeff, cs, i1, j1, k1),
-                matmul(Ms, _nv_grad_tri(coeff, cs, iv2, j2, k2)),
+            Bzz_stiff[iv1 + 3, iv2] = _gqi2(
+                urinv_negrad,
+                _nv_grad_tri(coeff, cs, iv2, 0, 0),
                 WEIGHTS,
             )
-            Dzz1[iv1 + 3, iv2 + 3] = _gqi2(
-                _ne_grad_tri(coeff, cs, i1, j1, k1),
-                matmul(Ms, _ne_grad_tri(coeff, cs, i2, j2, k2)),
+            Bzz_stiff[iv1 + 3, iv2 + 3] = _gqi2(
+                urinv_negrad,
+                _ne_grad_tri(coeff, cs, i2, j2, 0),
                 WEIGHTS,
             )
 
-            Dzz2[iv1, iv2] = _gqi(
-                _nv_tri(coeff, cs, iv1, j1, k1),
-                Mmz * _nv_tri(coeff, cs, iv2, j2, k2),
+            Bzz_mass[iv1, iv2] = _gqi(
+                er_z * _nv_tri(coeff, cs, iv1, 0, 0),
+                _nv_tri(coeff, cs, iv2, 0, 0),
                 WEIGHTS,
             )
-            Dzz2[iv1, iv2 + 3] = _gqi(
-                _nv_tri(coeff, cs, iv1, j1, k1),
-                Mmz * _ne_tri(coeff, cs, i2, j2, k2),
+            Bzz_mass[iv1, iv2 + 3] = _gqi(
+                er_z * _nv_tri(coeff, cs, iv1, 0, 0),
+                _ne_tri(coeff, cs, i2, j2, 0),
                 WEIGHTS,
             )
-            Dzz2[iv1 + 3, iv2] = _gqi(
-                _ne_tri(coeff, cs, i1, j1, k1),
-                Mmz * _nv_tri(coeff, cs, iv2, j2, k2),
+            Bzz_mass[iv1 + 3, iv2] = _gqi(
+                er_z * _ne_tri(coeff, cs, i1, j1, 0),
+                _nv_tri(coeff, cs, iv2, 0, 0),
                 WEIGHTS,
             )
-            Dzz2[iv1 + 3, iv2 + 3] = _gqi(
-                _ne_tri(coeff, cs, i1, j1, k1),
-                Mmz * _ne_tri(coeff, cs, i2, j2, k2),
+            Bzz_mass[iv1 + 3, iv2 + 3] = _gqi(
+                er_z * _ne_tri(coeff, cs, i1, j1, 0),
+                _ne_tri(coeff, cs, i2, j2, 0),
                 WEIGHTS,
             )
 
-        G1 = matmul(Mm, _nf1_tri(coeff, cs, 0, 1, 2))
-        G2 = matmul(Mm, _nf2_tri(coeff, cs, 0, 1, 2))
-        G3 = matmul(Ms, _nf1_tri(coeff, cs, 0, 1, 2))
-        G4 = matmul(Ms, _nf2_tri(coeff, cs, 0, 1, 2))
-
-        Att[iv1, 3] = _gqi(F1, Msz * _nf1_curl_tri(coeff, cs, 0, 1, 2), WEIGHTS)
-        Att[iv1 + 4, 3] = _gqi(
-            _ne2_curl_tri(coeff, cs, i1, j1, k1),
-            Msz * _nf1_curl_tri(coeff, cs, 0, 1, 2),
+        Att_stiff[iv1, 3] = _gqi(urinv_z * ne1curl, nf1_curl, WEIGHTS)
+        Att_stiff[iv1 + 4, 3] = _gqi(
+            urinv_z * ne2curl,
+            nf1_curl,
             WEIGHTS,
         )
-        Att[iv1, 7] = _gqi(F1, Msz * _nf2_curl_tri(coeff, cs, 0, 1, 2), WEIGHTS)
-        Att[iv1 + 4, 7] = _gqi(
-            _ne2_curl_tri(coeff, cs, i1, j1, k1),
-            Msz * _nf2_curl_tri(coeff, cs, 0, 1, 2),
+        Att_stiff[iv1, 7] = _gqi(urinv_z * ne1curl, nf2_curl, WEIGHTS)
+        Att_stiff[iv1 + 4, 7] = _gqi(
+            urinv_z * ne2curl,
+            nf2_curl,
             WEIGHTS,
         )
 
-        Att[3, iv1] = Att[iv1, 3]
-        Att[7, iv1] = Att[iv1, 7]
-        Att[3, iv1 + 4] = Att[iv1 + 4, 3]
-        Att[7, iv1 + 4] = Att[iv1 + 4, 7]
+        Att_stiff[3, iv1] = Att_stiff[iv1, 3]
+        Att_stiff[7, iv1] = Att_stiff[iv1, 7]
+        Att_stiff[3, iv1 + 4] = Att_stiff[iv1 + 4, 3]
+        Att_stiff[7, iv1 + 4] = Att_stiff[iv1 + 4, 7]
 
-        Btt[iv1, 3] = _gqi2(F3, G1, WEIGHTS)
-        Btt[iv1 + 4, 3] = _gqi2(F4, G1, WEIGHTS)
-        Btt[iv1, 7] = _gqi2(F3, G2, WEIGHTS)
-        Btt[iv1 + 4, 7] = _gqi2(F4, G2, WEIGHTS)
+        Att_mass[iv1, 3] = _gqi2(er_ne1, nf1, WEIGHTS)
+        Att_mass[iv1 + 4, 3] = _gqi2(er_ne2, nf1, WEIGHTS)
+        Att_mass[iv1, 7] = _gqi2(er_ne1, nf2, WEIGHTS)
+        Att_mass[iv1 + 4, 7] = _gqi2(er_ne2, nf2, WEIGHTS)
+
+        Att_mass[3, iv1] = Att_mass[iv1, 3]
+        Att_mass[7, iv1] = Att_mass[iv1, 7]
+        Att_mass[3, iv1 + 4] = Att_mass[iv1 + 4, 3]
+        Att_mass[7, iv1 + 4] = Att_mass[iv1 + 4, 7]
+
+        Btt[iv1, 3] = _gqi2(urinv_ne1, nf1, WEIGHTS)
+        Btt[iv1 + 4, 3] = _gqi2(urinv_ne2, nf1, WEIGHTS)
+        Btt[iv1, 7] = _gqi2(urinv_ne1, nf2, WEIGHTS)
+        Btt[iv1 + 4, 7] = _gqi2(urinv_ne2, nf2, WEIGHTS)
 
         Btt[3, iv1] = Btt[iv1, 3]
         Btt[7, iv1] = Btt[iv1, 7]
         Btt[3, iv1 + 4] = Btt[iv1 + 4, 3]
         Btt[7, iv1 + 4] = Btt[iv1 + 4, 7]
 
-        Dtt[iv1, 3] = _gqi2(F3, G3, WEIGHTS)
-        Dtt[iv1 + 4, 3] = _gqi2(F4, G3, WEIGHTS)
-        Dtt[iv1, 7] = _gqi2(F3, G4, WEIGHTS)
-        Dtt[iv1 + 4, 7] = _gqi2(F4, G4, WEIGHTS)
+        Bzt[iv1, 3] = _gqi2(urinv_nvgrad, nf1, WEIGHTS)
+        Bzt[iv1, 7] = _gqi2(urinv_nvgrad, nf2, WEIGHTS)
+        Bzt[iv1 + 3, 3] = _gqi2(urinv_negrad, nf1, WEIGHTS)
+        Bzt[iv1 + 3, 7] = _gqi2(urinv_negrad, nf2, WEIGHTS)
 
-        Dtt[3, iv1] = Dtt[iv1, 3]
-        Dtt[7, iv1] = Dtt[iv1, 7]
-        Dtt[3, iv1 + 4] = Dtt[iv1 + 4, 3]
-        Dtt[7, iv1 + 4] = Dtt[iv1 + 4, 7]
-
-        Dzt[iv1, 3] = _gqi2(F5, G3, WEIGHTS)
-        Dzt[iv1, 7] = _gqi2(F5, G4, WEIGHTS)
-        Dzt[iv1 + 3, 3] = _gqi2(F6, G3, WEIGHTS)
-        Dzt[iv1 + 3, 7] = _gqi2(F6, G4, WEIGHTS)
-
-    Att[3, 3] = _gqi(
-        _nf1_curl_tri(coeff, cs, 0, 1, 2),
-        Msz * _nf1_curl_tri(coeff, cs, 0, 1, 2),
+    Att_stiff[3, 3] = _gqi(
+        urinv_z * nf1_curl,
+        nf1_curl,
         WEIGHTS,
     )
-    Att[7, 3] = _gqi(
-        _nf2_curl_tri(coeff, cs, 0, 1, 2),
-        Msz * _nf1_curl_tri(coeff, cs, 0, 1, 2),
+    Att_stiff[7, 3] = _gqi(
+        urinv_z * nf2_curl,
+        nf1_curl,
         WEIGHTS,
     )
-    Att[3, 7] = _gqi(
-        _nf1_curl_tri(coeff, cs, 0, 1, 2),
-        Msz * _nf2_curl_tri(coeff, cs, 0, 1, 2),
+    Att_stiff[3, 7] = _gqi(
+        urinv_z * nf1_curl,
+        nf2_curl,
         WEIGHTS,
     )
-    Att[7, 7] = _gqi(
-        _nf2_curl_tri(coeff, cs, 0, 1, 2),
-        Msz * _nf2_curl_tri(coeff, cs, 0, 1, 2),
+    Att_stiff[7, 7] = _gqi(
+        urinv_z * nf2_curl,
+        nf2_curl,
         WEIGHTS,
     )
 
-    Btt[3, 3] = _gqi2(_nf1_tri(coeff, cs, 0, 1, 2), G1, WEIGHTS)
-    Btt[7, 3] = _gqi2(_nf2_tri(coeff, cs, 0, 1, 2), G1, WEIGHTS)
-    Btt[3, 7] = _gqi2(_nf1_tri(coeff, cs, 0, 1, 2), G2, WEIGHTS)
-    Btt[7, 7] = _gqi2(_nf2_tri(coeff, cs, 0, 1, 2), G2, WEIGHTS)
+    er_f1 = matmul(er, nf1)
+    er_f2 = matmul(er, nf2)
+
+    Att_mass[3, 3] = _gqi2(er_f1, nf1, WEIGHTS)
+    Att_mass[7, 3] = _gqi2(er_f2, nf1, WEIGHTS)
+    Att_mass[3, 7] = _gqi2(er_f1, nf2, WEIGHTS)
+    Att_mass[7, 7] = _gqi2(er_f2, nf2, WEIGHTS)
 
     A = np.zeros((14, 14), dtype=np.complex128)
     B = np.zeros((14, 14), dtype=np.complex128)
 
-    A[:8, :8] = Att - k0**2 * Btt
+    A[:8, :8] = Att_stiff - k0**2 * Att_mass
 
-    B[:8, :8] = Dtt
-    B[8:, :8] = Dzt
-    B[:8, 8:] = Dzt.T
-    B[8:, 8:] = Dzz1 - k0**2 * Dzz2
+    B[:8, :8] = Btt
+    B[8:, :8] = Bzt
+    B[:8, 8:] = Bzt.T
+    B[8:, 8:] = Bzz_stiff - k0**2 * Bzz_mass
 
     B = B * np.abs(Area)
     A = A * np.abs(Area)
@@ -421,7 +422,13 @@ def generalized_matrix_GQ(tri_vertices, local_edge_map, Ms, Mm, k0):
 
 @njit(
     types.Tuple((c16[:], c16[:], i8[:], i8[:]))(
-        f8[:, :], i8[:, :], i8[:, :], i8[:, :], c16[:, :, :], c16[:, :, :], f8
+        f8[:, :],
+        i8[:, :],
+        i8[:, :],
+        i8[:, :],
+        c16[:, :, :],
+        c16[:, :, :],
+        f8,
     ),
     cache=True,
     nogil=True,

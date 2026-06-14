@@ -35,6 +35,9 @@ class Settings:
         self.mw_3d_peclim: float = 1e8
         # Bulk conductivity limit (S/m) beyond which 3D conductors are considered PEC.
 
+        self.mw_3d_surfimplim: float = 1e4
+        # Bulk conductivity limit beyond which a volume is no longer assembled but treated with a SurfaceImpedance boundary condition
+
         self.mw_cap_sp_single: bool = True
         # Cap single S-parameters to a maximum magnitude of 1.0.
 

@@ -1031,12 +1031,12 @@ class StripPath:
         return self
 
     def short(
-        self, ground_layer: int = 1, radius: float | None = None, reverse: float = 0
+        self, ground_layer: int = 0, radius: float | None = None, reverse: float = 0
     ) -> StripPath:
         """Create a short circuit via at the current location.
 
         Args:
-            ground_layer (int, optional): The layer number to short to. Defaults to 1.
+            ground_layer (int, optional): The layer number to short to. Defaults to 0.
             radius (float | None, optional): The via radius. Defaults to None.
             reverse (float, optional): A displacement distance in the reverse direction. Defaults to 0.
 

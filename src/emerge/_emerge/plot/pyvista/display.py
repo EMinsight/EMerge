@@ -27,12 +27,16 @@ from ...selection import (
     Selection,
     encode_data,
 )
+from .... import __version__
 from ...physics.microwave.bcs import PortBC, ModalPort
 from ...cs import Anchor
 from pathlib import Path
 from importlib.resources import files
 
 from emsutil.pyvista import EMergeDisplay, setdefault, cmap_names, _AnimObject
+from emsutil import themes
+from emsutil.emdata import EHFieldFF
+
 import numpy as np
 from typing import Iterable, Literal
 from loguru import logger
@@ -110,6 +114,8 @@ class PVDisplay(EMergeDisplay):
         self._selected_points = [(0, 0, 0), (0, 0, 0)]
         self._selectable_points = []
 
+        self.set_theme(themes.EMV3)
+
     def _add_selectable_edges(self) -> None:
         self._clear_selectable_objects()
         mesh = self._state.mesh
@@ -166,7 +172,13 @@ class PVDisplay(EMergeDisplay):
         """Shows the Pyvista display."""
         logo_path = self._get_emerge_path("EMS_small.png")
         self._plot.add_logo_widget(
-            logo_path, position=(0.87, 0.87), size=(0.10, 0.10), opacity=0.7
+            logo_path, position=(0.87, 0.87), size=(0.10, 0.10), opacity=1.0
+        )
+        text_actor = self._plot.add_text(
+            f"EMerge Version: {__version__}",
+            color="white",
+            font_size=12,
+            position="lower_right",
         )
         super().show(screenshot, off_screen)
 
@@ -188,6 +200,7 @@ class PVDisplay(EMergeDisplay):
         self._selectable_nodes.append(pointmesh)
 
     def _clear_selectable_objects(self) -> None:
+        self._clear_highlight()
         self._ruler.turn_off()
         for obj in (
             self._selectable_edges
@@ -335,9 +348,11 @@ class PVDisplay(EMergeDisplay):
         label: bool = False,
         label_text: str | None = None,
         texture: str | None = None,
-        opacity: float = 1.0,
+        opacity: float | None = None,
         draw_line: bool = True,
         pbr: bool = True,
+        smooth_shading: bool = False,
+        selectable_as: str | None = None,
         *args,
         **kwargs,
     ):
@@ -345,21 +360,23 @@ class PVDisplay(EMergeDisplay):
         if isinstance(obj, GeoObject):
             if obj._hidden:
                 return
-        if opacity is None:
-            opacity = 1.0
-        opacity = min(obj.opacity, opacity)
 
-        self._add_obj(
-            self.mesh(obj),
+        mesh_obj = self.mesh(obj)
+        actor = self._add_obj(
+            mesh_obj,
             obj.dim,
             plot_mesh=mesh,
             volume_mesh=volume_mesh,
             metal=obj._metal,
-            opacity=opacity,
-            color=obj.color_rgb,
+            opacity=self.parse_opacity(opacity, obj.opacity, minimize=True),
+            color=obj.color_str,
             texture=texture,
-            pbr=pbr,
+            allow_pbr=pbr,
+            smooth_shading=smooth_shading,
         )
+
+        if selectable_as:
+            self._add_selectable(mesh=mesh_obj, actor=actor, name=selectable_as)
 
         if draw_line:
             mesh_obj = self._volume_edges(_select(obj))
@@ -385,16 +402,20 @@ class PVDisplay(EMergeDisplay):
                 else:
                     points.append(self._mesh.dimtag_to_center[(dim, tag)])
                 labels.append(label_text)
+
             self._plot.add_point_labels(
-                points, labels, shape_color=self.set.theme.label_color
+                points,
+                labels,
+                text_color=self.set.theme.text_color,
+                shape_color=self.set.theme.label_color,
             )
 
-    def add_objects(self, *objects, opacity: float = 1.0, **kwargs) -> None:
+    def add_objects(self, *objects, opacity: float = None, **kwargs) -> None:
         """Add a series of objects provided as a list of arguments"""
         for obj in objects:
             self.add_object(obj, opacity=opacity, **kwargs)
 
-    def populate(self, opacity: float = 1.0, **kwargs) -> None:
+    def populate(self, opacity: float = None, **kwargs) -> None:
         """Populate the view with all objects in your simulation model
 
         Args:
@@ -423,6 +444,7 @@ class PVDisplay(EMergeDisplay):
         XYZ=None,
         field: Literal["E", "H", "gradE", "Ez"] = "E",
         k0: float | None = None,
+        cmap: str | None = None,
         mode_number: int | None = None,
     ) -> None:
 
@@ -450,8 +472,8 @@ class PVDisplay(EMergeDisplay):
 
         d = _min_distance(xf, yf, zf)
 
-        if port.vintline is not None:
-            for line in port.vintline:
+        if port.voltage_integration_line is not None:
+            for line in port.voltage_integration_line:
                 xs, ys, zs = line.cpoint
                 p_line = pv.Line(
                     pointa=(xs[0], ys[0], zs[0]),
@@ -463,8 +485,8 @@ class PVDisplay(EMergeDisplay):
                     pickable=False,
                     line_width=3.0,
                 )
-        if port.iintline is not None:
-            for line in port.iintline:
+        if port.current_integration_line is not None:
+            for line in port.current_integration_line:
                 xs, ys, zs = line.cpoint
                 for x1, x2, y1, y2, z1, z2 in zip(
                     xs[:-1], xs[1:], ys[:-1], ys[1:], zs[:-1], zs[1:]
@@ -487,15 +509,24 @@ class PVDisplay(EMergeDisplay):
 
         if mode_number is None:
             mode_number = 1
+
         F = port.port_mode_3d_global(xf, yf, zf, k0, which=field, mode_nr=mode_number)
 
         Fx = F[0, :].reshape(X.shape).T
         Fy = F[1, :].reshape(X.shape).T
         Fz = F[2, :].reshape(X.shape).T
 
-        if field == "H":
+        if cmap is None:
+            cmap = self.set.theme.default_amplitude_cmap
+        else:
+            cmap = self.set.theme.parse_cmap_name(cmap)
+
+        if field in ["H", "modprof"]:
             F = np.real(F.T)
             Fnorm = np.sqrt(Fx.real**2 + Fy.real**2 + Fz.real**2).T
+        elif field in ("gradE", "Ez", "modprof"):
+            F = np.imag(F.T)
+            Fnorm = np.sqrt(Fx.imag**2 + Fy.imag**2 + Fz.imag**2).T
         else:
             F = np.real(F.T)
             Fnorm = np.sqrt(Fx.real**2 + Fy.real**2 + Fz.real**2).T
@@ -506,5 +537,37 @@ class PVDisplay(EMergeDisplay):
             self._wrap_plot(grid, scalars=Fnorm.T, opacity=0.8, pickable=False)
 
         Emag = F / np.max(Fnorm.flatten()) * d * 3
-        actor = self._plot.add_arrows(np.array([xf, yf, zf]).T, Emag)
+        actor = self._plot.add_arrows(
+            np.array([xf, yf, zf]).T, Emag, cmap=cmap, show_scalar_bar=False
+        )
         self._data_sets.append(actor.mapper.dataset)
+
+    def add_farfield3d(
+        self,
+        farfield_obj: EHFieldFF,
+        component: Literal[
+            "Ex", "Ey", "Ez", "Etheta", "Ephi", "normE", "Erhcp", "Elhcp", "AR"
+        ] = "normE",
+        quantity: Literal["abs", "real", "imag", "angle"] = "abs",
+        dB: bool = False,
+        dBfloor: float = -30,
+        rmax: float | None = None,
+        offset: tuple[float, float, float] = (0, 0, 0),
+        opacity: float | None = None,
+    ):
+        surfobj = farfield_obj.surfplot(
+            component,
+            quantity=quantity,
+            dB=dB,
+            dBfloor=dBfloor,
+            rmax=rmax,
+            offset=offset,
+        )
+
+        self.add_surf(
+            *surfobj.xyzf,
+            clim=surfobj.clim,
+            opacity=self.parse_opacity(opacity, "EMERGE-FFSURF"),
+            _fieldname=surfobj.name,
+            **self.set.theme.farfield_3d_kwarg,
+        )

@@ -99,10 +99,10 @@ model.display.add_portmode(p1, data.field[3].k0)
 # This is equivalent to the interpolate method except it automatically generates
 # the point cloud based on a plane x,y or z coordinate.
 model.display.add_field(
-    data.field[3].cutplane(ds=0.001, z=-0.00025).vector("E")
+    data.field[3].cutplane(ds=0.0005, z=-0.00025).vector("E")
 )  # Plotting full E-fields automatically registers as vector plots
 model.display.animate().add_field(
-    data.field[3].cutplane(ds=0.001, z=-0.00075).scalar("Ez", "complex"),
+    data.field[3].cutplane(ds=0.0005, z=-0.00075).scalar("Ez", "complex").smooth(),
     symmetrize=True,
 )
 model.display.show()

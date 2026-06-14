@@ -21,7 +21,8 @@ from __future__ import annotations
 import numpy as np
 from typing import Callable
 from emsutil import Saveable
-#from emsutil import plot
+from emsutil import plot
+
 
 def gauss3_composite(x: np.ndarray, y: np.ndarray) -> float:
     """
@@ -48,26 +49,26 @@ def gauss3_composite(x: np.ndarray, y: np.ndarray) -> float:
     if x.size % 2 == 0:
         raise ValueError("Number of samples must be odd (… 0,1,2; 2,3,4; …).")
 
-    xi = np.sqrt(3/5)
-    nodes   = np.array([-xi, 0.0, +xi])
-    weights = np.array([5/9, 8/9, 5/9])
+    xi = np.sqrt(3 / 5)
+    nodes = np.array([-xi, 0.0, +xi])
+    weights = np.array([5 / 9, 8 / 9, 5 / 9])
 
     total = 0.0
     for i in range(0, x.size - 2, 2):
-        y0, y1, y2 = y[i:i+3]
-        a = y0*0.5 - y1 + 0.5*y2
-        b = -y0*0.5 + 0.5*y2
+        y0, y1, y2 = y[i : i + 3]
+        a = y0 * 0.5 - y1 + 0.5 * y2
+        b = -y0 * 0.5 + 0.5 * y2
         c = y1
-        poly_vals = a*nodes**2 + b*nodes + c
+        poly_vals = a * nodes**2 + b * nodes + c
         total += np.dot(weights, poly_vals)
     return total
 
+
 class Line(Saveable):
-    """ A Line class used for convenient definition of integration lines"""
-    def __init__(self, xpts: np.ndarray,
-                 ypts: np.ndarray,
-                 zpts: np.ndarray):
-        
+    """A Line class used for convenient definition of integration lines"""
+
+    def __init__(self, xpts: np.ndarray, ypts: np.ndarray, zpts: np.ndarray):
+
         self.xs: np.ndarray = xpts
         self.ys: np.ndarray = ypts
         self.zs: np.ndarray = zpts
@@ -76,15 +77,24 @@ class Line(Saveable):
         self.dzs: np.ndarray = zpts[1:] - zpts[:-1]
         self.dl = np.sqrt(self.dxs**2 + self.dys**2 + self.dzs**2)
         self.length: float = np.sum(np.sqrt(self.dxs**2 + self.dys**2 + self.dzs**2))
-        self.l: np.ndarray = np.concatenate((np.array([0,]), np.cumsum(self.dl))) 
-        self.xmid: np.ndarray = 0.5*(xpts[:-1] + xpts[1:])
-        self.ymid: np.ndarray = 0.5*(ypts[:-1] + ypts[1:])
-        self.zmid: np.ndarray = 0.5*(zpts[:-1] + zpts[1:])
+        self.l: np.ndarray = np.concatenate(
+            (
+                np.array(
+                    [
+                        0,
+                    ]
+                ),
+                np.cumsum(self.dl),
+            )
+        )
+        self.xmid: np.ndarray = 0.5 * (xpts[:-1] + xpts[1:])
+        self.ymid: np.ndarray = 0.5 * (ypts[:-1] + ypts[1:])
+        self.zmid: np.ndarray = 0.5 * (zpts[:-1] + zpts[1:])
 
         self.dx: float = self.dxs[0]
         self.dy: float = self.dys[0]
         self.dz: float = self.dzs[0]
-    
+
     @property
     def cmid(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """The midpoints of the line segments.
@@ -98,7 +108,7 @@ class Line(Saveable):
     def cpoint(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """The center points of the line segments."""
         return self.xs, self.ys, self.zs
-    
+
     @staticmethod
     def from_points(start: np.ndarray, end: np.ndarray, Npts: int) -> Line:
         """Create a Line object from start to end with Npts points.
@@ -117,9 +127,9 @@ class Line(Saveable):
         ys = np.linspace(y1, y2, Npts)
         zs = np.linspace(z1, z2, Npts)
         return Line(xs, ys, zs)
-    
+
     @staticmethod
-    def from_path(*points: tuple[float,float,float] | np.ndarray, ds: float) -> Line:
+    def from_path(*points: tuple[float, float, float] | np.ndarray, ds: float) -> Line:
         """Creates a Line object from a series of points with approximate spacing ds.
 
         Args:
@@ -136,7 +146,7 @@ class Line(Saveable):
         yl = None
         zl = None
         for p1, p2 in zip(points[:-1], points[1:]):
-            N = max(3,int(np.ceil(np.linalg.norm(p2-p1)/ds)))
+            N = max(3, int(np.ceil(np.linalg.norm(p2 - p1) / ds)))
             *xs, xl = list(np.linspace(p1[0], p2[0], N))
             *ys, yl = list(np.linspace(p1[1], p2[1], N))
             *zs, zl = list(np.linspace(p1[2], p2[2], N))
@@ -147,15 +157,15 @@ class Line(Saveable):
         ypts.append(yl)
         zpts.append(zl)
         return Line(np.array(xpts), np.array(ypts), np.array(zpts))
-    
+
     def subsample(self, n: int) -> Line:
         """Split each segment into n sub-segments, returning a new Line.
-        
+
         Parameters
         ----------
         n : int
             Number of sub-segments per original segment.
-        
+
         Returns
         -------
         Line
@@ -169,10 +179,10 @@ class Line(Saveable):
             xs.append(self.xs[i] + t * self.dxs[i])
             ys.append(self.ys[i] + t * self.dys[i])
             zs.append(self.zs[i] + t * self.dzs[i])
-        
+
         return Line(np.concatenate(xs), np.concatenate(ys), np.concatenate(zs))
-    
-    def smooth(self, nsteps: int = 1) -> 'Line':
+
+    def smooth(self, nsteps: int = 1) -> "Line":
         """Smooth the path by Laplacian smoothing while preserving total arc length.
 
         Each step replaces every interior point with the average of its two
@@ -196,9 +206,11 @@ class Line(Saveable):
         original_length = self.length
 
         # Detect closed loop: first point == last point
-        closed = (np.abs(xs[0] - xs[-1]) < 1e-14 and
-                np.abs(ys[0] - ys[-1]) < 1e-14 and
-                np.abs(zs[0] - zs[-1]) < 1e-14)
+        closed = (
+            np.abs(xs[0] - xs[-1]) < 1e-14
+            and np.abs(ys[0] - ys[-1]) < 1e-14
+            and np.abs(zs[0] - zs[-1]) < 1e-14
+        )
 
         for _ in range(nsteps):
             if closed:
@@ -251,22 +263,19 @@ class Line(Saveable):
 
     def line_integral(self, evalfunc: Callable) -> complex:
         """Compute the line integral for a complex vector field function evalfunc."""
-        #Ex, Ey, Ez = evalfunc(*self.cpoint)
-        #EdotL = Ex*self.dx + Ey*self.dy + Ez*self.dz
-        #plot(self.l[1:-1], [np.abs(EdotL)[1:-1], EdotL.real[1:-1], EdotL.imag[1:-1]], labels=['abs','real','imag'])
-        #return gauss3_composite(self.l[1:-1], EdotL[1:-1]) * self.xs.shape[0]/(self.xs.shape[0]-2)
-        Ex, Ey, Ez = evalfunc(*self.cmid)
-        EdotL = Ex*self.dxs + Ey*self.dys + Ez*self.dzs
-        #plot(self.l[1:], [np.abs(EdotL), EdotL.real, EdotL.imag], labels=['abs','real','imag'])
+        Fx, Fy, Fz = evalfunc(*self.cmid)
+        EdotL = Fx * self.dxs + Fy * self.dys + Fz * self.dzs
+        # plot(np.cumsum(self.dl), EdotL)
         return np.sum(EdotL)
-        
-    
-    def line_integral_precalc(self, Ex: np.ndarray, Ey: np.ndarray, Ez: np.ndarray) -> complex:
+
+    def line_integral_precalc(
+        self, Ex: np.ndarray, Ey: np.ndarray, Ez: np.ndarray
+    ) -> complex:
         """Compute the line integral for a complex vector field function evalfunc."""
 
-        EdotL = Ex*self.dx + Ey*self.dy + Ez*self.dz
+        EdotL = Ex * self.dx + Ey * self.dy + Ez * self.dz
         return gauss3_composite(self.l, EdotL)
-    
+
     def _integrate(self, quantity: np.ndarray) -> complex:
         """Integrates a quantity of values defined along the line.
 

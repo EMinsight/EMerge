@@ -61,6 +61,11 @@ def construct_local_vertices(glob_vertices, normal):
     basis[1, :] = yhat
     basis[2, :] = zhat
 
+    # # not sure if this should be include?
+    # if np.sum(basis[2, :] * normal) < 0:
+    #     basis[1, :] = -basis[1, :]
+    #     basis[2, :] = -basis[2, :]
+
     return basis, optim_matmul(basis, glob_vertices - origin[:, np.newaxis])
 
 
@@ -70,6 +75,7 @@ def ned2_tri_force(glob_vertices, glob_Uinc, normal):
     bvec = np.zeros((8,), dtype=np.complex128)
 
     basis, local_vertices = construct_local_vertices(glob_vertices, normal)
+
     txs = local_vertices[0, :]
     tys = local_vertices[1, :]
     Ds = compute_distances(txs, tys)
@@ -176,7 +182,7 @@ def assemble_Bmatrix_entries(
 
     # 3. Use np.meshgrid to create the global row and column index maps
     # This maps our local (nnz, nnz) block to the exact global sparse coordinates
-    cols_grid, rows_grid = np.meshgrid(active_dof_ids, active_dof_ids, indexing="ij")
+    cols_grid, rows_grid = np.meshgrid(active_dof_ids, active_dof_ids)
 
     # Flatten everything so it's ready for a COO/CSC sparse matrix format
     return Bdense.ravel(), rows_grid.ravel(), cols_grid.ravel()
@@ -195,6 +201,7 @@ def assemble_wpbc(
 
     vertices = field.mesh.nodes
     bvec = np.zeros((field.n_field,), dtype=np.complex128)
+    bvec2 = np.zeros((field.n_field,), dtype=np.complex128)
     tris = field.mesh.tris
 
     vertices = field.mesh.nodes
@@ -223,7 +230,7 @@ def assemble_wpbc(
     G_xy = compute_force_entries(
         vertices,
         tris,
-        bvec,
+        bvec2,
         surf_triangle_indices,
         U_global_xy_all,
         field.tri_to_field,
@@ -232,5 +239,5 @@ def assemble_wpbc(
     ids = np.argwhere(G != 0).ravel()
     w0 = C0 * k0
     Bvec, rows, cols = assemble_Bmatrix_entries(G, 1.0 / (1j * w0 * MU0 * kappa_m), ids)
-
-    return Bvec, rows, cols, 2 * G_xy * gamma_m
+    # Bvec, rows, cols = assemble_Bmatrix_entries(G, -gamma_m, ids)
+    return Bvec, rows, cols, -2 * gamma_m * G_xy

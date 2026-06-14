@@ -142,4 +142,9 @@ model.display.add_portmode(port1, 21)
 model.display.add_portmode(port2, 21)
 outside = box.boundary()
 model.display.add_field(field.boundary(outside).scalar("normE"), opacity=0.4)
+model.display.animate().add_field(
+    field.grid(N=50_000).scalar("Ez", "complex"),
+    symmetrize=True,
+    clim_crop_factor=0.5,
+)
 model.display.show()

@@ -186,10 +186,10 @@ def cross_c(a: np.ndarray, b: np.ndarray):
 
 
 @njit(f8[:](f8[:], f8[:], f8[:], f8[:]), cache=True, nogil=True)
-def outward_normal(
-    n1: np.ndarray, n2: np.ndarray, n3: np.ndarray, o: np.ndarray
+def calc_inward_normal(
+    n1: np.ndarray, n2: np.ndarray, n3: np.ndarray, inward_normal: np.ndarray
 ) -> np.ndarray:
-    """Copmutes an outward normal vector of a triangle spanned by 3 points.
+    """Copmutes an inward normal vector of a triangle spanned by 3 points.
 
     Computes the triangle surface (n1, n2, n3) which have normal n.
     The normal is aligned with respect to an origin.
@@ -201,14 +201,14 @@ def outward_normal(
         o (np.ndarray): The alignment origin
 
     Returns:
-        Node 1 (3,) array: The outward pointing normal
+        Node 1 (3,) array: The inward pointing normal
     """
     e1 = n2 - n1
     e2 = n3 - n1
     n = cross(e1, e2)
     n = n / np.sqrt(n[0] ** 2 + n[1] ** 2 + n[2] ** 2)
     sgn = 1
-    if dot(n, (n1 + n2 + n3) / 3.0 - o) < 0:
+    if dot(n, inward_normal) < 0:
         sgn = -1
     return n * sgn
 

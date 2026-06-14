@@ -23,6 +23,8 @@ from .femdata import FEMBasis
 from ..cs import CoordinateSystem
 from ..const import MU0, C0
 from emsutil import Saveable
+from typing import Literal
+
 ## TODO: TEMPORARY SOLUTION FIX THIS
 
 
@@ -47,7 +49,7 @@ class FieldFunctionClass:
         nodes: np.ndarray,
         tris: np.ndarray,
         tri_to_field: np.ndarray,
-        EH: str = "E",
+        EH: Literal["E", "H"] = "E",
         diadic: np.ndarray | None = None,
         beta: float | None = None,
         constant: float | int | complex = 1.0,
@@ -68,6 +70,10 @@ class FieldFunctionClass:
                     (self.tris.shape[1])
                 )  # type: ignore
 
+    def flip_polarity(self) -> None:
+        """Flips the polarity of the mode"""
+        self.field *= -1.0
+
     def __call__(self, xs: np.ndarray, ys: np.ndarray, zs: np.ndarray) -> np.ndarray:
         """Computes the global Electric vector field
 
@@ -81,13 +87,13 @@ class FieldFunctionClass:
         """
         xl, yl, zl = self.cs.in_local_cs(xs, ys, zs)
         if self.eh == "E":
-            Fxl, Fyl, Fzl = self.calcE(xl, yl)
+            Fxl, Fyl, Fzl = self.calcE_loc(xl, yl)
         else:
-            Fxl, Fyl, Fzl = self.calcH(xl, yl)
+            Fxl, Fyl, Fzl = self.calcH_loc(xl, yl)
         Fx, Fy, Fz = self.cs.in_global_basis(Fxl, Fyl, Fzl)
         return np.array([Fx, Fy, Fz]) * self.constant
 
-    def calcE(
+    def calcE_loc(
         self, xs: np.ndarray, ys: np.ndarray, usenan: bool = False
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         from ..compiled import MATHLIB
@@ -112,11 +118,49 @@ class FieldFunctionClass:
             np.ndarray: Efield vector field
         """
         xl, yl, zl = self.cs.in_local_cs(xs, ys, zs)
-        Fxl, Fyl, Fzl = self.calcE(xl, yl)
+        Fxl, Fyl, Fzl = self.calcE_loc(xl, yl)
         Fxl = np.nan_to_num(Fxl)
         Fyl = np.nan_to_num(Fyl)
         Fzl = np.nan_to_num(Fzl)
         Fx, Fy, Fz = self.cs.in_global_basis(Fxl, Fyl, 0 * Fzl)
+        return np.array([Fx, Fy, Fz]) * self.constant
+
+    def calcHxy(self, xs: np.ndarray, ys: np.ndarray, zs: np.ndarray) -> np.ndarray:
+        """Computes the global Hx, Hy, Hz vector field
+
+        Args:
+            xs (np.ndarray): x-coordinates
+            ys (np.ndarray): y-coordinates
+            zs (np.ndarray): z-coordinates
+
+        Returns:
+            np.ndarray: Efield vector field
+        """
+        xl, yl, zl = self.cs.in_local_cs(xs, ys, zs)
+        Fxl, Fyl, Fzl = self.calcH_loc(xl, yl)
+        Fxl = np.nan_to_num(Fxl)
+        Fyl = np.nan_to_num(Fyl)
+        Fzl = np.nan_to_num(Fzl)
+        Fx, Fy, Fz = self.cs.in_global_basis(Fxl, Fyl, 0 * Fzl)
+        return np.array([Fx, Fy, Fz]) * self.constant
+
+    def calcHz(self, xs: np.ndarray, ys: np.ndarray, zs: np.ndarray) -> np.ndarray:
+        """Computes the global Hx, Hy, Hz vector field of the out of plane component
+
+        Args:
+            xs (np.ndarray): x-coordinates
+            ys (np.ndarray): y-coordinates
+            zs (np.ndarray): z-coordinates
+
+        Returns:
+            np.ndarray: Efield vector field
+        """
+        xl, yl, zl = self.cs.in_local_cs(xs, ys, zs)
+        Fxl, Fyl, Fzl = self.calcH_loc(xl, yl)
+        Fxl = np.nan_to_num(Fxl)
+        Fyl = np.nan_to_num(Fyl)
+        Fzl = np.nan_to_num(Fzl)
+        Fx, Fy, Fz = self.cs.in_global_basis(0 * Fxl, 0 * Fyl, Fzl)
         return np.array([Fx, Fy, Fz]) * self.constant
 
     def calcEz(self, xs: np.ndarray, ys: np.ndarray, zs: np.ndarray) -> np.ndarray:
@@ -131,7 +175,7 @@ class FieldFunctionClass:
             np.ndarray: Efield vector field
         """
         xl, yl, zl = self.cs.in_local_cs(xs, ys, zs)
-        Fxl, Fyl, Fzl = self.calcE(xl, yl)
+        Fxl, Fyl, Fzl = self.calcE_loc(xl, yl)
         Fxl = np.nan_to_num(Fxl)
         Fyl = np.nan_to_num(Fyl)
         Fzl = np.nan_to_num(Fzl)
@@ -177,11 +221,11 @@ class FieldFunctionClass:
 
         Exy = self.calcExy(xs, ys, zs)
         gEzxy = self.calcEzGrad(xs, ys, zs)
-        gamma_m = self.beta * 1j
+        gamma_m = 1j * self.beta
         field = gamma_m * Exy - gEzxy
         return field
 
-    def calcH(
+    def calcH_loc(
         self, xs: np.ndarray, ys: np.ndarray, usenan: bool = False
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         from ..compiled import MATHLIB

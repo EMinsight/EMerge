@@ -26,30 +26,32 @@ from .optimized import gaus_quad_tri, generate_int_points_tri, calc_area
 #                 NUMBA OPTIMIZED INTEGRALS                #
 ############################################################
 
-@njit(c16(f8[:,:], i8[:,:], c16[:], f8[:,:], c16[:,:]), cache=True, nogil=True)
+
+@njit(c16(f8[:, :], i8[:, :], c16[:], f8[:, :], c16[:, :]), cache=True, nogil=True)
 def _fast_integral_c(nodes, triangles, constants, DPTs, field_values):
     tot = np.complex128(0.0)
 
     for it in range(triangles.shape[1]):
         vertex_ids = triangles[:, it]
-        v1 = nodes[:,vertex_ids[0]]
-        v2 = nodes[:,vertex_ids[1]]
-        v3 = nodes[:,vertex_ids[2]]
+        v1 = nodes[:, vertex_ids[0]]
+        v2 = nodes[:, vertex_ids[1]]
+        v3 = nodes[:, vertex_ids[2]]
         A = calc_area(v1, v2, v3)
-        field = np.sum(DPTs[0,:]*field_values[:,it])
+        field = np.sum(DPTs[0, :] * field_values[:, it])
         tot = tot + constants[it] * field * A
     return tot
 
-@njit(f8(f8[:,:], i8[:,:], f8[:], f8[:,:], f8[:,:]), cache=True, nogil=True)
+
+@njit(f8(f8[:, :], i8[:, :], f8[:], f8[:, :], f8[:, :]), cache=True, nogil=True)
 def _fast_integral_f(nodes, triangles, constants, DPTs, field_values):
     tot = np.float64(0.0)
     for it in range(triangles.shape[1]):
         vertex_ids = triangles[:, it]
-        v1 = nodes[:,vertex_ids[0]]
-        v2 = nodes[:,vertex_ids[1]]
-        v3 = nodes[:,vertex_ids[2]]
+        v1 = nodes[:, vertex_ids[0]]
+        v2 = nodes[:, vertex_ids[1]]
+        v3 = nodes[:, vertex_ids[2]]
         A = calc_area(v1, v2, v3)
-        field = np.sum(DPTs[0,:]*field_values[:,it])
+        field = np.sum(DPTs[0, :] * field_values[:, it])
         tot = tot + constants[it] * field * A
     return tot
 
@@ -58,11 +60,14 @@ def _fast_integral_f(nodes, triangles, constants, DPTs, field_values):
 #                      PYTHON WRAPPER                     #
 ############################################################
 
-def surface_integral(nodes: np.ndarray, 
-                     triangles: np.ndarray, 
-                     function: Callable, 
-                     constants: np.ndarray | None = None,
-                     gq_order: int = 4) -> complex:
+
+def surface_integral(
+    nodes: np.ndarray,
+    triangles: np.ndarray,
+    function: Callable,
+    constants: np.ndarray | None = None,
+    gq_order: int = 4,
+) -> complex:
     """Computes the surface integral of a scalar-field
 
     Computes I = Σ ∫∫ C ᐧ f(x,y,z) dA
@@ -79,14 +84,21 @@ def surface_integral(nodes: np.ndarray,
     """
     if constants is None:
         constants = np.ones(triangles.shape[1])
-        
+
     DPTs = gaus_quad_tri(gq_order)
-    xall_flat, yall_flat, zall_flat, shape = generate_int_points_tri(nodes, triangles, DPTs)
+    xall_flat, yall_flat, zall_flat, shape = generate_int_points_tri(
+        nodes, triangles, DPTs
+    )
     fvals = function(xall_flat, yall_flat, zall_flat)
     fA = fvals.reshape(shape)
 
     if np.iscomplexobj(fA) or np.iscomplexobj(constants):
-        return _fast_integral_c(nodes, triangles, constants.astype(np.complex128), DPTs, fA.astype(np.complex128))
+        return _fast_integral_c(
+            nodes,
+            triangles,
+            constants.astype(np.complex128),
+            DPTs,
+            fA.astype(np.complex128),
+        )
     else:
         return _fast_integral_f(nodes, triangles, constants, DPTs, fA)
-    

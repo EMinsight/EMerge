@@ -176,7 +176,7 @@ def construct_pec_contour(
     surface_tri_ids: np.ndarray,
     pec_vertices: set[int],
     normal_vector: np.ndarray,
-    alpha: float = 0.2,
+    alpha: float = 0.4,
 ) -> np.ndarray:
     """Constructs a closed contour around a pec island
 
@@ -303,7 +303,7 @@ def construct_pec_contour(
         cross = np.cross(rel[:, i], rel[:, j])
         signed_area += np.dot(cross, normal_vector)
 
-    if signed_area < 0:
+    if signed_area > 0:
         contour_points = contour_points[:, ::-1]
 
     contour_points = np.hstack([contour_points, contour_points[:, 0:1]])
@@ -474,21 +474,6 @@ class Microwave3D:
         self.resolution = resolution
         logger.trace(f"Resolution set to {self.resolution}")
 
-    def set_conductivity_limit(self, condutivity: float) -> None:
-        """Sets the limit of a material conductivity value beyond which
-        the assembler considers it PEC. By default this value is
-        set to 1·10⁷S/m which means copper conductivity is ignored.
-
-        Args:
-            condutivity (float): The conductivity level in S/m
-        """
-        if condutivity < 0:
-            raise ValueError("Conductivity values must be above 0. Ignoring assignment")
-
-        self.assembler.settings.mw_2dbc_peclim = condutivity
-        self.assembler.settings.mw_3d_peclim = condutivity
-        logger.trace(f"Set conductivity limit to {condutivity} S/m")
-
     def get_discretizer(self) -> Callable:
         """Returns a discretizer function that defines the maximum mesh size.
 
@@ -574,9 +559,22 @@ class Microwave3D:
             for bc in self.mesher.periodic_cell.bcs:
                 self.bc.assign(bc)
 
+        # Assign SurfaceImpedance to all conducting volume_boundaries
+        material_map = defaultdict(set)
+        for geo_volume in self._state.current_geo_state:
+            if geo_volume.dim != 3:
+                continue
+            material = geo_volume.material
+            if material.cond.value > self.assembler.settings.mw_3d_surfimplim:
+                material_map[material].update(set(geo_volume.boundary().tags))
+        for material, assignment in material_map.items():
+            logger.debug(f"Assigning SurfaceImpedance BC to {assignment}")
+            self.bc.SurfaceImpedance(FaceSelection(list(assignment)), material=material)
+
     def _initialize_bc_data(self):
         """Initializes auxilliary required boundary condition information before running simulations."""
         logger.debug("Initializing boundary conditions")
+
         # Removes non-assigned boundary conditions.
         # This happens for example if the initial boundary PEC gets overwritten.
         self.bc.cleanup()
@@ -634,7 +632,7 @@ class Microwave3D:
         Raises:
             SimulationError: An error if there are no nodes associated with the port.
         """
-        if len(port.vintline) > 0:
+        if len(port.voltage_integration_line) > 0:
             return
         logger.debug(" - Finding Lumped Port integration points")
         field_axis = port.Vdirection.np
@@ -666,7 +664,7 @@ class Microwave3D:
         for x, y, z in zip(xs, ys, zs):
             start = np.array([x, y, z])
             end = start + port.Vdirection.np * port.height
-            port.vintline.append(Line.from_points(start, end, 21))
+            port.voltage_integration_line.append(Line.from_points(start, end, 21))
             logger.trace(
                 f" - Port[{port.port_number}] integration line {start} -> {end}."
             )
@@ -717,9 +715,9 @@ class Microwave3D:
 
         # Port mesh data
         tri_ids = mesh.get_triangles(port.tags)
-        edge_ids = list(mesh.tri_to_edge[:, tri_ids].flatten())
+        edge_ids = set(list(mesh.tri_to_edge[:, tri_ids].flatten()))
 
-        port_pec_edges = np.array([i for i in pec_edges if i in set(edge_ids)])
+        port_pec_edges = np.array([i for i in pec_edges if i in edge_ids])
 
         pec_islands = mesh.find_edge_groups(port_pec_edges)
 
@@ -876,7 +874,7 @@ class Microwave3D:
                 The desired frequency at which the mode is solved. If None then it uses the lowest frequency of the provided range.
         """
         T0 = time.time()
-        logger.info(f"Starting Mode Analysis for port {port}.")
+        logger.info(f"Port {port.port_number}: Starting Mode Analysis for port {port}.")
 
         # First check if the boundary conditions are initialized.
 
@@ -901,6 +899,10 @@ class Microwave3D:
         if freq is None:
             freq = self.frequencies[0]
 
+        # Align port normal vector
+        inward_normal = self.mesh.inward_normal(port.tags)
+        if sum(port.cs.zax.np * inward_normal) < 0:
+            port.cs.flip_z()
         # Materials is now a list of materials and in the materials themselves
         # They know what values are assigned to which index. This is not uniform
         # because coordinate dependent material properties/materials are possible.
@@ -993,6 +995,7 @@ class Microwave3D:
 
         # Only look at the real value
         target_kz = target_kz.real
+
         # Execute a boundary mode eigenvalue calculation.
         eigen_values, eigen_modes, report = self.solveroutine.eig_boundary(
             Amatrix, Bmatrix, solve_ids, nmodes, direct, target_kz, sign=-1
@@ -1021,14 +1024,13 @@ class Microwave3D:
             # beta = min(k0 * np.sqrt(ermax * urmax), beta_base)
 
             # Correct for et = kz Et, ez = -j Ez
-            #Emode[: nlf.n_xy] = Emode[: nlf.n_xy] / beta
-            #Emode[nlf.n_xy :] = Emode[nlf.n_xy :] / (-1j)
+            Emode[: nlf.n_xy] = Emode[: nlf.n_xy] / beta
+            Emode[nlf.n_xy :] = Emode[nlf.n_xy :] / (-1j)
+
             # Phase correct for a phase of 0 degree at the port maximum.
             Emode = Emode * np.exp(
                 -1j * np.angle(Emode[np.argmax(np.abs(Emode[: nlf.n_xy]))])
             )
-
-            residuals = -1
 
             # If alignement vectors are defined (ask the port to be aligned positively in some direction.)
             if port._get_alignment_vector(i) is not None:
@@ -1057,21 +1059,75 @@ class Microwave3D:
             # These return field interpolation class objects.
             portfE = nlf.interpolate_Ef(Emode)
             portfH = nlf.interpolate_Hf(Emode, k0, ur, beta)
-            power = compute_avg_power_flux(nlf, Emode, k0, ur, beta)
 
             # Finally add the mode to the port as a valid port mode.
-            mode = port.add_mode(Emode, portfE, portfH, beta, k0, residuals, freq=freq)
+            mode = port.try_add_mode(Emode, portfE, portfH, beta, k0, freq=freq)
 
             # Mode is None if the mode energy is considered too.
             if mode is None:
                 continue
 
-            Efxy = Emode[: nlf.n_xy]
-            Efz = Emode[nlf.n_xy :]
-            Exy = np.max(np.abs(Efxy))
-            Ez = np.max(np.abs(Efz))
+            # Figure out if TE, TM, or TEM mode
+            if port.forced_modetype is not None:
+                mode_type = port.forced_modetype
+            else:
+                logger.debug("Inferring port mode type...")
+                limit = 1e-3
+                tri_centers = self.mesh.tri_centers[
+                    :, self.mesh.get_triangles(port.selection.tags)
+                ]
+
+                Efxy = portfE.calcExy(
+                    tri_centers[0, :], tri_centers[1, :], tri_centers[2, :]
+                )
+                Efz = portfE.calcEz(
+                    tri_centers[0, :], tri_centers[1, :], tri_centers[2, :]
+                )
+                Hfxy = portfH.calcHxy(
+                    tri_centers[0, :], tri_centers[1, :], tri_centers[2, :]
+                )
+                Hfz = portfH.calcHz(
+                    tri_centers[0, :], tri_centers[1, :], tri_centers[2, :]
+                )
+
+                Exy = np.max(np.abs(Efxy))
+                Ez = np.max(np.abs(Efz))
+                Hxy = np.max(np.abs(Hfxy))
+                Hz = np.max(np.abs(Hfz))
+
+                logger.debug(f".. Ez/Exy = {Ez / Exy:.3f}")
+                logger.debug(f".. Hz/Hxy = {Hz / Hxy:.3f}")
+                TE = False
+                TM = False
+                if Ez / Exy < limit:
+                    TE = True
+                if Hz / Hxy < limit:
+                    TM = True
+                if TE and TM:
+                    mode_type = "TEM"
+                elif TE:
+                    mode_type = "TE"
+                else:
+                    mode_type = "TM"
+                logger.debug(f".. Mode type = {mode_type}")
+
+            mode.modetype = mode_type
+
+            # port power normalization
+            inward_normal = self.mesh.inward_normal(port.tags)
+            power = compute_avg_power_flux(nlf, portfE, portfH, inward_normal)
+            logger.debug(f"Port power flux = {power:.3e} [W]")
+            mode.normalize_power(np.abs(power))
+            logger.debug(f".. Inward normal = {inward_normal}")
+            # flip port mode direction
+            if power < 0.0:
+                logger.warning(
+                    f"Negative port power, unhandled case. Its not clear if this even matters."
+                )
+            power = 1.0
+
             # Final port post processing. If the port is to be considered a TEM mode port:
-            if port.forced_modetype == "TEM" or TEM:
+            if mode_type == "TEM" or TEM:
                 mode.modetype = "TEM"
 
                 impedance_type = port.impedance_definition
@@ -1109,7 +1165,7 @@ class Microwave3D:
                     logger.debug(
                         f"Integrating portmode from {line_centers[:, 0]} to {line_centers[:, -1]}"
                     )
-                    voltage = line.line_integral(portfE)
+                    voltage = line.line_integral(mode.E_function)
 
                 # If the Current needs to be computed, either find the integration line or use the predefined one.
                 if "I" in impedance_type:
@@ -1126,7 +1182,11 @@ class Microwave3D:
                             )
                             continue
                         path = construct_pec_contour(
-                            self.mesh, itri_port, set(island_group_1), nlf.cs.zax.np
+                            self.mesh,
+                            itri_port,
+                            set(island_group_1),
+                            inward_normal,
+                            alpha=0.2,
                         )
                         intline = (
                             Line(path[0, :], path[1, :], path[2, :])
@@ -1134,16 +1194,19 @@ class Microwave3D:
                             .smooth(5)
                         )
                         port.current_integration_line.append(intline)
-                    current = intline.line_integral(portfH)
+                    current = intline.line_integral(mode.H_function.calcHxy)
 
                 # Align mode polarity to positive voltage
                 if voltage < 0:
-                    mode.polarity = mode.polarity * -1
+                    mode.flip_polarity()
 
+                logger.debug(
+                    f".. U={voltage:.3f}[V], I={1000 * current:.3f}[mA], Power={power:.3F}[W]"
+                )
                 voltage = np.abs(voltage)
                 current = np.abs(current)
-
                 power = np.abs(power)
+
                 if impedance_type == "PV":
                     mode.Z0 = abs(voltage**2 / (2 * power))
                 elif impedance_type == "PI":
@@ -1152,15 +1215,6 @@ class Microwave3D:
                     mode.Z0 = np.abs(voltage) / np.abs(current)
 
                 logger.info(f"Port Z0 = {mode.Z0} Ω")
-
-            elif Ez / Exy < 1e-1 or port.forced_modetype == "TE":
-                logger.debug("Low Ez/Et ratio detected, assuming TE mode")
-                mode.modetype = "TE"
-            elif Ez / Exy > 1e-1 or port.forced_modetype == "TM":
-                logger.debug("High Ez/Et ratio detected, assuming TM mode")
-                mode.modetype = "TM"
-
-            mode.set_power(power * port._qmode(k0) ** 2)
 
         # Sort the port modes on propagation constant.
         port.sort_modes()
@@ -2303,15 +2357,7 @@ class Microwave3D:
             raise SimulationError(
                 "Cannot post-process. Simulation basis function is undefined."
             )
-
-        mesh = self.mesh
         logger.info("Computing S-parameters")
-
-        not_conserved = False
-        conserve_margin = 0.0
-        single_corr = self._settings.mw_cap_sp_single
-        col_corr = self._settings.mw_cap_sp_col
-        recip_corr = self._settings.mw_recip_sp
 
         ertri = np.zeros((3, 3, self.mesh.n_tris), dtype=np.complex128)
         urtri = np.zeros((3, 3, self.mesh.n_tris), dtype=np.complex128)
@@ -2389,7 +2435,7 @@ class Microwave3D:
         from .sparam import sparam_field_power, sparam_mode_power
 
         if bc.v_integration:
-            if bc.vintline is None:
+            if bc.voltage_integration_line is None:
                 raise SimulationError(
                     "Trying to compute characteristic impedance but no integration line is defined."
                 )
@@ -2399,17 +2445,17 @@ class Microwave3D:
                 )
 
             # Compute all integration points
-            xs = np.concat([line.xs for line in bc.vintline])
-            ys = np.concat([line.ys for line in bc.vintline])
-            zs = np.concat([line.zs for line in bc.vintline])
+            xs = np.concat([line.xs for line in bc.voltage_integration_line])
+            ys = np.concat([line.ys for line in bc.voltage_integration_line])
+            zs = np.concat([line.zs for line in bc.voltage_integration_line])
 
             # Evaluate the E-field
             Ex, Ey, Ez = fieldfunction(xs, ys, zs)
 
             ctr = 0
             V = 0
-            Nlines = len(bc.vintline)
-            for line in bc.vintline:
+            Nlines = len(bc.voltage_integration_line)
+            for line in bc.voltage_integration_line:
                 npts = line.xs.shape[0]
                 slc = slice(ctr, ctr + npts)
                 ctr += npts
@@ -2598,7 +2644,7 @@ class MW3D:
         Raises:
             SimulationError: An error if there are no nodes associated with the port.
         """
-        if len(port.vintline) > 0:
+        if len(port.voltage_integration_line) > 0:
             return
         logger.debug(" - Finding Lumped Port integration points")
         field_axis = port.Vdirection.np
@@ -2625,7 +2671,7 @@ class MW3D:
         for x, y, z in zip(xs, ys, zs):
             start = np.array([x, y, z])
             end = start + port.Vdirection.np * port.height
-            port.vintline.append(Line.from_points(start, end, 21))
+            port.voltage_integration_line.append(Line.from_points(start, end, 21))
             logger.trace(
                 f" - Port[{port.port_number}] integration line {start} -> {end}."
             )

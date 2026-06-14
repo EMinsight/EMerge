@@ -354,7 +354,8 @@ def filter_real_modes(
     """
     minimum = 1
     extremum = (k0**2) * ermax * urmax * 2
-
+    eigvals[eigvals == np.inf] = 1e30
+    eigvals[eigvals == -np.inf] = -1e30
     mask = (sign * eigvals <= extremum) & (sign * eigvals >= minimum)
     filtered_vals = eigvals[mask]
     filtered_vecs = eigvecs[:, mask]
@@ -1996,7 +1997,7 @@ class SolveRoutine:
         if matrix_type is MatrixType.UNKNOWN:
             matrix_type = classify_matrix(A)
 
-        logger.info(f"Solving Matrix of type: {matrix_type}")
+        logger.debug(f"{_pfx(self.pre, id)} matrix type: {matrix_type}")
 
         if b.ndim == 1:
             b = b.reshape((b.shape[0], 1))

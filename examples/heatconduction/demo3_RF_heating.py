@@ -129,10 +129,9 @@ d = sim.display
 # This helps making cutplanes a bit clearer.
 d.set.theme.render_shadows = False
 
-d.populate(opacity=0.1)
+d.populate(opacity=0.001)
 d.cbar("T (C)").add_field(
     mw_solutions.field[0].cutplane(ds=0.25 * mm, x=0).scalar("TdegC"),
-    cmap="jet",
 )
 d.cbar("Q [W/m2]").add_field(
     mw_solutions.field[0].cutplane(ds=0.5 * mm, x=0.5 * mm).vector("q"), color="yellow"

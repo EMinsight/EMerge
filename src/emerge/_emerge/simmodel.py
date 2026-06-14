@@ -692,6 +692,12 @@ class Simulation:
             assigned_materials: (bool, optional): Shows the materials in geometries as assigned per unique domain. Defaults to False
             off_screen: (bool, optional): Only shows off screen (useful for combinations with Screenshot). Defaults to False
         """
+
+        def default_if_none(value, default):
+            if value is None:
+                return default
+            return value
+
         if use_gmsh or self.display is None:
             gmsh.model.occ.synchronize()
             gmsh.fltk.run()
@@ -712,9 +718,10 @@ class Simulation:
             self.display.add_object(
                 geo,
                 mesh=plot_mesh,
-                opacity=opacity,
+                opacity=default_if_none(opacity, geo.opacity),
                 volume_mesh=volume_mesh,
                 label=labels,
+                selectable_as=geo.name,
             )
 
             if face_labels and geo.dim == 3:
@@ -726,11 +733,14 @@ class Simulation:
                         color="yellow",
                         opacity=0.1,
                         label=face_name,
+                        selectable_as=face_name,
                     )
 
         if selections:
             [
-                self.display.add_object(sel, color="red", opacity=0.6, label=sel.name)
+                self.display.add_object(
+                    sel, color="EMERGE-SELECT", opacity="EMERGE-SELECT", label=sel.name
+                )
                 for sel in selections
             ]
         if bc:
@@ -741,7 +751,7 @@ class Simulation:
                     self.display.add_object(
                         bc.selection,
                         color=bc._color,
-                        opacity=0.4,
+                        opacity="EMERGE-BC",
                         label=True,
                         label_text=bc._name,
                         texture=bc._texture,
@@ -759,7 +769,7 @@ class Simulation:
                         label=True,
                         label_text=bc._name,
                         texture=bc._texture,
-                        pbr=False
+                        pbr=False,
                     )
 
         self.display.show(screenshot=screenshot, off_screen=off_screen)

@@ -18,16 +18,18 @@
 # Last Cleanup: 2025-01-01
 import numpy as np
 from ...elements.nedleg2 import NedelecLegrange2
+from typing import Callable
 
 
 def compute_avg_power_flux(
-    field: NedelecLegrange2, mode: np.ndarray, k0: float, ur: np.ndarray, beta: float
+    field: NedelecLegrange2,
+    Efunc: Callable,
+    Hfunc: Callable,
+    inward_normal: np.ndarray,
 ):
     from ...mth.integrals import surface_integral
 
-    Efunc = field.interpolate_Ef(mode)
-    Hfunc = field.interpolate_Hf(mode, k0, ur, beta)
-    nx, ny, nz = field.mesh.normals[:, 0]
+    nx, ny, nz = inward_normal
 
     def S(x, y, z):
         Ex, Ey, Ez = Efunc(x, y, z)
@@ -37,7 +39,7 @@ def compute_avg_power_flux(
         Sz = 1 / 2 * np.real(Ex * np.conj(Hy) - Ey * np.conj(Hx))
         return nx * Sx + ny * Sy + nz * Sz
 
-    Ptot = surface_integral(field.mesh.nodes, field.mesh.tris, S, None, 4)
+    Ptot = surface_integral(field.mesh.nodes, field.mesh.tris, S, None, 5)
     return Ptot
 
 

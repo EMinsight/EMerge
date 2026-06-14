@@ -27,6 +27,8 @@ from ..volakis import (
     _nf2,
     _nf1_curl,
     _nf2_curl,
+)
+from ..savage import (
     _ne1_tri,
     _ne2_tri,
     _ne1_curl_tri,
@@ -48,7 +50,7 @@ from ..legrange import (
 import numpy as np
 from ...mth.optimized import compute_distances
 
-EPS = 1e-8
+EPS = 1e-9
 
 
 @njit(f8[:, :](f8[:, :]), cache=True, nogil=True)
@@ -855,13 +857,13 @@ def ned2_tri_interp(
     return Ex, Ey, Ez
 
 
-# @njit(
-#     types.Tuple((c16[:], c16[:], c16[:]))(
-#         f8[:, :], c16[:], i8[:, :], f8[:, :], i8[:, :]
-#     ),
-#     cache=True,
-#     nogil=True,
-# )
+@njit(
+    types.Tuple((c16[:], c16[:], c16[:]))(
+        f8[:, :], c16[:], i8[:, :], f8[:, :], i8[:, :]
+    ),
+    cache=True,
+    nogil=True,
+)
 def ned2_tri_interp_full(
     coords: np.ndarray,
     solutions: np.ndarray,
@@ -985,31 +987,16 @@ def ned2_tri_interp_grad(
     nodes: np.ndarray,
     tri_to_field: np.ndarray,
 ):
-    """
-    Computes the spatial gradient of the out-of-plane Ez component
-    of a mixed Nedelec-2 / Lagrange-2 basis on triangles.
-
-    Ez is represented by Lagrange-2 basis functions:
-      - 3 vertex DoFs  (LV_1, LV_2, LV_3)  -> tri_to_field[8:11, :]
-      - 3 edge DoFs    (LE_1, LE_2, LE_3)   -> tri_to_field[11:14, :]
-
-    Vertex basis gradient : _lv_grad(coeff_i,   coords)  -> (2, npts)
-    Edge   basis gradient : _le_grad(coeff_ij,  coords)  -> (2, npts)
-      where coeff_ij = [[a_i,a_j],[b_i,b_j],[c_i,c_j]]
-
-    Returns
-    -------
-    dEz_dx : (nNodes,) complex128
-    dEz_dy : (nNodes,) complex128
-    """
+    """Nedelec 2 tetrahedral interpolation"""
+    ### THIS IS VERIFIED TO WORK
+    # Solution has shape (nEdges, nsols)
     nNodes = coords.shape[1]
 
-    dEz_dx = np.full((nNodes,), np.nan, dtype=np.complex128)
-    dEz_dy = np.full((nNodes,), np.nan, dtype=np.complex128)
+    Ex = np.full((nNodes,), np.nan, dtype=np.complex128)
+    Ey = np.full((nNodes,), np.nan, dtype=np.complex128)
+    Ez = np.full((nNodes,), np.nan, dtype=np.complex128)
 
     nodes = nodes[:2, :]
-
-    l_edge_ids = np.array([[0, 1, 0], [1, 2, 2]])
 
     for itri in range(tris.shape[1]):
         iv1, iv2, iv3 = tris[:, itri]
@@ -1018,19 +1005,23 @@ def ned2_tri_interp_grad(
         v2 = nodes[:, iv2]
         v3 = nodes[:, iv3]
 
-        # ---- inside test (same as ned2_tri_interp) -------------------------
         bv1 = v2 - v1
         bv2 = v3 - v1
+
         blocal = np.zeros((2, 2))
         blocal[:, 0] = bv1
         blocal[:, 1] = bv2
         basis = np.linalg.pinv(blocal)
 
         coords_offset = coords - v1[:, np.newaxis]
-        coords_local = basis @ coords_offset
+        coords_local = basis @ (coords_offset)
+
+        field_ids = tri_to_field[:, itri]
+
+        Etri = solutions[field_ids]
 
         inside = (
-            ((coords_local[0, :] + coords_local[1, :]) <= 1 + EPS)
+            ((coords_local[0, :] + coords_local[1, :]) <= 1.0 + EPS)
             & (coords_local[0, :] >= -EPS)
             & (coords_local[1, :] >= -EPS)
         )
@@ -1038,48 +1029,56 @@ def ned2_tri_interp_grad(
         if inside.sum() == 0:
             continue
 
+        ######### INSIDE THE TRIANGLE #########
+
+        coords_inside = coords[:2, inside == 1]
+
         xvs = nodes[0, tris[:, itri]]
         yvs = nodes[1, tris[:, itri]]
 
         a_s, b_s, c_s, A = tri_coefficients(xvs, yvs)
+
+        ivec = np.array([0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 0, 1, 0])
+        jvec = np.array([1, 2, 2, 1, 1, 2, 2, 1, 0, 0, 0, 1, 2, 2])
+        kvec = np.array([0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0])
+
         coeff = np.empty((3, 3), dtype=np.float64)
         coeff[0, :] = a_s
         coeff[1, :] = b_s
         coeff[2, :] = c_s
 
-        field_ids = tri_to_field[:, itri]
+        ex = np.zeros((coords_inside.shape[1],), dtype=np.complex128)
+        ey = np.zeros((coords_inside.shape[1],), dtype=np.complex128)
+        ez = np.zeros((coords_inside.shape[1],), dtype=np.complex128)
 
-        lv_dofs = solutions[field_ids[8:11]]
-        le_dofs = solutions[field_ids[11:14]]
-        pts_inside = coords[:, inside]
+        for idof in range(8, 14):
+            i = ivec[idof]
+            j = jvec[idof]
+            k = kvec[idof]
+            if idof < 11:
+                Evec = _nv_grad_tri(coeff, coords_inside, i, j, k)
+                ex += Etri[idof] * Evec[0, :]
+                ey += Etri[idof] * Evec[1, :]
+                continue
+            else:
+                Evec = _ne_grad_tri(coeff, coords_inside, i, j, k)
+                ex += Etri[idof] * Evec[0, :]
+                ey += Etri[idof] * Evec[1, :]
+                continue
 
-        grad_x = np.zeros(pts_inside.shape[1], dtype=np.complex128)
-        grad_y = np.zeros(pts_inside.shape[1], dtype=np.complex128)
+        Ex[inside == 1] = ex
+        Ey[inside == 1] = ey
 
-        for iv in range(3):
-            g = _nv_grad_tri(coeff, pts_inside, iv, 0, 0)
-            grad_x += lv_dofs[iv] * g[0, :]
-            grad_y += lv_dofs[iv] * g[1, :]
-
-        for ie in range(3):
-            i, j = l_edge_ids[:, ie]
-            g = _ne_grad_tri(coeff, pts_inside, i, j, 0)
-            grad_x += le_dofs[ie] * g[0, :]
-            grad_y += le_dofs[ie] * g[1, :]
-
-        dEz_dx[inside] = grad_x
-        dEz_dy[inside] = grad_y
-
-    return dEz_dx, dEz_dy
+    return Ex, Ey
 
 
-# @njit(
-#     types.Tuple((c16[:], c16[:], c16[:]))(
-#         f8[:, :], c16[:], i8[:, :], f8[:, :], i8[:, :], c16[:, :, :], c16
-#     ),
-#     cache=True,
-#     nogil=True,
-# )
+@njit(
+    types.Tuple((c16[:], c16[:], c16[:]))(
+        f8[:, :], c16[:], i8[:, :], f8[:, :], i8[:, :], c16[:, :, :], c16
+    ),
+    cache=True,
+    nogil=True,
+)
 def ned2_tri_interp_curl(
     coords: np.ndarray,
     solutions: np.ndarray,
@@ -1099,8 +1098,8 @@ def ned2_tri_interp_curl(
     Ez = np.full((nNodes,), np.nan, dtype=np.complex128)
 
     nodes = nodes[:2, :]
-    jB = 1j * beta
-    
+    jB = -1j * beta
+
     for itri in range(tris.shape[1]):
         iv1, iv2, iv3 = tris[:, itri]
 
@@ -1127,14 +1126,13 @@ def ned2_tri_interp_curl(
 
         if inside.sum() == 0:
             continue
-        
-        
+
         ######### INSIDE THE TRIANGLE #########
-        
+
         field_ids = tri_to_field[:, itri]
 
         Etri = solutions[field_ids]
-        
+
         dc = diadic[:, :, itri]
 
         coords_inside = coords[:2, inside == 1]
@@ -1156,53 +1154,49 @@ def ned2_tri_interp_curl(
         ex = np.zeros((coords_inside.shape[1],), dtype=np.complex128)
         ey = np.zeros((coords_inside.shape[1],), dtype=np.complex128)
         ez = np.zeros((coords_inside.shape[1],), dtype=np.complex128)
-        
+
         for idof in range(14):
             i = ivec[idof]
             j = jvec[idof]
             k = kvec[idof]
             if idof < 3:
-                ezc = _ne1_curl_tri(coeff, coords_inside, i, j, k)
                 Evec = _ne1_tri(coeff, coords_inside, i, j, k)
-                ex += - jB * Etri[idof] * Evec[1,:]
-                ey += jB * Etri[idof] * Evec[0,:]
-                ez += Etri[idof] * ezc
+                ex += -jB * Etri[idof] * Evec[1, :]
+                ey += jB * Etri[idof] * Evec[0, :]
+                ez += Etri[idof] * _ne1_curl_tri(coeff, coords_inside, i, j, k)
                 continue
             elif idof == 3:
-                ezc = _nf1_curl_tri(coeff, coords_inside, 0,1,2)
-                Evec = _nf1_tri(coeff, coords_inside, 0,1,2)
-                ex += - jB * Etri[idof] * Evec[1,:]
-                ey += jB * Etri[idof] * Evec[0,:]
-                ez += Etri[idof] * ezc
+                Evec = _nf1_tri(coeff, coords_inside, 0, 1, 2)
+                ex += -jB * Etri[idof] * Evec[1, :]
+                ey += jB * Etri[idof] * Evec[0, :]
+                ez += Etri[idof] * _nf1_curl_tri(coeff, coords_inside, 0, 1, 2)
                 continue
             elif idof < 7:
-                ezc = _ne2_curl_tri(coeff, coords_inside, i, j, k)
                 Evec = _ne2_tri(coeff, coords_inside, i, j, k)
-                ex += - jB * Etri[idof] * Evec[1,:]
-                ey += jB * Etri[idof] * Evec[0,:]
-                ez += Etri[idof] * ezc
+                ex += -jB * Etri[idof] * Evec[1, :]
+                ey += jB * Etri[idof] * Evec[0, :]
+                ez += Etri[idof] * _ne2_curl_tri(coeff, coords_inside, i, j, k)
                 continue
             elif idof == 7:
-                ezc = _nf2_curl_tri(coeff, coords_inside, 0,1,2)
-                Evec = _nf2_tri(coeff, coords_inside, 0,1,2)
-                ex += - jB * Etri[idof] * Evec[1,:]
-                ey += jB * Etri[idof] * Evec[0,:]
-                ez += Etri[idof] * ezc
+                Evec = _nf2_tri(coeff, coords_inside, 0, 1, 2)
+                ex += -jB * Etri[idof] * Evec[1, :]
+                ey += jB * Etri[idof] * Evec[0, :]
+                ez += Etri[idof] * _nf2_curl_tri(coeff, coords_inside, 0, 1, 2)
                 continue
             elif idof < 11:
-                Evec = _nv_grad_tri(coeff, coords_inside, i, j, k)
-                ex += Etri[idof] * (Evec[1, :] )
-                ey += -Etri[idof] * (Evec[0, :] )
+                Evec = _nv_grad_tri(coeff, coords_inside, i, 0, 0)
+                ex += Etri[idof] * (Evec[1, :])
+                ey += -Etri[idof] * (Evec[0, :])
                 continue
             elif idof < 14:
-                Evec = _ne_grad_tri(coeff, coords_inside, i, j, k)
-                ex += Etri[idof] * (Evec[1, :] )
-                ey += -Etri[idof] * (Evec[0, :] )
+                Evec = _ne_grad_tri(coeff, coords_inside, i, j, 0)
+                ex += Etri[idof] * (Evec[1, :])
+                ey += -Etri[idof] * (Evec[0, :])
                 continue
 
-        Ex[inside==1] = ex * dc[0, 0]
-        Ey[inside==1] = ey * dc[1, 1]
-        Ez[inside==1] = ez * dc[2, 2]
+        Ex[inside == 1] = ex * dc[0, 0]
+        Ey[inside == 1] = ey * dc[1, 1]
+        Ez[inside == 1] = ez * dc[2, 2]
     return Ex, Ey, Ez
 
 

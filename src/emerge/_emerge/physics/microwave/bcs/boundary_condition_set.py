@@ -88,8 +88,7 @@ class MWBoundaryConditionSet(BoundaryConditionSet):
         """
         bcs = self.oftype(PEC)
         for bc in self.oftype(SurfaceImpedance):
-            if bc.sigma > 10.0:
-                bcs.append(bc)
+            bcs.append(bc)
         for bc in self.oftype(ThinConductor):
             if bc.sigma > 10.0:
                 bcs.append(bc)

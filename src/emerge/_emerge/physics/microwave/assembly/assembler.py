@@ -370,6 +370,8 @@ class Assembler:
         self.SELECT_INDEX: int = None
         self._partitioned: bool = False
 
+        self._surf_imp_conductivity_limit: float = 1e4
+
     def assemble_bma_matrices(
         self,
         field: Nedelec2,
@@ -398,15 +400,11 @@ class Assembler:
 
         logger.debug("Assembling Boundary Mode Matrices")
 
-        bcs = bc_set.boundary_conditions
         mesh = field.mesh
         tri_ids = mesh.get_triangles(port.tags)
         logger.trace(f".boundary face has {len(tri_ids)} triangles.")
 
-        origin = tuple([c - n for c, n in zip(port.cs.origin, port.cs.gzhat)])
-        logger.trace(f".boundary origin {origin}")
-
-        boundary_surface = mesh.boundary_surface(port.tags, origin)
+        boundary_surface = mesh.boundary_surface(port.tags)
         nedlegfield = NedelecLegrange2(boundary_surface, port.cs)
 
         ermesh = er[:, :, tri_ids]
@@ -431,7 +429,10 @@ class Assembler:
 
         # Process all concutors. Everything above the conductivity limit is considered pec.
         for it in range(boundary_surface.n_tris):
-            if sigmesh[it] > self.settings.mw_3d_peclim:
+            if (
+                sigmesh[it] > self.settings.mw_3d_peclim
+                or sigmesh[it] > self.settings.mw_3d_surfimplim
+            ):
                 pec_ids.extend(list(nedlegfield.tri_to_field[:, it]))
 
         # Process all PEC Boundary Conditions
@@ -588,7 +589,10 @@ class Assembler:
         # No E-field inside the TET
 
         for itet in range(field.n_tets):
-            if cond[0, 0, itet] > self.settings.mw_3d_peclim:
+            if (
+                cond[0, 0, itet] > self.settings.mw_3d_peclim
+                or cond[0, 0, itet] > self.settings.mw_3d_surfimplim
+            ):
                 ipec += 1
                 pec_ids.extend(field.tet_to_field[:, itet])
                 for tri in field.mesh.tet_to_tri[:, itet]:
@@ -642,53 +646,50 @@ class Assembler:
                 if isinstance(bc, WavePortIH):
                     continue
 
-                for tag in bc.tags:
-                    face_tags = [tag]
+                # Get all Robin BC face triangle and edge
+                tri_ids = mesh.get_triangles(bc.tags)
 
-                    # Get all Robin BC face triangle and edge
-                    tri_ids = mesh.get_triangles(face_tags)
+                edge_ids = list(mesh.tri_to_edge[:, tri_ids].flatten())
 
-                    edge_ids = list(mesh.tri_to_edge[:, tri_ids].flatten())
+                # Compute the γ parameter which is a generic scaling factor
+                # used in the Robin boundary condition matrix etries.
+                gamma = bc.get_gamma(K0)
+                logger.trace(f"..robin bc γ={gamma:.3f}")
 
-                    # Compute the γ parameter which is a generic scaling factor
-                    # used in the Robin boundary condition matrix etries.
-                    gamma = bc.get_gamma(K0)
-                    logger.trace(f"..robin bc γ={gamma:.3f}")
+                if bc._assemble_matrix:
+                    # The assembler adds the contributions to the Bemptry matrix
+                    B_matrix_robin = assemble_robin_bc(
+                        field, B_matrix_robin, tri_ids, gamma
+                    )  # type: ignore
 
-                    if bc._assemble_matrix:
-                        # The assembler adds the contributions to the Bemptry matrix
-                        B_matrix_robin = assemble_robin_bc(
-                            field, B_matrix_robin, tri_ids, gamma
-                        )  # type: ignore
+                    if isinstance(bc, ThinConductor):
+                        B_matrix_robin_2 = assemble_robin_bc(
+                            field, B_matrix_robin_2, tri_ids, gamma
+                        )
+                # The the forcing vector b-entries for excited ports are added.
+                # Don't include ScatteredField boundary conditions.
+                if (
+                    bc._include_force
+                    and bc.driven
+                    and not isinstance(bc, ScatteredField)
+                ):
+                    for number, Ufunc in bc._iter_modes(K0):
+                        # Assemble and store in the port_vectors dictionary.
+                        b_p = assemble_robin_bc_bvec(field, tri_ids, Ufunc)  # type: ignore
+                        port_vectors[number] += b_p  # type: ignore
+                        logger.trace(
+                            f"..included force vector term with norm {np.linalg.norm(b_p):.3f}"
+                        )
 
-                        if isinstance(bc, ThinConductor):
-                            B_matrix_robin_2 = assemble_robin_bc(
-                                field, B_matrix_robin_2, tri_ids, gamma
-                            )
-                    # The the forcing vector b-entries for excited ports are added.
-                    # Don't include ScatteredField boundary conditions.
-                    if (
-                        bc._include_force
-                        and bc.driven
-                        and not isinstance(bc, ScatteredField)
-                    ):
-                        for number, Ufunc in bc._iter_modes(K0):
-                            # Assemble and store in the port_vectors dictionary.
-                            b_p = assemble_robin_bc_bvec(field, tri_ids, Ufunc)  # type: ignore
-                            port_vectors[number] += b_p  # type: ignore
-                            logger.trace(
-                                f"..included force vector term with norm {np.linalg.norm(b_p):.3f}"
-                            )
-
-                    ## Second order absorbing boundary correction
-                    # Second order corrections are needed using gradient terms for improved absorption.
-                    # Only used in AbsorbingBoundary conditions of order 2.
-                    if bc._isabc:
-                        if bc.order == 2:
-                            c2 = bc.get_abccorr(K0)
-                            logger.debug("Implementing second order ABC correction.")
-                            mat = abc_order_2_matrix(field, tri_ids, c2)
-                            B_matrix_robin += mat
+                ## Second order absorbing boundary correction
+                # Second order corrections are needed using gradient terms for improved absorption.
+                # Only used in AbsorbingBoundary conditions of order 2.
+                if bc._isabc:
+                    if bc.order == 2:
+                        c2 = bc.get_abccorr(K0)
+                        logger.debug("Implementing second order ABC correction.")
+                        mat = abc_order_2_matrix(field, tri_ids, c2)
+                        B_matrix_robin += mat
 
             # Add the total contribution of B_matrix_robin to K
             K += field.generate_csc(B_matrix_robin)
@@ -701,29 +702,13 @@ class Assembler:
             for bc in [bc for bc in robin_bcs if isinstance(bc, WavePortIH)]:
                 logger.info(f".Implementing WPBC {bc}")
 
-                tri_ids = []
-                for tag in bc.tags:
-                    face_tags = [tag]
-                    tri_ids.extend(mesh.get_triangles(face_tags))
-
-                tri_ids = np.array(sorted(list(set(tri_ids))))
-
-                tri1 = tri_ids[0]
-                tri_center = mesh.tri_centers[:, tri1]
-                tet_center = mesh.centers[:, mesh.tri_to_tet[0, tri1]]
-
-                inside = tet_center - tri_center
-                port_normal = mesh.get_normal(tri1)
-
-                # Align normal
-                if sum(inside * port_normal) < 0:
-                    port_normal = -port_normal
+                port_normal = mesh.inward_normal(bc.tags)
 
                 mode_profile, mode_xy, kappa_m = bc.get_modepf_kappa(
                     K0, mesh.nodes, mesh.tris
                 )
                 gamma_m = bc.get_gamma(K0)
-                logger.info(f"..κm = {kappa_m}")
+                logger.info(f"..κm = {kappa_m} γm = {gamma_m}")
                 # Matrix contribution (once per port)
                 Bcoo, rows, cols, bvec = assemble_wpbc(
                     field,
@@ -737,7 +722,7 @@ class Assembler:
                 )
 
                 port_vectors[1] += bvec  # type: ignore
-                logger.trace(
+                logger.debug(
                     f"..included force vector term with norm {np.linalg.norm(bvec):.3f}"
                 )
 
@@ -834,7 +819,7 @@ class Assembler:
         logger.debug(f"Number of DoF: {K.shape[0]:,}")
         logger.debug(f"Number of non-zero: {K.nnz:,}")
 
-        # K.eliminate_zeros()
+        K.eliminate_zeros()
 
         simjob = SimJob(
             K, port_vectors, K0 * 299792458 / (2 * np.pi), symmetric=not has_periodic
@@ -989,7 +974,6 @@ class Assembler:
         if len(robin_bcs) > 0:
             logger.debug("Implementing Robin Boundary Conditions.")
 
-            gauss_points = gaus_quad_tri(4)
             B_matrix_robin = field.empty_tri_matrix()
 
             for bc in robin_bcs:

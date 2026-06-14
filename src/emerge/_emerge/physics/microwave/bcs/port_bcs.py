@@ -55,8 +55,8 @@ class PortBC(RobinBC, Saveable):
         self.driven: bool = True
         self.power: float = 1.0
         self.v_integration: bool = False
-        self.vintline: list[Line] = []
-        self.iintline: list[Line] = []
+        self.voltage_integration_line: list[Line] = []
+        self.current_integration_line: list[Line] = []
 
     @property
     def voltage(self) -> complex | None:
@@ -194,6 +194,7 @@ class ModalPort(PortBC, Saveable):
     _include_stiff: bool = True
     _include_mass: bool = False
     _include_force: bool = True
+
     _color: str = "#e1bd1c"
     _texture: str = "tex5.png"
     _name: str = "ModalPort"
@@ -455,12 +456,19 @@ class ModalPort(PortBC, Saveable):
                 for amp, mode in zip(amplitudes, modes):
                     if amp == 0:
                         continue
-                    out += amp * (
-                        mode.norm_factor
-                        * self._qmode(k0)
-                        * mode.E_function(x, y, z)
-                        * mode.polarity
-                    )
+                    out += amp * (mode.amplitude(k0) * mode.E_function(x, y, z))
+                return out
+
+            return modef
+        elif which == "Exy":
+
+            def modef(x, y, z):
+                amplitudes = self.port_modes[mode_nr]
+                out = np.zeros((3, x.shape[0]), dtype=np.complex128)
+                for amp, mode in zip(amplitudes, modes):
+                    if amp == 0:
+                        continue
+                    out += amp * (mode.amplitude(k0) * mode.E_function.calcExy(x, y, z))
                 return out
 
             return modef
@@ -473,10 +481,22 @@ class ModalPort(PortBC, Saveable):
                     if amp == 0:
                         continue
                     out += amp * (
-                        mode.norm_factor
-                        * self._qmode(k0)
-                        * mode.E_function.calcEzGrad(x, y, z)
-                        * mode.polarity
+                        mode.amplitude(k0) * mode.E_function.calcEzGrad(x, y, z)
+                    )
+                return out
+
+            return modef
+        elif which == "modprof":
+
+            def modef(x, y, z):
+                amplitudes = self.port_modes[mode_nr]
+                out = np.zeros((3, x.shape[0]), dtype=np.complex128)
+                for amp, mode in zip(amplitudes, modes):
+                    if amp == 0:
+                        continue
+                    out += amp * (
+                        mode.amplitude(k0)
+                        * mode.E_function.calc_eff_modeprofile(x, y, z)
                     )
                 return out
 
@@ -489,12 +509,7 @@ class ModalPort(PortBC, Saveable):
                 for amp, mode in zip(amplitudes, modes):
                     if amp == 0:
                         continue
-                    out += amp * (
-                        mode.norm_factor
-                        * self._qmode(k0)
-                        * mode.E_function.calcEz(x, y, z)
-                        * mode.polarity
-                    )
+                    out += amp * (mode.amplitude(k0) * mode.E_function.calcEz(x, y, z))
                 return out
 
             return modef
@@ -506,12 +521,7 @@ class ModalPort(PortBC, Saveable):
                 for amp, mode in zip(amplitudes, modes):
                     if amp == 0:
                         continue
-                    out += amp * (
-                        mode.norm_factor
-                        * self._qmode(k0)
-                        * mode.H_function(x, y, z)
-                        * mode.polarity
-                    )
+                    out += amp * (mode.amplitude(k0) * mode.H_function(x, y, z))
                 return out
 
             return modef
@@ -521,14 +531,13 @@ class ModalPort(PortBC, Saveable):
         self.available_modes = defaultdict(list)
         self.initialized = False
 
-    def add_mode(
+    def try_add_mode(
         self,
         field: np.ndarray,
         E_function: Callable,
         H_function: Callable,
         beta: float,
         k0: float,
-        residual: float,
         freq: float,
     ) -> PortMode | None:
         """Add a mode function to the ModalPort
@@ -539,15 +548,14 @@ class ModalPort(PortBC, Saveable):
             H_function (Callable): The H-field callable
             beta (float): The out-of-plane propagation constant
             k0 (float): The free space phase constant
-            residual (float): The solution residual
             freq (float): The frequency of the port mode
 
         Returns:
             PortMode: The port mode object.
         """
-        mode = PortMode(field, E_function, H_function, k0, beta, residual, freq=freq)
+        mode = PortMode(field, E_function, H_function, k0, beta, freq=freq)
 
-        if mode.energy * beta < 1e-6:
+        if mode.energy * beta < 1e-8:
             logger.debug(f"Ignoring mode due to a low mode energy: {mode.energy}")
             return None
 
@@ -560,7 +568,7 @@ class ModalPort(PortBC, Saveable):
         else:
             ref_field = self.get_modes(self._first_k0)[-1].modefield
             polarity = np.sign(np.sum(field * ref_field).real)
-            logger.debug(f"Mode polarity = {polarity}")
+            logger.debug(f".. Mode polarity relative to other modes = {polarity}")
             mode.polarity = polarity
 
         return mode
@@ -720,9 +728,16 @@ class WavePortIH(ModalPort, Saveable):
             k0 (_type_): _description_
         """
         mode = self.get_modes(k0)[0]
+
+        def fmp(x, y, z):
+            return mode.E_function.calc_eff_modeprofile(x, y, z)
+
+        def fxy(x, y, z):
+            return mode.E_function.calcExy(x, y, z)
+
         return (
-            mode.E_function.calc_eff_modeprofile,
-            mode.E_function.calcExy,
+            fmp,
+            fxy,
             mode.compute_kappa(nodes, tris),
         )
 
@@ -1408,7 +1423,7 @@ class LumpedPort(PortBC, Saveable):
 
         # self.cs = Axis(self.selection.normal).construct_cs()  # type: ignore
         self.cs = GCS
-        self.vintline: list[Line] = []
+        self.voltage_integration_line: list[Line] = []
         self.v_integration = True
 
         # Sanity checks
