@@ -38,9 +38,9 @@ Dtot = 750  # total clearance (mil)
 extra = 100  # extra margin (mil)
 
 # --- Simulation setup ----------------------------------------------------
-model = em.Simulation("CoupledLineFilter")
-
+model = em.Simulation("CoupledLineFilter", loglevel='DEBUG')
 model.check_version("2.6.1")  # Checks version compatibility.
+model.settings.check_ram = False
 # --- Material and layouter -----------------------------------------------
 mat = em.Material(er=3.55, color="#488343", opacity=0.4)
 

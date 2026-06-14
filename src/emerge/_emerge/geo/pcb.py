@@ -1416,12 +1416,6 @@ class PCBNew:
 
         self.name: str = _PCB_MANAGER(name, self._DEFNAME)
 
-        if not self._thick_traces and self.trace_material is not PEC:
-            DEBUG_COLLECTOR.add_report(
-                "Non PEC surface materials are used without thick traces. The SurfaceImpedance boundary condition will be used that is known to not be accurate."
-                + "Please set thick_traces=True in the PCB constructor to ensure accurate losses until this issue is fixed."
-            )
-
     ############################################################
     #                          PROPERTIES                     #
     ############################################################
@@ -1561,7 +1555,7 @@ class PCBNew:
                     planetag,
                 ],
                 name=name,
-            )
+            ).set_material(self.trace_material)
             poly._store("thickness", self.trace_thickness)
         return poly
 

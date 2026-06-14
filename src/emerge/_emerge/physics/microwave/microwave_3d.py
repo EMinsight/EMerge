@@ -561,12 +561,19 @@ class Microwave3D:
 
         # Assign SurfaceImpedance to all conducting volume_boundaries
         material_map = defaultdict(set)
-        for geo_volume in self._state.current_geo_state:
-            if geo_volume.dim != 3:
-                continue
-            material = geo_volume.material
-            if material.cond.value > self.assembler.settings.mw_3d_surfimplim:
-                material_map[material].update(set(geo_volume.boundary().tags))
+        for geometry in self._state.current_geo_state:
+            # Thin Condutor from PCB Traces
+            if geometry.dim == 2:
+                thickness = geometry._load('thickness')
+                if ((geometry.material.cond.value > self.assembler.settings.mw_3d_surfimplim) 
+                    and (thickness is not None)):
+                    logger.debug(f"Assigning ThinConductor BC to {geometry}")
+                    self.bc.ThinConductor(geometry.selection, geometry.material, thickness)
+            elif geometry.dim == 3:
+                material = geometry.material
+                if material.cond.value > self.assembler.settings.mw_3d_surfimplim:
+                    material_map[material].update(set(geometry.boundary().tags))
+        
         for material, assignment in material_map.items():
             logger.debug(f"Assigning SurfaceImpedance BC to {assignment}")
             self.bc.SurfaceImpedance(FaceSelection(list(assignment)), material=material)

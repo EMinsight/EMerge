@@ -30,7 +30,7 @@ airbox_length = 6 * cm  # airbox length
 airbox_width = 15 * cm  # airbox width
 
 # --- Create simulation object -------------------------------------------
-model = em.Simulation("ConicalHornAntenna")
+model = em.Simulation("ConicalHornAntenna", loglevel='DEBUG')
 model.check_version("2.6.1")  # Checks version compatibility
 
 # --- Feed geometry -------------------------------------------------------
@@ -88,6 +88,7 @@ model.view(selections=[air.face(no="left")], plot_mesh=True)
 
 # --- Boundary conditions ------------------------------------------------
 port1 = model.mw.bc.ModalPort(feed.front, 1)  # excite port at waveguide
+port1.align_modes(em.ZAX, em.ZAX, em.ZAX)
 radiation_boundary = air.boundary(exclude="left")  # open faces
 abc = model.mw.bc.AbsorbingBoundary(radiation_boundary)
 
