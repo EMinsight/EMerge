@@ -446,6 +446,7 @@ class PVDisplay(EMergeDisplay):
         k0: float | None = None,
         cmap: str | None = None,
         mode_number: int | None = None,
+        color: str | None = None,
     ) -> None:
 
         if XYZ:
@@ -538,7 +539,11 @@ class PVDisplay(EMergeDisplay):
 
         Emag = F / np.max(Fnorm.flatten()) * d * 3
         actor = self._plot.add_arrows(
-            np.array([xf, yf, zf]).T, Emag, cmap=cmap, show_scalar_bar=False
+            np.array([xf, yf, zf]).T,
+            Emag,
+            cmap=cmap,
+            color=self.set.theme.parse_color(color),
+            show_scalar_bar=False,
         )
         self._data_sets.append(actor.mapper.dataset)
 

@@ -2418,7 +2418,7 @@ class PCBCalculator:
         ground_layer: int = 0,
         f0: float = 1e9,
         er: float | None = None,
-        include_dispersion: bool = False,
+        include_dispersion: bool = True,
     ) -> float:
         return self.microstrip.w_for_z0(
             Z0,

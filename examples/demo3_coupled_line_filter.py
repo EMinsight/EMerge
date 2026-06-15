@@ -38,9 +38,9 @@ Dtot = 750  # total clearance (mil)
 extra = 100  # extra margin (mil)
 
 # --- Simulation setup ----------------------------------------------------
-model = em.Simulation("CoupledLineFilter", loglevel='DEBUG')
+model = em.Simulation("CoupledLineFilter")
 model.check_version("2.6.1")  # Checks version compatibility.
-model.settings.check_ram = False
+
 # --- Material and layouter -----------------------------------------------
 mat = em.Material(er=3.55, color="#488343", opacity=0.4)
 
@@ -98,7 +98,7 @@ port1 = model.mw.bc.ModalPort(p1, 1, modetype="TEM")
 port2 = model.mw.bc.ModalPort(p2, 2, modetype="TEM")
 
 # --- Run frequency-domain solver ----------------------------------------
-data = model.mw.run_sweep(parallel=True, n_workers=2, frequency_groups=4)
+data = model.mw.run_sweep()
 
 # --- Extract and plot S-parameters ---------------------------------------
 f = data.scalar.grid.freq  # frequency axis

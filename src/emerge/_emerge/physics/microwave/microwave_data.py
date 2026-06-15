@@ -638,10 +638,12 @@ class MWField(Saveable):
             self._field, xf, yf, zf, mapping, usenan=usenan
         )
         logger.debug("E Interpolation complete")
+
         Hx, Hy, Hz = self.basis.interpolate_curl(
             self._field, xf, yf, zf, constants, mapping, usenan=usenan
         )
         logger.debug("H Interpolation complete")
+
         mask = ~np.isnan(Ex)
         if self._rel:
             Eb = self.backE(xf, yf, zf, mask)
@@ -1115,7 +1117,9 @@ class MWField(Saveable):
 
         T, P = np.meshgrid(thetas, phis)
 
-        E, H, Ptot = self.farfield(T.flatten(), P.flatten(), faces, origin, syms=syms)
+        E, H, Ptot = self.farfield(
+            T.flatten(), P.flatten(), faces, origin=origin, syms=syms
+        )
         E = E.reshape((3,) + T.shape)
         H = H.reshape((3,) + T.shape)
 
@@ -1135,7 +1139,7 @@ class MWField(Saveable):
             theta (np.ndarray): The Theta coordinates as (N,) 1D Array
             phi (np.ndarray): The Phi coordinates as (N,) 1D Array
             faces (FaceSelection | GeoSurface): the faces to use as integration boundary
-            origin (tuple[float, float, float], optional): The surface normal origin. Defaults to (0,0,0).
+            origin (tuple[float, float, float], optional): A normal alignment origin. Optional use in cases where the "inside" is not clear.
             syms (list[Literal['Ex','Ey','Ez','Hx','Hy','Hz']], optional): E and H-plane symmetry planes where Ex is E-symmetry in x=0. Defaults to []
 
         Returns:
@@ -1146,8 +1150,9 @@ class MWField(Saveable):
 
         from .sc import stratton_chu
 
-        surface = self.basis.mesh.boundary_surface(faces.tags, inward_normal=False)
-
+        surface = self.basis.mesh.boundary_surface(
+            faces.tags, inward_normal=False, origin=origin
+        )
         ehfield = self.interpolate(*surface.exyz)
 
         Eff, Hff, wns = stratton_chu(ehfield.E, ehfield.H, surface, theta, phi, self.k0)
@@ -1159,43 +1164,44 @@ class MWField(Saveable):
         if len(syms) == 0:
             return Eff, Hff, Ptot
 
+        # fmt: off
         factor = 1.0
         if len(syms) == 1:
             factor = (0.5) ** 0.5
-            perms = ((syms[0], "##", "##"),)
+            flip_sets = ((syms[0], ),)
 
         elif len(syms) == 2:
             factor = (0.25) ** 0.5
             s1, s2 = syms
-            perms = ((s1, "##", "##"), (s2, "##", "##"), (s1, s2, "##"))
+            flip_sets = ((s1,), (s2,), (s1, s2, ))
 
         elif len(syms) == 3:
             factor = (0.125) ** 0.5
             s1, s2, s3 = syms
-            perms = (
-                (s1, "##", "##"),
-                (s2, "##", "##"),
-                (s3, "##", "##"),
-                (s1, s2, "##"),
-                (s1, s3, "##"),
-                (s2, s3, "##"),
+            flip_sets = (
+                (s1, ),
+                (s2, ),
+                (s3, ),
+                (s1, s2,),
+                (s1, s3,),
+                (s2, s3,),
                 (s1, s2, s3),
             )
 
-        for s1, s2, s3 in perms:
+        for flips in flip_sets:
             surf = surface.copy()
             ehf = _EHSign()
-            ehf.apply(s1)
-            ehf.apply(s2)
-            ehf.apply(s3)
-            Ef, Hf = ehf.flip_field(ehfield.E, ehfield.H)
-            surf.flip(s1[1])
-            surf.flip(s2[1])
-            surf.flip(s3[1])
+            Ef, Hf = ehfield.E.copy(), ehfield.H.copy()
+            for flip in flips:
+                ehf.apply(flip)
+                surf.flip(flip[1])
+            Ef, Hf = ehf.flip_field(Ef, Hf)
+
             E2, H2, wns = stratton_chu(Ef, Hf, surf, theta, phi, self.k0)
             Eff = Eff + E2
             Hff = Hff + H2
 
+        # fmt: on
         return Eff * factor, Hff * factor, Ptot * (factor**2)
 
     def optycal_surface(self, faces: FaceSelection | GeoSurface | None = None) -> tuple:

@@ -19,7 +19,7 @@ class PortMode(Saveable):
     freq: float = 0
     neff: float = 1
     Z0: float = 50.0
-    modetype: Literal["TEM", "TE", "TM"] = "TEM"
+    # modetype: Literal["TEM", "TE", "TM"] = "TEM"
 
     @property
     def w0(self) -> float:
@@ -34,26 +34,6 @@ class PortMode(Saveable):
     def __str__(self):
         return f"PortMode(k0={self.k0}, beta={self.beta}({self.neff:.3f}))"
 
-    def Zmode(self, k0: float) -> float:
-        if self.modetype == "TEM":
-            return Z0
-        elif self.modetype == "TE":
-            return k0 * 299792458 / self.beta * MU0
-        elif self.modetype == "TM":
-            return self.beta / (k0 * 299792458 * EPS0)
-        else:
-            raise ValueError(
-                f"Port mode type should be TEM, TE or TM but instead is {self.modetype(k0)}"
-            )
-
-    def _qmode(self, k0: float) -> float:
-        return np.sqrt(self.Zmode(k0) / Z0)
-
-    def amplitude(self, k0: float | None = None) -> complex:
-        if k0 is None:
-            k0 = self.k0
-        return self._qmode(k0)
-
     def flip_polarity(self) -> None:
         """Flips the polarity of the port mode (180 degree phase shift)"""
         self.E_function.flip_polarity()
@@ -65,7 +45,7 @@ class PortMode(Saveable):
         Args:
             power (complex): The current port mode power
         """
-        self.norm_factor = np.sqrt(1 / np.abs(power)) * self._qmode(self.k0) ** 2
+        self.norm_factor = np.sqrt(1 / np.abs(power))
         self.E_function.constant *= self.norm_factor
         self.H_function.constant *= self.norm_factor
         logger.debug(f".. setting port mode amplitude to: {self.norm_factor:.2f} ")

@@ -28,9 +28,10 @@ pcbmat = em.Material(er=er, color="#217627", opacity=0.2)
 
 # We start by creating our simulation object.
 
-m = em.Simulation("SteppedImpedanceFilter")
-m.settings.check_ram = False
-m.check_version("2.6.1")  # Checks version compatibility.
+model = em.Simulation("SteppedImpedanceFilter")
+
+model.check_version("2.6.1")  # Checks version compatibility.
+
 # To accomodate PCB routing we make use of the PCBLayouter class. To use it we need to
 # supply it with a thickness, the desired air-box height, the units at which we supply
 # the dimensions and the PCB material.
@@ -71,36 +72,36 @@ layouter.determine_bounds(leftmargin=0, topmargin=200, rightmargin=0, bottommarg
 pcb = layouter.generate_pcb(True, merge=True)
 
 # We now pass all the geometries we have created to the .commit_geometry() method.
-m.commit_geometry()
+model.commit_geometry()
 
 # We set our desired resolution (fraction of the wavelength)
-m.mw.set_resolution(0.25)
+model.mw.set_resolution(0.25)
 
 # And we define our frequency range
-m.mw.set_frequency_range(0.2e9, 8e9, 41)
+model.mw.set_frequency_range(0.2e9, 8e9, 41)
 
 # EMerge also has a convenient interface to improve surface meshing quality.
 # With the set_boundary_size(method) we can define a meshing resolution for the edges of boundaries.
 # This is adviced for small stripline structures.
 # The growth_rate setting allows us to change how fast the mesh size will recover to the original size.
 
-m.mesher.set_boundary_size(polies, 1.2 * mm)
-m.mesher.set_face_size(p1, 5 * mm)
-m.mesher.set_face_size(p2, 5 * mm)
+model.mesher.set_boundary_size(polies, 1.2 * mm)
+model.mesher.set_face_size(p1, 5 * mm)
+model.mesher.set_face_size(p2, 5 * mm)
 
 # Finally we generate our mesh and view it
 
-m.generate_mesh()
-m.view()
+model.generate_mesh()
+model.view()
 
 
 # We can now define the modal ports for the in and outputs and set the conductor to PEC.
-port1 = m.mw.bc.ModalPort(p1, 1, modetype="TEM")
-port2 = m.mw.bc.ModalPort(p2, 2, modetype="TEM")
+port1 = model.mw.bc.ModalPort(p1, 1, modetype="TEM")
+port2 = model.mw.bc.ModalPort(p2, 2, modetype="TEM")
 
 # Finally we execute the frequency domain sweep and compute the Scattering Parameters.
 
-sol = m.mw.run_sweep(parallel=True, n_workers=4, frequency_groups=8)
+sol = model.mw.run_sweep(parallel=True, n_workers=4, frequency_groups=8)
 
 # Our "sol" variable is of type MWData (Microwave Data). This contains a set of scalar data
 # like S-parameters and field data like the E/H field. The scalar data is in sol.scalar and the
@@ -135,12 +136,12 @@ smith(S11, labels="S11", f=f)
 plot_sp(f, [S11, S21], labels=["S11", "S21"], dblim=[-40, 6], logx=True)
 
 field = sol.field.find(freq=5.8e9)
-m.display.add_object(pcb, opacity=0.1)
-m.display.add_object(polies, opacity=0.5)
-m.display.animate().add_field(
+model.display.add_object(pcb, opacity=0.1)
+model.display.add_object(polies, opacity=0.5)
+model.display.animate().add_field(
     field.cutplane(0.5 * mm, z=-0.75 * th * mil).scalar("Ez", "complex").smooth(),
     symmetrize=True,
 )
-m.display.add_portmode(port1, k0=field.k0)
-m.display.add_portmode(port2, k0=field.k0)
-m.display.show()
+model.display.add_portmode(port1, k0=field.k0)
+model.display.add_portmode(port2, k0=field.k0)
+model.display.show()

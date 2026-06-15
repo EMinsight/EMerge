@@ -21,6 +21,29 @@ from ...elements.nedleg2 import NedelecLegrange2
 from typing import Callable
 
 
+def compute_port_power_flux(
+    nodes: np.ndarray,
+    tris: np.ndarray,
+    Efunc: Callable,
+    Hfunc: Callable,
+    inward_normal: np.ndarray,
+):
+    from ...mth.integrals import surface_integral
+
+    nx, ny, nz = inward_normal
+
+    def S(x, y, z):
+        Ex, Ey, Ez = Efunc(x, y, z)
+        Hx, Hy, Hz = Hfunc(x, y, z)
+        Sx = 1 / 2 * np.real(Ey * np.conj(Hz) - Ez * np.conj(Hy))
+        Sy = 1 / 2 * np.real(Ez * np.conj(Hx) - Ex * np.conj(Hz))
+        Sz = 1 / 2 * np.real(Ex * np.conj(Hy) - Ey * np.conj(Hx))
+        return nx * Sx + ny * Sy + nz * Sz
+
+    Ptot = surface_integral(nodes, tris, S, None, 5)
+    return Ptot
+
+
 def compute_avg_power_flux(
     field: NedelecLegrange2,
     Efunc: Callable,

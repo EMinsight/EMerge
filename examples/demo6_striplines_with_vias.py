@@ -17,7 +17,7 @@ model = em.Simulation("StriplineWithVias")
 model.check_version("2.6.1")  # Checks version compatibility.
 
 # As usual we start by creating our layouter
-ly = em.geo.PCBNew(
+pcb = em.geo.PCBNew(
     th, mm, em.GCS, layers=3, material=em.lib.DIEL_RO4350B, trace_material=em.lib.PEC
 )
 
@@ -27,9 +27,9 @@ ly = em.geo.PCBNew(
 # The .via(...) method allows one to add a via geometry to the PCBLayouter that can be extracted later
 # A user may decide whether to proceed or not beyond the via. More information can be found in the
 # docstring of the method. The vias can be created later.
-w0 = ly.calc.z0(50, 1, 0) * 0.9
-w1 = ly.calc.z0(50, 2, 0)
-ly.new(0, 0, w0, (1, 0), -th / 2)["p1"].straight(10).turn(90).straight(10).turn(
+w0 = pcb.calc.z0(50, 1, 0) * 0.9
+w1 = pcb.calc.z0(50, 2, 0)
+pcb.new(0, 0, w0, (1, 0), -th / 2)["p1"].straight(10).turn(90).straight(10).turn(
     -90, corner_type="champher"
 ).straight(5).via(0, 0.2, True, width=w1).straight(8).via(
     -th / 2, 0.2, width=w0
@@ -38,27 +38,27 @@ ly.new(0, 0, w0, (1, 0), -th / 2)["p1"].straight(10).turn(90).straight(10).turn(
 # Notice the champher corner type. This champher minimizes reflections when going around the corner.
 
 # As usual we compile the traces as a merger of polygons
-trace = ly.compile_paths(True)
+trace = pcb.compile_paths(True)
 
 # Now that we have via's defined, we can do the same with vias. I set Merge to True so that I get back
 # One GeoObject.
-vias = ly.generate_vias(True)
+vias = pcb.generate_vias(True)
 
 # Here I use lumped ports instead of wave ports. I use the references made earlier to generate the port.
 # By default, all lumped port sheets will be shorted to z=-thickness. You can change this as an optional
 # argument.
-lp1 = ly.lumped_port(ly["p1"])
-lp2 = ly.lumped_port(ly["p2"])
+lp1 = pcb.lumped_port(pcb["p1"])
+lp2 = pcb.lumped_port(pcb["p2"])
 
 # Because lumped ports don't stop at the edge of our domain, we make sure to add some margins everywhere.
-ly.determine_bounds(5, 5, 5, 5)
+pcb.determine_bounds(5, 5, 5, 5)
 
 # Finally we can generate the PCB volumes. Because the trace start halfway through the PCB we turn
 # on the split-z function which cuts the PCB in multiple layers. This improves meshing around the striplines.
-diel = ly.generate_pcb(True, merge=True)
+diel = pcb.generate_pcb(True, merge=True)
 
 # We also define the air-box with 3mm thickness
-air = ly.generate_air(3.0)
+air = pcb.generate_air(3.0)
 
 # Finish modelling by calling commit_geometry
 model.commit_geometry()
@@ -95,6 +95,7 @@ model.display.add_object(diel, opacity=0.2)
 model.display.add_object(trace)
 model.display.add_object(vias)
 model.display.add_portmode(p1, data.field[3].k0)
+
 # You can use the cutplane method of the BaseDataset class
 # This is equivalent to the interpolate method except it automatically generates
 # the point cloud based on a plane x,y or z coordinate.

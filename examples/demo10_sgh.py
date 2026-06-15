@@ -33,8 +33,8 @@ dx = 2 * mm  # distance from horn exit to PML start
 
 # Create simulation object
 
-m = em.Simulation("StandardGainHornAntenna")
-m.check_version("2.6.1")  # Checks version compatibility.
+model = em.Simulation("StandardGainHornAntenna")
+model.check_version("2.6.1")  # Checks version compatibility.
 
 # --- Coordinate system for horn geometry -------------------------------
 hornCS = em.CS(em.YAX, em.ZAX, em.XAX)
@@ -80,27 +80,27 @@ air, *pmls = em.geo.pmlbox(
 air2 = em.geo.subtract(air, horn_out)
 
 # --- Solver parameters --------------------------------------------------
-m.mw.set_frequency_range(90e9, 110e9, 11)  # 90–110 GHz sweep
-m.mw.set_resolution(0.33)  # mesh resolution fraction
+model.mw.set_frequency_range(90e9, 110e9, 11)  # 90–110 GHz sweep
+model.mw.set_resolution(0.33)  # mesh resolution fraction
 
 # --- Assemble geometry and mesh -----------------------------------------
-m.generate_mesh()
+model.generate_mesh()
 
 # --- Boundary conditions ------------------------------------------------
-p1 = m.mw.bc.ModalPort(feed.left, 1)  # excite TE10 in feed
-PMC = m.mw.bc.PMC(
-    m.select.face.inplane(0, 0, 0, plane=em.XZPLANE)
+p1 = model.mw.bc.ModalPort(feed.left, 1)  # excite TE10 in feed
+PMC = model.mw.bc.PMC(
+    model.select.face.inplane(0, 0, 0, plane=em.XZPLANE)
 )  # perfect magnetic on symmetry
 radiation_boundary = air2.faces("back", "top", "right", tool=air)  # open faces
-abc = m.mw.bc.AbsorbingBoundary(
-    m.select.face.inplane(Lhorn - dx, 0, 0, plane=em.YZPLANE)
+abc = model.mw.bc.AbsorbingBoundary(
+    model.select.face.inplane(Lhorn - dx, 0, 0, plane=em.YZPLANE)
 )
 
 # View mesh and BC selections
-m.view(selections=[radiation_boundary], bc=True)
+model.view(selections=[radiation_boundary], bc=True)
 
 # --- Run frequency-domain solver ----------------------------------------
-data = m.mw.run_sweep()
+data = model.mw.run_sweep()
 
 # --- Plot return loss ---------------------------------------------------
 scal = data.scalar.grid
@@ -120,18 +120,18 @@ ff_data = data.field[0].farfield_2d(
 plot_ff(ff_data.ang * 180 / np.pi, ff_data.gain.norm, dB=True, ylabel="Gain [dBi]")
 # Normalize to free-space impedance and convert to dB
 
-m.display.add_object(horn_in, opacity=0.1)
-m.display.add_object(air2, opacity=0.1)
-m.display.add_object(feed, opacity=0.1)
+model.display.add_object(horn_in, opacity=0.1)
+model.display.add_object(air2, opacity=0.1)
+model.display.add_object(feed, opacity=0.1)
 
 ff3d = data.field[0].farfield_3d(
     radiation_boundary, syms=["Ez", "Hy"], origin=(0, 0, 0)
 )
 
-m.display.add_farfield3d(
+model.display.add_farfield3d(
     ff3d, component="gain.norm", dB=True, dBfloor=-30, rmax=5 * mm, offset=(Lhorn, 0, 0)
 )
-m.display.add_field(
-    data.field[0].cutplane(0.1 * mm, z=0).scalar("Ez", "real"), symmetrize=True
+model.display.animate().add_field(
+    data.field[0].cutplane(0.1 * mm, z=0).scalar("Ez", "complex"), symmetrize=True
 )
-m.display.show()
+model.display.show()

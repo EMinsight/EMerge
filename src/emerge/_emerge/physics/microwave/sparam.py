@@ -20,6 +20,7 @@ from .bcs import PortBC
 from ...mth.integrals import surface_integral
 import numpy as np
 from typing import Callable
+from ...const import Z0
 
 
 def sparam_mode_power(
@@ -50,7 +51,7 @@ def sparam_mode_power(
         Ex2 = np.conj(Ex1)
         Ey2 = np.conj(Ey1)
         Ez2 = np.conj(Ez1)
-        return (Ex1 * Ex2 + Ey1 * Ey2 + Ez1 * Ez2) / (2 * bc.Zmode(k0))
+        return (Ex1 * Ex2 + Ey1 * Ey2 + Ez1 * Ez2) / (2 * Z0)
 
     norm = surface_integral(nodes, tri_vertices, inproduct2, const, gq_order=gq_order)
     return norm
@@ -87,7 +88,7 @@ def sparam_field_power(
         mode_field = bc.port_mode_3d_global(x, y, z, k0, which="Exy", mode_nr=mode_nr)
         Ex1, Ey1, Ez1 = fieldf(x, y, z) - Q * mode_field
         Ex2, Ey2, Ez2 = np.conj(mode_field)
-        return (Ex1 * Ex2 + Ey1 * Ey2 + Ez1 * Ez2) / (2 * bc.Zmode(k0))
+        return (Ex1 * Ex2 + Ey1 * Ey2 + Ez1 * Ez2) / (2 * Z0)
 
     mode_dot_field = surface_integral(
         nodes, tri_vertices, inproduct1, const, gq_order=gq_order

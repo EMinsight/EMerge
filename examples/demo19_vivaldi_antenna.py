@@ -18,8 +18,8 @@ For ARM MacOS users it is reccommended to install the Accelerate solver using:
 
 """
 
-m = em.Simulation("Vivaldi", loglevel="INFO")
-m.check_version("2.6.1")
+model = em.Simulation("Vivaldi", loglevel="INFO")
+model.check_version("2.6.1")
 
 mm = 0.001  # Millimeter
 g = 0.3 * mm  # Narrow exponential taper slot gap size
@@ -142,7 +142,7 @@ pcbl.set_bounds(xmin=-25, xmax=70, ymin=-30, ymax=30)
 pcb = pcbl.generate_pcb()  # we generate the PCB delectricum
 ground = pcbl.plane(-th)  # And ground
 
-m.view(use_gmsh=True)
+model.view(use_gmsh=True)
 
 # We subtract the exponential taper, disc and slots from the ground plane.
 ground = em.geo.subtract(ground, exp_taper)
@@ -150,32 +150,32 @@ ground = em.geo.subtract(ground, disc)
 ground = em.geo.subtract(ground, slots)
 
 # And we are done modelling!
-m.commit_geometry()
+model.commit_geometry()
 
 # We set our frequency range from 3GHz to 10GHz in 21 setps.
-m.mw.set_frequency_range(3e9, 8e9, 15)
-m.mw.set_resolution(0.33)
+model.mw.set_frequency_range(3e9, 8e9, 15)
+model.mw.set_resolution(0.33)
 
 # Here we set our boundary conditions. The Absorbing boundary surfaace is the outside of the airbox.
 abc = airbox.outside()
 
 # The lumped port is defined on the port rectangular region. All the dimensions are automatically stored inside
 # the port geometry object when you create it with the .lumped_port() function so you don't have to pass them!
-m.mw.bc.LumpedPort(port, 1, Z0=50)
-m.mw.bc.AbsorbingBoundary(abc)
-m.mesher.set_pec_face(polies)
-m.mesher.set_pec_face(ground)
+model.mw.bc.LumpedPort(port, 1, Z0=50)
+model.mw.bc.AbsorbingBoundary(abc)
+model.mesher.set_pec_face(polies)
+model.mesher.set_pec_face(ground)
 
-m.generate_mesh()
+model.generate_mesh()
 
-m.view(plot_mesh=True, volume_mesh=False)
+model.view(plot_mesh=True, volume_mesh=False)
 
 # Before we run we call our adaptive mesh refinement at 7GHz. You can change the frequency yourself.
-m.adaptive_mesh_refinement(frequency=6e9)
-m.view(plot_mesh=True, volume_mesh=False)  # and view the resultant mesh
+model.adaptive_mesh_refinement(frequency=6e9)
+model.view(plot_mesh=True, volume_mesh=False)  # and view the resultant mesh
 
 # Finally we start our sweep
-data = m.mw.run_sweep(False)
+data = model.mw.run_sweep(False)
 
 # We extract the object that contains all our gritted global parameter simulation data such as the S-parameters
 g = data.scalar.grid
@@ -199,12 +199,12 @@ plot_ff_polar(
 
 # Finally we create a simple field plot.
 ff_data = data.field.find(freq=6e9).farfield_3d(abc)
-m.display.add_objects(*m.all_geos())
-m.display.add_field(
+model.display.add_objects(*model.all_geos())
+model.display.add_field(
     data.field[1].cutplane(0.8 * mm, z=-th * mm / 2).scalar("Ey", "real"),
     symmetrize=True,
 )
-m.display.add_farfield3d(
+model.display.add_farfield3d(
     ff_data, "normE", dB=True, dBfloor=-20, offset=(90 * mm, 0, 0), rmax=40 * mm
 )
-m.display.show()
+model.display.show()

@@ -117,35 +117,6 @@ class PortBC(RobinBC, Saveable):
         """
         return self.Z0
 
-    def modetype(self, k0: float) -> Literal["TEM", "TE", "TM"]:
-        return "TEM"
-
-    def Zmode(self, k0: float) -> float:
-        if self.modetype(k0) == "TEM":
-            return self.Zvac
-        elif self.modetype(k0) == "TE":
-            return k0 * 299792458 / self.get_beta(k0) * MU0
-        elif self.modetype(k0) == "TM":
-            return self.get_beta(k0) / (k0 * 299792458 * EPS0)
-        else:
-            raise ValueError(
-                f"Port mode type should be TEM, TE or TM but instead is {self.modetype(k0)}"
-            )
-
-    def _qmode(self, k0: float) -> float:
-        """Computes a mode amplitude correction factor.
-        The total output power of a port as a function of the field amplitude is not constant.
-        For TE and TM modes the output power depends on the mode impedance. This factor corrects
-        the mode output power to 1W by scaling the E-field appropriately.
-
-        Args:
-            k0 (float): The phase constant of the simulation
-
-        Returns:
-            float: The mode amplitude correction factor.
-        """
-        return np.sqrt(self.Zmode(k0) / Z0)
-
     @property
     def mode_number(self) -> int:
         return self.selected_mode + 1
@@ -194,7 +165,6 @@ class ModalPort(PortBC, Saveable):
     _include_stiff: bool = True
     _include_mass: bool = False
     _include_force: bool = True
-
     _color: str = "#e1bd1c"
     _texture: str = "tex5.png"
     _name: str = "ModalPort"
@@ -456,7 +426,7 @@ class ModalPort(PortBC, Saveable):
                 for amp, mode in zip(amplitudes, modes):
                     if amp == 0:
                         continue
-                    out += amp * (mode.amplitude(k0) * mode.E_function(x, y, z))
+                    out += amp * (mode.E_function(x, y, z))
                 return out
 
             return modef
@@ -468,7 +438,7 @@ class ModalPort(PortBC, Saveable):
                 for amp, mode in zip(amplitudes, modes):
                     if amp == 0:
                         continue
-                    out += amp * (mode.amplitude(k0) * mode.E_function.calcExy(x, y, z))
+                    out += amp * (mode.E_function.calcExy(x, y, z))
                 return out
 
             return modef
@@ -480,9 +450,7 @@ class ModalPort(PortBC, Saveable):
                 for amp, mode in zip(amplitudes, modes):
                     if amp == 0:
                         continue
-                    out += amp * (
-                        mode.amplitude(k0) * mode.E_function.calcEzGrad(x, y, z)
-                    )
+                    out += amp * (mode.E_function.calcEzGrad(x, y, z))
                 return out
 
             return modef
@@ -494,10 +462,7 @@ class ModalPort(PortBC, Saveable):
                 for amp, mode in zip(amplitudes, modes):
                     if amp == 0:
                         continue
-                    out += amp * (
-                        mode.amplitude(k0)
-                        * mode.E_function.calc_eff_modeprofile(x, y, z)
-                    )
+                    out += amp * (mode.E_function.calc_eff_modeprofile(x, y, z))
                 return out
 
             return modef
@@ -509,7 +474,7 @@ class ModalPort(PortBC, Saveable):
                 for amp, mode in zip(amplitudes, modes):
                     if amp == 0:
                         continue
-                    out += amp * (mode.amplitude(k0) * mode.E_function.calcEz(x, y, z))
+                    out += amp * (mode.E_function.calcEz(x, y, z))
                 return out
 
             return modef
@@ -521,7 +486,7 @@ class ModalPort(PortBC, Saveable):
                 for amp, mode in zip(amplitudes, modes):
                     if amp == 0:
                         continue
-                    out += amp * (mode.amplitude(k0) * mode.H_function(x, y, z))
+                    out += amp * (mode.H_function(x, y, z))
                 return out
 
             return modef
@@ -554,7 +519,6 @@ class ModalPort(PortBC, Saveable):
             PortMode: The port mode object.
         """
         mode = PortMode(field, E_function, H_function, k0, beta, freq=freq)
-
         if mode.energy * beta < 1e-8:
             logger.debug(f"Ignoring mode due to a low mode energy: {mode.energy}")
             return None
@@ -766,6 +730,7 @@ class FloquetPort(PortBC, Saveable):
         self.active: bool = False
         self.power: float = power
         self.type: str = "TEM"
+        self.er: float = er
         self.cs: CoordinateSystem = cs
         self.scan_theta: float = 0
         self.scan_phi: float = 0
@@ -832,10 +797,10 @@ class FloquetPort(PortBC, Saveable):
         S, P = self.port_modes[mode_nr]
         kx = k0 * np.sin(self.scan_theta) * np.cos(self.scan_phi)
         ky = k0 * np.sin(self.scan_theta) * np.sin(self.scan_phi)
-        # kz = k0*np.cos(self.scan_theta)
         phi = np.exp(-1j * (x_local * kx + y_local * ky))
 
         E0 = self.get_amplitude(k0)
+
         Ex = (
             E0
             * (
@@ -852,9 +817,29 @@ class FloquetPort(PortBC, Saveable):
             )
             * phi
         )
-        Ez = E0 * (-P * E0 * np.sin(self.scan_theta)) * phi
-        Exyz = np.array([Ex, Ey, Ez])
-        return Exyz
+        Ez = (P * E0 * np.sin(self.scan_theta)) * phi
+
+        if which == "E":
+            Exyz = np.array([Ex, Ey, Ez])
+            return Exyz
+        if which == "Exy":
+            Exyz = np.array([Ex, Ey, 0 * Ez])
+            return Exyz
+        elif which == "H":
+            Z_space = Z0 / np.sqrt(self.er)
+
+            xu = np.sin(self.scan_theta) * np.cos(self.scan_phi)
+            yu = np.sin(self.scan_theta) * np.sin(self.scan_phi)
+            zu = np.cos(self.scan_theta)
+
+            Hx = (Ey * zu - Ez * yu) / Z_space
+            Hy = (Ez * xu - Ex * zu) / Z_space
+            Hz = (Ex * yu - Ey * xu) / Z_space
+
+            Hxyz = np.array([Hx, Hy, Hz])
+            return Hxyz
+        else:
+            raise ValueError("Field parameter 'which' must be either 'E' or 'H'.")
 
     def port_mode_3d_global(
         self,
@@ -869,7 +854,7 @@ class FloquetPort(PortBC, Saveable):
         if self.cs is None:
             raise ValueError("No coordinate system is defined for this FloquetPort")
         xl, yl, _ = self.cs.in_local_cs(x_global, y_global, z_global)
-        Ex, Ey, Ez = self.port_mode_3d(xl, yl, k0, mode_nr=mode_nr)
+        Ex, Ey, Ez = self.port_mode_3d(xl, yl, k0, mode_nr=mode_nr, which=which)
         Exg, Eyg, Ezg = self.cs.in_global_basis(Ex, Ey, Ez)
         return np.array([Exg, Eyg, Ezg])
 
@@ -965,8 +950,14 @@ class RectangularWaveguide(PortBC, Saveable):
         return self.type
 
     def get_amplitude(self, k0: float) -> float:
-        Zte = Z0
-        amplitude = np.sqrt(self.power * 4 * Zte / (self.dims[0] * self.dims[1]))
+        Zte = k0 * 299792458 * MU0 / self.get_beta(k0)
+        width = self.dims[0]
+        height = self.dims[1]
+        m, n = self.mode
+        scale_m = 2.0 if m == 0 else 1.0
+        scale_n = 2.0 if n == 0 else 1.0
+        multiplier = 8.0 / (scale_m * scale_n)
+        amplitude = np.sqrt(self.power * multiplier * Zte / (width * height))
         return amplitude
 
     def get_beta(self, k0: float) -> float:
@@ -1035,8 +1026,40 @@ class RectangularWaveguide(PortBC, Saveable):
         Ex = Eh
         Ey = Ev
         Ez = 0 * Eh
-        Exyz = self._qmode(k0) * np.array([Ex, Ey, Ez])
-        return Exyz
+
+        if which == "E":
+            return np.array([Ex, Ey, Ez])
+        elif which == "Exy":
+            return np.array([Ex, Ey, 0 * Ez])
+        elif which == "H":
+            Z_te = self.portZ0(k0)
+            omega_mu = k0 * 299792458 * 1.25663706212e-6
+
+            Hx = Ey / Z_te
+            Hy = -Ex / Z_te
+
+            dEy_dx = (
+                self._polarization
+                * self.get_amplitude(k0)
+                * (-np.pi * m / width)
+                * np.sin(np.pi * m * x_local / width)
+                * np.cos(np.pi * n * y_local / height)
+            )
+            dEx_y = (
+                self._polarization
+                * self.get_amplitude(k0)
+                * (np.pi * n / height)
+                * np.sin(np.pi * m * x_local / width)
+                * np.cos(np.pi * n * y_local / height)
+            )
+            Hz = -1j * (dEy_dx - dEx_y) / omega_mu
+
+            Hxyz = np.array([Hx, Hy, Hz])
+            return Hxyz
+        else:
+            raise ValueError(
+                f"Field parameter 'which' must be either 'E' or 'H', not {which}"
+            )
 
     def port_mode_3d_global(
         self,
@@ -1049,7 +1072,7 @@ class RectangularWaveguide(PortBC, Saveable):
     ) -> np.ndarray:
         """Compute the port mode field for global xyz coordinates."""
         xl, yl, _ = self.cs.in_local_cs(x_global, y_global, z_global)
-        Ex, Ey, Ez = self.port_mode_3d(xl, yl, k0)
+        Ex, Ey, Ez = self.port_mode_3d(xl, yl, k0, which=which)
         Exg, Eyg, Ezg = self.cs.in_global_basis(Ex, Ey, Ez)
         return np.array([Exg, Eyg, Ezg])
 
@@ -1166,8 +1189,6 @@ class CoaxPort(PortBC, Saveable):
         which: Literal["E", "H"] = "E",
     ) -> np.ndarray:
         """Compute the port mode E-field in local coordinates (XY) + Z out of plane."""
-        from ...const import Z0
-
         # Constants
         eta = Z0 / np.sqrt(self.er)
 
@@ -1193,8 +1214,22 @@ class CoaxPort(PortBC, Saveable):
         Ey = (E_rho * np.sin(phi)).astype(np.complex128)
         Ez = 0.0 * Ex  # TEM mode has no longitudinal component
 
-        Exyz = self._qmode(k0) * np.array([Ex, Ey, Ez])
-        return Exyz
+        Exyz = np.array([Ex, Ey, Ez])
+        if which == "E":
+            Exyz = np.array([Ex, Ey, Ez])
+            return Exyz
+        if which == "Exy":
+            Exyz = np.array([Ex, Ey, Ez])
+            return Exyz
+        elif which == "H":
+            Hx = -Ey / eta
+            Hy = Ex / eta
+            Hz = 0.0 * Hx
+
+            Hxyz = np.array([Hx, Hy, Hz])
+            return Hxyz
+        else:
+            raise ValueError("Field parameter 'which' must be either 'E' or 'H'.")
 
     def port_mode_3d_global(
         self,
@@ -1207,7 +1242,7 @@ class CoaxPort(PortBC, Saveable):
     ) -> np.ndarray:
         """Compute the port mode field for global xyz coordinates."""
         xl, yl, _ = self.cs.in_local_cs(x_global, y_global, z_global)
-        Ex, Ey, Ez = self.port_mode_3d(xl, yl, k0)
+        Ex, Ey, Ez = self.port_mode_3d(xl, yl, k0, which=which)
         Exg, Eyg, Ezg = self.cs.in_global_basis(Ex, Ey, Ez)
         return np.array([Exg, Eyg, Ezg])
 
