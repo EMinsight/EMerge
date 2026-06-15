@@ -134,7 +134,7 @@ smith(S11, labels="S11", f=f)
 
 plot_sp(f, [S11, S21], labels=["S11", "S21"], dblim=[-40, 6], logx=True)
 
-field = sol.field[0]
+field = sol.field.find(freq=5.8e9)
 m.display.add_object(pcb, opacity=0.1)
 m.display.add_object(polies, opacity=0.5)
 m.display.animate().add_field(
