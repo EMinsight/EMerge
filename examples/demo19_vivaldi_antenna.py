@@ -19,7 +19,7 @@ For ARM MacOS users it is reccommended to install the Accelerate solver using:
 """
 
 model = em.Simulation("Vivaldi", loglevel="INFO")
-model.check_version("2.6.1")
+model.check_version("2.7.0")
 
 mm = 0.001  # Millimeter
 g = 0.3 * mm  # Narrow exponential taper slot gap size
