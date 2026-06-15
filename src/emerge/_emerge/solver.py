@@ -354,7 +354,8 @@ def filter_real_modes(
     """
     minimum = 1
     extremum = (k0**2) * ermax * urmax * 2
-
+    eigvals[eigvals == np.inf] = 1e30
+    eigvals[eigvals == -np.inf] = -1e30
     mask = (sign * eigvals <= extremum) & (sign * eigvals >= minimum)
     filtered_vals = eigvals[mask]
     filtered_vecs = eigvecs[:, mask]
@@ -1373,6 +1374,30 @@ class SmartARPACK_BMA(EigSolver):
     def n_found_modes(self) -> int:
         return len(self.tot_eigen_values)
 
+    @staticmethod
+    def are_modes_identical(
+        v_old: np.ndarray, v_new: np.ndarray, tolerance: float = 0.99
+    ) -> bool:
+        """
+        Check if two complex modes are the same regardless of phase or amplitude.
+
+        Parameters:
+            v_old, v_new: 1D arrays of complex degrees of freedom.
+            tolerance: Threshold close to 1.0 (e.g., 0.99 or 0.999 for numerical matches).
+        """
+        # Compute the complex inner product (Hermitian dot product)
+        inner_product = np.dot(np.conj(v_new), v_old)
+
+        # Compute self-products (magnitudes squared)
+        mag_new = np.dot(np.conj(v_new), v_new).real
+        mag_old = np.dot(np.conj(v_old), v_old).real
+
+        # Calculate CMAC
+        cmac = (np.abs(inner_product) ** 2) / (mag_new * mag_old)
+
+        logger.trace(f"    Modal Similarity (CMAC): {cmac:.5f}")
+        return cmac >= tolerance
+
     def add_mode(
         self, eigen_value: complex, eigen_vector: np.ndarray, energy: float
     ) -> None:
@@ -1380,17 +1405,21 @@ class SmartARPACK_BMA(EigSolver):
             f"  Considering new eigenmode with value {eigen_value} and energy {energy:.4f}"
         )
         if self.n_found_modes == 0:
+            logger.trace("    adding new mode")
             self.tot_eigen_values.append(eigen_value)
             self.tot_eigen_modes.append(eigen_vector)
             self.tot_energies.append(energy)
             return
-        reldif = max([abs(eigv - eigen_value) for eigv in self.tot_eigen_values]) / abs(
-            eigen_value
-        )
-        if reldif > 0.01:
+
+        for mode in self.tot_eigen_modes:
+            if self.are_modes_identical(mode, eigen_vector):
+                continue
+            logger.trace("    adding new mode")
             self.tot_eigen_values.append(eigen_value)
             self.tot_eigen_modes.append(eigen_vector)
             self.tot_energies.append(energy)
+            return
+        logger.trace("    ignoring mode because its the same as an existing mode")
 
     def eig(
         self,
@@ -1419,50 +1448,42 @@ class SmartARPACK_BMA(EigSolver):
         # The Curl vs Total energy ratio should be in the order of k0**2 so keeping a safe margin:
         ratio_limit = (0.1 * target_k0) ** 2
 
+        q_factors = []
+        for q in eig_search_scaler:
+            q_factors.append(q)
+            q_factors.append(1 / q)
+        q_factors.pop(0)  # 1 and 1/1 is redundant
+
         # Search around k_0
-        for i, q in enumerate(eig_search_scaler):
+        for i, q in enumerate(q_factors):
             # Search around q*k0
             sigma = sign * ((q * target_k0) ** 2)
             logger.trace(f" Searching around {q * target_k0:.2f} rad/m")
-            eigen_values, eigen_modes = eigs(A, k=1, M=B, sigma=sigma, which=which)
 
-            # Compute the energy
-            energy = np.mean(np.abs(eigen_modes.flatten()) ** 2)
-            # First eigenmode
-            psi = eigen_modes[:, 0]
-            # Compute curl and total energy
-            curl_energy = np.real(psi.conj() @ (A @ psi))
-            total_energy = np.real(psi.conj() @ (B @ psi))
-            ratio = abs(curl_energy / (total_energy + 1e-15))
-            logger.trace(
-                f"Ratio = {ratio:.6f}, Energy = {energy:.4f}, value = {(sign * eigen_values[0]) ** 0.5}, curl_energy = {curl_energy}, total_energy = {total_energy}"
+            n_search = nmodes - self.n_found_modes
+            eigen_values, eigen_modes = eigs(
+                A, k=n_search, M=B, sigma=sigma, which=which
             )
+            for i_sol in range(n_search):
+                eigen_mode = eigen_modes[:, i_sol]
+                eigen_value = eigen_values[i_sol]
+                # Compute the energy
+                energy = np.mean(np.abs(eigen_mode) ** 2)
 
-            if ratio > ratio_limit and energy > self.energy_limit:
-                self.add_mode(eigen_values[0], eigen_modes.flatten(), energy)
+                # Compute curl and total energy
+                curl_energy = np.real(eigen_mode.conj() @ (A @ eigen_mode))
+                total_energy = np.real(eigen_mode.conj() @ (B @ eigen_mode))
+                ratio = abs(curl_energy / (total_energy + 1e-15))
+                logger.trace(
+                    f"Ratio = {ratio:.6f}, Energy = {energy:.4f}, value = {(sign * eigen_value) ** 0.5}, curl_energy = {curl_energy}, total_energy = {total_energy}"
+                )
 
-            # Break if you found enough valid modes.
-            if self.n_found_modes >= nmodes:
-                break
+                if ratio > ratio_limit and energy > self.energy_limit:
+                    self.add_mode(eigen_value, eigen_mode, energy)
 
-            if i == 0:
-                continue
-
-            # Same search but k0/q instead of q*k0
-            sigma = sign * ((target_k0 / q) ** 2)
-            logger.trace(f" Searching around {target_k0 / q:.2f} rad/m")
-            eigen_values, eigen_modes = eigs(A, k=1, M=B, sigma=sigma, which=which)
-            energy = np.mean(np.abs(eigen_modes.flatten()) ** 2)
-            psi = eigen_modes[:, 0]
-            curl_energy = np.real(psi.conj() @ A @ psi)
-            total_energy = np.real(psi.conj() @ B @ psi)
-            ratio = abs(curl_energy / (total_energy + 1e-15))
-            logger.trace(
-                f"Ratio = {ratio:.6f}, Energy = {energy:.4f}, value = {(sign * eigen_values[0]) ** 0.5}, curl_energy = {curl_energy}, total_energy = {total_energy}"
-            )
-
-            if ratio > ratio_limit and energy > self.energy_limit:
-                self.add_mode(eigen_values[0], eigen_modes.flatten(), energy)
+                # Break if you found enough valid modes.
+                if self.n_found_modes >= nmodes:
+                    break
 
             # Break if you found enough valid modes.
             if self.n_found_modes >= nmodes:
@@ -1995,7 +2016,8 @@ class SolveRoutine:
         """
         if matrix_type is MatrixType.UNKNOWN:
             matrix_type = classify_matrix(A)
-            logger.info(f"Analysed matrix A as {matrix_type}")
+
+        logger.debug(f"{_pfx(self.pre, id)} matrix type: {matrix_type}")
 
         if b.ndim == 1:
             b = b.reshape((b.shape[0], 1))

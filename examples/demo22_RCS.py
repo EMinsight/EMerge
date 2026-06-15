@@ -87,16 +87,16 @@ ff3d = field.farfield_3d(scatter_object.boundary())
 # Notice that we call field.relative.grid() instead of field.grid().
 # Calling .relative first makes sure that only the scattered field is shown WITHOUT the background field.
 # For farfield integration this is not necessary because numerically the integral of external sources always yields 0.
-d = model.display
-d.populate()  # Adds all geometries
-d.add_field(field.relative.grid(N=1000).vector("E"))  # Adds a vector polot
-d.add_field(
-    ff3d.surfplot("RCS", rmax=0.6, offset=(0, 0, 1.2))
+display = model.display
+display.populate(smooth_shading=True)  # Adds all geometries
+display.add_field(field.relative.grid(N=5000).vector("E"))  # Adds a vector polot
+display.add_farfield3d(
+    ff3d, component="RCS", rmax=0.6, offset=(0, 0, 1.2)
 )  # Adds the 3D Farfield plot
-d.animate().add_field(
+display.animate().add_field(
     field.relative.grid(N=10_000).scalar("Ey", "complex"), symmetrize=True
 )  # Adds an animation of the plane wave
-d.show()
+display.show()
 
 # Finally we will also create a 2D plot
 if OBJECT == "PEC SPHERE":

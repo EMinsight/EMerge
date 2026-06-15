@@ -189,19 +189,16 @@ class HCField(Saveable):
         zf = zs.flatten()
 
         logger.info(f"Interpolating {xf.shape[0]} field points.")
-
-        T = self.basis.interpolate(self.T, xf, yf, zf, usenan=usenan)
+        tet_mapping = self.basis.interpolate_index(xf, yf, zf, None)
+        T = self.basis.interpolate(self.T, xf, yf, zf, tet_mapping, usenan=usenan)
         gTx, gTy, gTz = self.basis.interpolate_grad(
-            self.T, xf, yf, zf, None, usenan=usenan
+            self.T, xf, yf, zf, None, tet_mapping, usenan=usenan
         )
+        qx = -gTx.reshape(shp) * self._dcond_thermal[0, 0, tet_mapping].reshape(shp)
+        qy = -gTy.reshape(shp) * self._dcond_thermal[1, 1, tet_mapping].reshape(shp)
+        qz = -gTz.reshape(shp) * self._dcond_thermal[2, 2, tet_mapping].reshape(shp)
 
-        ids = self.basis.interpolate_index(xf, yf, zf)
-
-        qx = -gTx.reshape(shp) * self._dcond_thermal[0, 0, ids].reshape(shp)
-        qy = -gTy.reshape(shp) * self._dcond_thermal[1, 1, ids].reshape(shp)
-        qz = -gTz.reshape(shp) * self._dcond_thermal[2, 2, ids].reshape(shp)
-
-        self.conductivity = self._dcond_thermal[0, 0, ids].reshape(shp)
+        self.conductivity = self._dcond_thermal[0, 0, tet_mapping].reshape(shp)
 
         return TField(T.reshape(shp), qx, qy, qz, xs, ys, zs, self.conductivity)
 

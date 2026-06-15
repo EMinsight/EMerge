@@ -118,8 +118,10 @@ def _coth(x):
 def _sech(x):
     return 1.0 / np.cosh(_asf(x))
 
+
 def _jn(n: int, x: float) -> float:
     return float(jv(n, x))
+
 
 def _yn(n: int, x: float) -> float:
     return float(yv(n, x))
@@ -289,7 +291,9 @@ def microstrip_eeff(W: float, th: float, er: float, t: float = 0.0):
 # Args: W trace width [m], th substrate height [m], er relative permittivity, f frequency [Hz], t thickness [m].
 # Returns: Numeric result for the requested quantity; may be scalar, ndarray, tuple, or dict depending on the function.
 # Notes: Core formula functions use SI units (meters, Hz, Ohms) unless explicitly stated otherwise.
-def microstrip_eeff_dispersion(W: float, th: float, er: float, f: float, t: float = 0.0):
+def microstrip_eeff_dispersion(
+    W: float, th: float, er: float, f: float, t: float = 0.0
+):
     """Microstrip effective permittivity with frequency dispersion (Kirschning/Jansen)."""
     W = _asf(W)
     h = float(th)
@@ -300,7 +304,11 @@ def microstrip_eeff_dispersion(W: float, th: float, er: float, f: float, t: floa
 
     u = np.maximum(W / h, 1e-12)
     fn = f * h / 1e6  # normalized frequency in GHz*mm
-    p1 = 0.27488 + u * (0.6315 + 0.525 / np.power(1.0 + 0.0157 * fn, 20.0)) - 0.065683 * np.exp(-8.7513 * u)
+    p1 = (
+        0.27488
+        + u * (0.6315 + 0.525 / np.power(1.0 + 0.0157 * fn, 20.0))
+        - 0.065683 * np.exp(-8.7513 * u)
+    )
     p2 = 0.33622 * (1.0 - np.exp(-0.03442 * er))
     p3 = 0.0363 * np.exp(-4.6 * u) * (1.0 - np.exp(-np.power(fn / 38.7, 4.97)))
     p4 = 1.0 + 2.751 * (1.0 - np.exp(-np.power(er / 15.916, 8.0)))
@@ -326,25 +334,34 @@ def microstrip_z0_dispersion(W: float, th: float, er: float, f: float, t: float 
     u = np.maximum(W / h, 1e-12)
     fn = f * h / 1e6
 
-    r1 = 0.03891 * np.power(er, 1.4)
-    r2 = 0.267 * np.power(u, 7.0)
-    r3 = 4.766 * np.exp(-3.228 * np.power(u, 0.641))
-    r4 = 0.016 + np.power(0.0514 * er, 4.524)
-    r5 = np.power(fn / 28.843, 12.0)
-    r6 = 22.2 * np.power(u, 1.92)
+    r1 = 0.03891 * er ** (1.4)
+    r2 = np.clip(0.267 * u**7.0, a_min=None, a_max=20)
+    r3 = 4.766 * np.exp(-3.228 * u**0.641)
+    r4 = 0.016 + (0.0514 * er) ** 4.524
+    r5 = (fn / 28.843) ** 12.0
+    r6 = np.clip(22.2 * (u**1.92), a_min=None, a_max=20)
     r7 = 1.206 - 0.3144 * np.exp(-r1) * (1.0 - np.exp(-r2))
-    r8 = 1.0 + 1.275 * (1.0 - np.exp(-0.004625 * r3 * np.power(er, 1.674) * np.power(fn / 18.365, 2.745)))
-    tmp = np.power(er - 1.0, 6.0)
-    r9 = 5.086 * r4 * (r5 / (0.3838 + 0.386 * r4)) * (np.exp(-r6) / (1.0 + 1.2992 * r5)) * (tmp / (1.0 + 10.0 * tmp))
-    r10 = 0.00044 * np.power(er, 2.136) + 0.0184
-    tmp = np.power(fn / 19.47, 6.0)
+    r8 = 1.0 + 1.275 * (
+        1.0 - np.exp(-0.004625 * r3 * er * 1.674) * (fn / 18.365) ** 2.745
+    )
+    tmp = (er - 1.0) ** 6.0
+    r9 = (
+        5.086
+        * (r4 * r5 / (0.3838 + 0.386 * r4))
+        * (np.exp(-r6) / (1.0 + 1.2992 * r5))
+        * (tmp / (1.0 + 10.0 * tmp))
+    )
+    r10 = 0.00044 * er**2.136 + 0.0184
+    tmp = (fn / 19.47) ** 6.0
     r11 = tmp / (1.0 + 0.0962 * tmp)
     r12 = 1.0 / (1.0 + 0.00245 * u * u)
-    r13 = 0.9408 * np.power(np.maximum(eef, 1e-30), r8) - 0.9603
-    r14 = (0.9408 - r9) * np.power(np.maximum(ee0, 1e-30), r8) - 0.9603
-    r15 = 0.707 * r10 * np.power(fn / 12.3, 1.097)
-    r16 = 1.0 + 0.0503 * er * er * r11 * (1.0 - np.exp(-np.power(u / 15.0, 6.0)))
-    r17 = r7 * (1.0 - 1.1241 * (r12 / r16) * np.exp(-0.026 * np.power(fn, 1.15656) - r15))
+    r13 = 0.9408 * (np.maximum(eef, 1e-30) ** r8) - 0.9603
+    r14 = (0.9408 - r9) * (np.maximum(ee0, 1e-30) ** r8) - 0.9603
+    r15 = 0.707 * r10 * (fn / 12.3) ** 1.097
+    r16 = 1.0 + 0.0503 * er * er * r11 * (1.0 - np.exp(-((u / 15.0) ** 6.0)))
+    r17 = r7 * (
+        1.0 - 1.1241 * (r12 / r16) * np.exp(-0.026 * np.power(fn, 1.15656) - r15)
+    )
     d = np.power(np.maximum(r13 / np.maximum(r14, 1e-30), 1e-30), r17)
     return z0_0 * d
 
@@ -371,7 +388,9 @@ def stripline_z0(W: float, b: float, er: float, t: float = 0.0):
     bc = (x / (PI * (1.0 - x))) * (1.0 - 0.5 * np.log(np.maximum(frac, 1e-30)))
     A = 1.0 / (W / np.maximum(b - t, 1e-15) + bc)
     p = (8.0 / PI) * A
-    return (30.0 / np.sqrt(er)) * np.log(1.0 + (4.0 / PI) * A * (p + np.sqrt(p * p + 6.27)))
+    return (30.0 / np.sqrt(er)) * np.log(
+        1.0 + (4.0 / PI) * A * (p + np.sqrt(p * p + 6.27))
+    )
 
 
 # Edge-coupled stripline odd-mode impedance.
@@ -438,7 +457,9 @@ def broadside_stripline_zdiff_zcm(W: float, G: float, b: float, er: float):
         flo = _w_from_k(lo) - wratio
         fhi = _w_from_k(hi) - wratio
         if not np.isfinite(flo) or not np.isfinite(fhi):
-            raise ValueError("Broadside k-solve failed due to non-finite endpoint value.")
+            raise ValueError(
+                "Broadside k-solve failed due to non-finite endpoint value."
+            )
         if flo > 0.0 or fhi < 0.0:
             ks = np.linspace(lo, hi, 2001)
             fs = np.asarray([_w_from_k(float(kk)) - wratio for kk in ks], dtype=float)
@@ -470,7 +491,14 @@ def broadside_stripline_zdiff_zcm(W: float, G: float, b: float, er: float):
 # Args: W center width [m], S slot [m], th substrate height [m], er relative permittivity, t thickness [m], has_metal_backside model flag.
 # Returns: Numeric result for the requested quantity; may be scalar, ndarray, tuple, or dict depending on the function.
 # Notes: Core formula functions use SI units (meters, Hz, Ohms) unless explicitly stated otherwise.
-def cpw_z0(W: float, S: float, th: float, er: float, t: float = 0.0, has_metal_backside: bool = False):
+def cpw_z0(
+    W: float,
+    S: float,
+    th: float,
+    er: float,
+    t: float = 0.0,
+    has_metal_backside: bool = False,
+):
     W = _asf(W)
     h = float(th)
     s = float(S)
@@ -492,7 +520,12 @@ def cpw_z0(W: float, S: float, th: float, er: float, t: float = 0.0, has_metal_b
         zr = n0 / 4.0 / q1
 
     if t is not None and t > 0.0:
-        d = 1.25 * float(t) / PI * (1.0 + np.log(4.0 * PI * np.maximum(W, 1e-18) / float(t)))
+        d = (
+            1.25
+            * float(t)
+            / PI
+            * (1.0 + np.log(4.0 * PI * np.maximum(W, 1e-18) / float(t)))
+        )
         ke = k1 + (1.0 - k1 * k1) * d / (2.0 * s)
         qe = _ellip_ratio(ke)
         if has_metal_backside:
@@ -509,7 +542,14 @@ def cpw_z0(W: float, S: float, th: float, er: float, t: float = 0.0, has_metal_b
 # Args: W center width [m], S slot [m], th substrate height [m], er relative permittivity, t thickness [m], has_metal_backside model flag.
 # Returns: Numeric result for the requested quantity; may be scalar, ndarray, tuple, or dict depending on the function.
 # Notes: Core formula functions use SI units (meters, Hz, Ohms) unless explicitly stated otherwise.
-def cpw_eeff(W: float, S: float, th: float, er: float, t: float = 0.0, has_metal_backside: bool = False):
+def cpw_eeff(
+    W: float,
+    S: float,
+    th: float,
+    er: float,
+    t: float = 0.0,
+    has_metal_backside: bool = False,
+):
     W = _asf(W)
     h = float(th)
     s = float(S)
@@ -562,7 +602,9 @@ def cpw_eeff_dispersion(
     g = np.exp(u * np.log(np.maximum(w / s, 1e-15)) + v)
     sr_er0 = np.sqrt(np.maximum(ee0, 1e-30))
     sr_er = np.sqrt(er)
-    sr_er_f = sr_er0 + (sr_er - sr_er0) / (1.0 + g * np.power(np.maximum(f / fte, 1e-30), -1.8))
+    sr_er_f = sr_er0 + (sr_er - sr_er0) / (
+        1.0 + g * np.power(np.maximum(f / fte, 1e-30), -1.8)
+    )
     return sr_er_f * sr_er_f
 
 
@@ -582,7 +624,11 @@ def cpw_z0_dispersion(
     """CPW/GCPW characteristic impedance with Qucs-style frequency dispersion."""
     z0_qs = _asf(cpw_z0(W, S, th, er, t=t, has_metal_backside=has_metal_backside))
     ee0 = _asf(cpw_eeff(W, S, th, er, t=t, has_metal_backside=has_metal_backside))
-    eef = _asf(cpw_eeff_dispersion(W, S, th, er, f=f, t=t, has_metal_backside=has_metal_backside))
+    eef = _asf(
+        cpw_eeff_dispersion(
+            W, S, th, er, f=f, t=t, has_metal_backside=has_metal_backside
+        )
+    )
     return z0_qs * np.sqrt(np.maximum(ee0, 1e-30) / np.maximum(eef, 1e-30))
 
 
@@ -600,9 +646,21 @@ def _cpw_cap_per_len(
         ee = _asf(cpw_eeff(W, S, th, er, t=t, has_metal_backside=has_metal_backside))
         z_air = _asf(cpw_z0(W, S, th, 1.0, t=t, has_metal_backside=has_metal_backside))
     else:
-        z = _asf(cpw_z0_dispersion(W, S, th, er, f=float(f), t=t, has_metal_backside=has_metal_backside))
-        ee = _asf(cpw_eeff_dispersion(W, S, th, er, f=float(f), t=t, has_metal_backside=has_metal_backside))
-        z_air = _asf(cpw_z0_dispersion(W, S, th, 1.0, f=float(f), t=t, has_metal_backside=has_metal_backside))
+        z = _asf(
+            cpw_z0_dispersion(
+                W, S, th, er, f=float(f), t=t, has_metal_backside=has_metal_backside
+            )
+        )
+        ee = _asf(
+            cpw_eeff_dispersion(
+                W, S, th, er, f=float(f), t=t, has_metal_backside=has_metal_backside
+            )
+        )
+        z_air = _asf(
+            cpw_z0_dispersion(
+                W, S, th, 1.0, f=float(f), t=t, has_metal_backside=has_metal_backside
+            )
+        )
     c = np.sqrt(np.maximum(ee, 1e-15)) / (C0 * np.maximum(z, 1e-15))
     c_air = 1.0 / (C0 * np.maximum(z_air, 1e-15))
     return c, c_air, z
@@ -626,12 +684,20 @@ def coax_d_for_z0(Z0: float, d_outer: float, er: float):
     return float(d_outer) / np.exp(2.0 * PI * np.sqrt(er) * float(Z0) / n0)
 
 
-def _coax_cutoff_te_approx(d_inner: float, d_outer: float, er: float = 1.0, mur: float = 1.0):
-    return C0 / (PI * (float(d_outer) + float(d_inner)) * np.sqrt(float(er) * float(mur)))
+def _coax_cutoff_te_approx(
+    d_inner: float, d_outer: float, er: float = 1.0, mur: float = 1.0
+):
+    return C0 / (
+        PI * (float(d_outer) + float(d_inner)) * np.sqrt(float(er) * float(mur))
+    )
 
 
-def _coax_cutoff_tm_approx(d_inner: float, d_outer: float, er: float = 1.0, mur: float = 1.0):
-    return C0 / (2.0 * (float(d_outer) - float(d_inner)) * np.sqrt(float(er) * float(mur)))
+def _coax_cutoff_tm_approx(
+    d_inner: float, d_outer: float, er: float = 1.0, mur: float = 1.0
+):
+    return C0 / (
+        2.0 * (float(d_outer) - float(d_inner)) * np.sqrt(float(er) * float(mur))
+    )
 
 
 def _coax_mode_char(mode: str, n: int, x: float, ratio: float) -> float:
@@ -734,6 +800,7 @@ def coax_cutoff_te(
     except Exception:
         return _coax_cutoff_te_approx(d_inner, d_outer, er=er, mur=mur)
 
+
 # Coax TM cutoff frequency.
 # Args: d_inner inner diameter [m], d_outer outer diameter [m], er/mur medium constants, n/m mode indices, exact exact-root flag.
 # Returns: Numeric result for the requested quantity; may be scalar, ndarray, tuple, or dict depending on the function.
@@ -773,7 +840,7 @@ def twisted_pair_eeff(
     if d_center <= d_wire:
         raise ValueError("d_center must be greater than d_wire for twisted pair.")
     theta = np.arctan(float(twists_per_len) * PI * d_center)
-    q = (0.001 if ptfe else 0.25 + 0.0004 * theta * theta)
+    q = 0.001 if ptfe else 0.25 + 0.0004 * theta * theta
     return float(er1 + q * (er - er1))
 
 
@@ -789,7 +856,9 @@ def twisted_pair_z0(
     twists_per_len: float = 0.0,
     ptfe: bool = False,
 ):
-    eeff = twisted_pair_eeff(d_center, d_wire, er, er1=er1, twists_per_len=twists_per_len, ptfe=ptfe)
+    eeff = twisted_pair_eeff(
+        d_center, d_wire, er, er1=er1, twists_per_len=twists_per_len, ptfe=ptfe
+    )
     arg = max(float(d_center) / float(d_wire), 1.0 + 1e-12)
     return n0 / (PI * np.sqrt(eeff)) * np.arccosh(arg)
 
@@ -840,7 +909,9 @@ def twisted_pair_d_wire_for_z0(
     )
     k = np.cosh(PI * float(z0) * np.sqrt(eeff) / n0)
     if k <= 1.0:
-        raise ValueError("No valid d_wire solution for requested twisted-pair impedance.")
+        raise ValueError(
+            "No valid d_wire solution for requested twisted-pair impedance."
+        )
     return float(float(d_center) / k)
 
 
@@ -848,7 +919,9 @@ def twisted_pair_d_wire_for_z0(
 # Args: a broad wall [m], b narrow wall [m], m/n mode indices, er/mur medium constants.
 # Returns: Numeric result for the requested quantity; may be scalar, ndarray, tuple, or dict depending on the function.
 # Notes: Core formula functions use SI units (meters, Hz, Ohms) unless explicitly stated otherwise.
-def rectwg_fc(a: float, b: float, m: int = 1, n: int = 0, er: float = 1.0, mur: float = 1.0):
+def rectwg_fc(
+    a: float, b: float, m: int = 1, n: int = 0, er: float = 1.0, mur: float = 1.0
+):
     a = float(a)
     b = float(b)
     if a <= 0.0 or b <= 0.0:
@@ -863,7 +936,15 @@ def rectwg_fc(a: float, b: float, m: int = 1, n: int = 0, er: float = 1.0, mur: 
 # Args: f frequency [Hz], a/b dimensions [m], m/n mode indices, er/mur medium constants.
 # Returns: Numeric result for the requested quantity; may be scalar, ndarray, tuple, or dict depending on the function.
 # Notes: Core formula functions use SI units (meters, Hz, Ohms) unless explicitly stated otherwise.
-def rectwg_beta(f: float, a: float, b: float, m: int = 1, n: int = 0, er: float = 1.0, mur: float = 1.0):
+def rectwg_beta(
+    f: float,
+    a: float,
+    b: float,
+    m: int = 1,
+    n: int = 0,
+    er: float = 1.0,
+    mur: float = 1.0,
+):
     f = float(f)
     if f <= 0.0:
         raise ValueError("Frequency must be > 0.")
@@ -879,7 +960,15 @@ def rectwg_beta(f: float, a: float, b: float, m: int = 1, n: int = 0, er: float 
 # Args: f frequency [Hz], a/b dimensions [m], m/n mode indices, er/mur medium constants.
 # Returns: Numeric result for the requested quantity; may be scalar, ndarray, tuple, or dict depending on the function.
 # Notes: Core formula functions use SI units (meters, Hz, Ohms) unless explicitly stated otherwise.
-def rectwg_z_te(f: float, a: float, b: float, m: int = 1, n: int = 0, er: float = 1.0, mur: float = 1.0):
+def rectwg_z_te(
+    f: float,
+    a: float,
+    b: float,
+    m: int = 1,
+    n: int = 0,
+    er: float = 1.0,
+    mur: float = 1.0,
+):
     f = float(f)
     fc = rectwg_fc(a, b, m=m, n=n, er=er, mur=mur)
     if f <= fc:
@@ -891,7 +980,15 @@ def rectwg_z_te(f: float, a: float, b: float, m: int = 1, n: int = 0, er: float 
 # Args: f frequency [Hz], a/b dimensions [m], m/n mode indices, er/mur medium constants.
 # Returns: Numeric result for the requested quantity; may be scalar, ndarray, tuple, or dict depending on the function.
 # Notes: Core formula functions use SI units (meters, Hz, Ohms) unless explicitly stated otherwise.
-def rectwg_z_tm(f: float, a: float, b: float, m: int = 1, n: int = 1, er: float = 1.0, mur: float = 1.0):
+def rectwg_z_tm(
+    f: float,
+    a: float,
+    b: float,
+    m: int = 1,
+    n: int = 1,
+    er: float = 1.0,
+    mur: float = 1.0,
+):
     f = float(f)
     fc = rectwg_fc(a, b, m=m, n=n, er=er, mur=mur)
     if f <= fc:
@@ -903,7 +1000,15 @@ def rectwg_z_tm(f: float, a: float, b: float, m: int = 1, n: int = 1, er: float 
 # Args: f frequency [Hz], a/b dimensions [m], m/n mode indices, er/mur medium constants.
 # Returns: Numeric result for the requested quantity; may be scalar, ndarray, tuple, or dict depending on the function.
 # Notes: Core formula functions use SI units (meters, Hz, Ohms) unless explicitly stated otherwise.
-def rectwg_lambda_g(f: float, a: float, b: float, m: int = 1, n: int = 0, er: float = 1.0, mur: float = 1.0):
+def rectwg_lambda_g(
+    f: float,
+    a: float,
+    b: float,
+    m: int = 1,
+    n: int = 0,
+    er: float = 1.0,
+    mur: float = 1.0,
+):
     beta = rectwg_beta(f, a, b, m=m, n=n, er=er, mur=mur)
     if beta <= 0.0:
         return np.inf
@@ -932,7 +1037,9 @@ def rectwg_te10_a_for_z0(z0: float, f: float, er: float = 1.0, mur: float = 1.0)
         raise ValueError("z0 and f must be > 0.")
     q = n0 * np.sqrt(float(mur) / float(er)) / z0
     if q <= 0.0 or q >= 1.0:
-        raise ValueError("No propagating TE10 solution for the requested z0 at this frequency.")
+        raise ValueError(
+            "No propagating TE10 solution for the requested z0 at this frequency."
+        )
     fc = f * np.sqrt(1.0 - q * q)
     return rectwg_a_for_fc(fc, er=er, mur=mur, m=1)
 
@@ -962,7 +1069,10 @@ def coupled_microstrip_z0_even_odd(
     def _delta_u_thickness_single(uu: float, t_h: float) -> float:
         if t_h <= 0.0:
             return 0.0
-        x = (2.0 + (4.0 * PI * uu - 2.0) / (1.0 + np.exp(-100.0 * (uu - 1.0 / (2.0 * PI))))) / t_h
+        x = (
+            2.0
+            + (4.0 * PI * uu - 2.0) / (1.0 + np.exp(-100.0 * (uu - 1.0 / (2.0 * PI))))
+        ) / t_h
         return float((1.25 * t_h / PI) * (1.0 + np.log(max(x, 1e-30))))
 
     ue = u
@@ -981,7 +1091,11 @@ def coupled_microstrip_z0_even_odd(
     v2 = v * v
     v3 = v2 * v
     v4 = v3 * v
-    ae = 1.0 + np.log((v4 + v2 / 2704.0) / (v4 + 0.432)) / 49.0 + np.log(1.0 + v3 / 5929.741) / 18.7
+    ae = (
+        1.0
+        + np.log((v4 + v2 / 2704.0) / (v4 + 0.432)) / 49.0
+        + np.log(1.0 + v3 / 5929.741) / 18.7
+    )
     be = 0.564 * np.power((er - 0.9) / (er + 3.0), 0.053)
     q_inf_e = np.power(1.0 + 10.0 / max(v, 1e-30), -ae * be)
     ee_e0 = 0.5 * (er + 1.0) + 0.5 * (er - 1.0) * q_inf_e
@@ -997,42 +1111,79 @@ def coupled_microstrip_z0_even_odd(
     # Static modal impedances.
     q1 = 0.8695 * np.power(ue, 0.194)
     q2 = 1.0 + 0.7519 * g + 0.189 * np.power(g, 2.31)
-    q3 = 0.1975 + np.power(16.6 + np.power(8.4 / g, 6.0), -0.387) + np.log(np.power(g, 10.0) / (1.0 + np.power(g / 3.4, 10.0))) / 241.0
-    q4 = 2.0 * q1 / (q2 * (np.exp(-g) * np.power(ue, q3) + (2.0 - np.exp(-g)) * np.power(ue, -q3)))
+    q3 = (
+        0.1975
+        + np.power(16.6 + np.power(8.4 / g, 6.0), -0.387)
+        + np.log(np.power(g, 10.0) / (1.0 + np.power(g / 3.4, 10.0))) / 241.0
+    )
+    q4 = (
+        2.0
+        * q1
+        / (
+            q2
+            * (np.exp(-g) * np.power(ue, q3) + (2.0 - np.exp(-g)) * np.power(ue, -q3))
+        )
+    )
     q5 = 1.794 + 1.14 * np.log(1.0 + 0.638 / (g + 0.517 * np.power(g, 2.43)))
-    q6 = 0.2305 + np.log(np.power(g, 10.0) / (1.0 + np.power(g / 5.8, 10.0))) / 281.3 + np.log(1.0 + 0.598 * np.power(g, 1.154)) / 5.1
+    q6 = (
+        0.2305
+        + np.log(np.power(g, 10.0) / (1.0 + np.power(g / 5.8, 10.0))) / 281.3
+        + np.log(1.0 + 0.598 * np.power(g, 1.154)) / 5.1
+    )
     q7 = (10.0 + 190.0 * g * g) / (1.0 + 82.3 * g * g * g)
     q8 = np.exp(-6.5 - 0.95 * np.log(g) - np.power(g / 0.15, 5.0))
     q9 = np.log(q7) * (q8 + 1.0 / 16.5)
     q10 = (q2 * q4 - q5 * np.exp(np.log(uo) * q6 * np.power(uo, -q9))) / q2
 
     z_single_0 = float(microstrip_z0(w, h, er, t=0.0))
-    z_even_0 = z_single_0 * np.sqrt(ee_single_0 / ee_e0) / (1.0 - np.sqrt(ee_single_0) * q4 * z_single_0 / n0)
-    z_odd_0 = z_single_0 * np.sqrt(ee_single_0 / ee_o0) / (1.0 - np.sqrt(ee_single_0) * q10 * z_single_0 / n0)
+    z_even_0 = (
+        z_single_0
+        * np.sqrt(ee_single_0 / ee_e0)
+        / (1.0 - np.sqrt(ee_single_0) * q4 * z_single_0 / n0)
+    )
+    z_odd_0 = (
+        z_single_0
+        * np.sqrt(ee_single_0 / ee_o0)
+        / (1.0 - np.sqrt(ee_single_0) * q10 * z_single_0 / n0)
+    )
 
     if f is None or float(f) <= 0.0:
         return float(z_even_0), float(z_odd_0)
 
     # Frequency-dependent modal effective permittivities.
     fn = float(f) * h / 1e6
-    p1 = 0.27488 + (0.6315 + 0.525 / np.power(1.0 + 0.0157 * fn, 20.0)) * u - 0.065683 * np.exp(-8.7513 * u)
+    p1 = (
+        0.27488
+        + (0.6315 + 0.525 / np.power(1.0 + 0.0157 * fn, 20.0)) * u
+        - 0.065683 * np.exp(-8.7513 * u)
+    )
     p2 = 0.33622 * (1.0 - np.exp(-0.03442 * er))
     p3 = 0.0363 * np.exp(-4.6 * u) * (1.0 - np.exp(-np.power(fn / 38.7, 4.97)))
     p4 = 1.0 + 2.751 * (1.0 - np.exp(-np.power(er / 15.916, 8.0)))
     p5 = 0.334 * np.exp(-3.3 * np.power(er / 15.0, 3.0)) + 0.746
     p6 = p5 * np.exp(-np.power(fn / 18.0, 0.368))
-    p7 = 1.0 + 4.069 * p6 * np.power(g, 0.479) * np.exp(-1.347 * np.power(g, 0.595) - 0.17 * np.power(g, 2.5))
+    p7 = 1.0 + 4.069 * p6 * np.power(g, 0.479) * np.exp(
+        -1.347 * np.power(g, 0.595) - 0.17 * np.power(g, 2.5)
+    )
     fe = p1 * p2 * np.power(np.maximum((p3 * p4 + 0.1844 * p7) * fn, 1e-30), 1.5763)
     ee_e = er - (er - ee_e0) / (1.0 + fe)
 
     p8 = 0.7168 * (1.0 + 1.076 / (1.0 + 0.0576 * (er - 1.0)))
-    p9 = p8 - 0.7913 * (1.0 - np.exp(-np.power(fn / 20.0, 1.424))) * np.arctan(2.481 * np.power(er / 8.0, 0.946))
+    p9 = p8 - 0.7913 * (1.0 - np.exp(-np.power(fn / 20.0, 1.424))) * np.arctan(
+        2.481 * np.power(er / 8.0, 0.946)
+    )
     p10 = 0.242 * np.power(er - 1.0, 0.55)
-    p11 = 0.6366 * (np.exp(-0.3401 * fn) - 1.0) * np.arctan(1.263 * np.power(u / 3.0, 1.629))
+    p11 = (
+        0.6366
+        * (np.exp(-0.3401 * fn) - 1.0)
+        * np.arctan(1.263 * np.power(u / 3.0, 1.629))
+    )
     p12 = p9 + (1.0 - p9) / (1.0 + 1.183 * np.power(u, 1.376))
     p13 = 1.695 * p10 / (0.414 + 1.605 * p10)
     p14 = 0.8928 + 0.1072 * (1.0 - np.exp(-0.42 * np.power(fn / 20.0, 3.215)))
-    p15 = abs(1.0 - 0.8928 * (1.0 + p11) * p12 * np.exp(-p13 * np.power(g, 1.092)) / p14)
+    p15 = abs(
+        1.0 - 0.8928 * (1.0 + p11) * p12 * np.exp(-p13 * np.power(g, 1.092)) / p14
+    )
     fo = p1 * p2 * np.power(np.maximum((p3 * p4 + 0.1844) * fn * p15, 1e-30), 1.5763)
     ee_o = er - (er - ee_o0) / (1.0 + fo)
 
@@ -1041,26 +1192,81 @@ def coupled_microstrip_z0_even_odd(
     z_single_f = float(microstrip_z0_dispersion(w, h, er, f=float(f), t=0.0))
 
     q11 = 0.893 * (1.0 - 0.3 / (1.0 + 0.7 * (er - 1.0)))
-    q12 = 2.121 * (np.power(fn / 20.0, 4.91) / (1.0 + q11 * np.power(fn / 20.0, 4.91))) * np.exp(-2.87 * g) * np.power(g, 0.902)
+    q12 = (
+        2.121
+        * (np.power(fn / 20.0, 4.91) / (1.0 + q11 * np.power(fn / 20.0, 4.91)))
+        * np.exp(-2.87 * g)
+        * np.power(g, 0.902)
+    )
     q13 = 1.0 + 0.038 * np.power(er / 8.0, 5.1)
     q14 = 1.0 + 1.203 * np.power(er / 15.0, 4.0) / (1.0 + np.power(er / 15.0, 4.0))
-    q15 = 1.887 * np.exp(-1.5 * np.power(g, 0.84)) * np.power(g, q14) / (
-        1.0 + 0.41 * np.power(fn / 15.0, 3.0) * np.power(u, 2.0 / q13) / (0.125 + np.power(u, 1.626 / q13))
+    q15 = (
+        1.887
+        * np.exp(-1.5 * np.power(g, 0.84))
+        * np.power(g, q14)
+        / (
+            1.0
+            + 0.41
+            * np.power(fn / 15.0, 3.0)
+            * np.power(u, 2.0 / q13)
+            / (0.125 + np.power(u, 1.626 / q13))
+        )
     )
     q16 = (1.0 + 9.0 / (1.0 + 0.403 * np.power(er - 1.0, 2.0))) * q15
-    q17 = 0.394 * (1.0 - np.exp(-1.47 * np.power(u / 7.0, 0.672))) * (1.0 - np.exp(-4.25 * np.power(fn / 20.0, 1.87)))
-    q18 = 0.61 * (1.0 - np.exp(-2.13 * np.power(u / 8.0, 1.593))) / (1.0 + 6.544 * np.power(g, 4.17))
-    q19 = 0.21 * np.power(g, 4.0) / ((1.0 + 0.18 * np.power(g, 4.9)) * (1.0 + 0.1 * u * u) * (1.0 + np.power(fn / 24.0, 3.0)))
+    q17 = (
+        0.394
+        * (1.0 - np.exp(-1.47 * np.power(u / 7.0, 0.672)))
+        * (1.0 - np.exp(-4.25 * np.power(fn / 20.0, 1.87)))
+    )
+    q18 = (
+        0.61
+        * (1.0 - np.exp(-2.13 * np.power(u / 8.0, 1.593)))
+        / (1.0 + 6.544 * np.power(g, 4.17))
+    )
+    q19 = (
+        0.21
+        * np.power(g, 4.0)
+        / (
+            (1.0 + 0.18 * np.power(g, 4.9))
+            * (1.0 + 0.1 * u * u)
+            * (1.0 + np.power(fn / 24.0, 3.0))
+        )
+    )
     q20 = (0.09 + 1.0 / (1.0 + 0.1 * np.power(er - 1.0, 2.7))) * q19
-    q21 = abs(1.0 - 42.54 * np.power(g, 0.133) * np.exp(-0.812 * g) * np.power(u, 2.5) / (1.0 + 0.033 * np.power(u, 2.5)))
+    q21 = abs(
+        1.0
+        - 42.54
+        * np.power(g, 0.133)
+        * np.exp(-0.812 * g)
+        * np.power(u, 2.5)
+        / (1.0 + 0.033 * np.power(u, 2.5))
+    )
 
     re = np.power(fn / 28.843, 12.0)
     qe = 0.016 + np.power(0.0514 * er * q21, 4.524)
     pe = 4.766 * np.exp(-3.228 * np.power(u, 0.641))
-    de = 5.086 * qe * (re / (0.3838 + 0.386 * qe)) * (np.exp(-22.2 * np.power(u, 1.92)) / (1.0 + 1.2992 * re)) * (
-        np.power(er - 1.0, 6.0) / (1.0 + 10.0 * np.power(er - 1.0, 6.0))
+    de = (
+        5.086
+        * qe
+        * (re / (0.3838 + 0.386 * qe))
+        * (np.exp(-22.2 * np.power(u, 1.92)) / (1.0 + 1.2992 * re))
+        * (np.power(er - 1.0, 6.0) / (1.0 + 10.0 * np.power(er - 1.0, 6.0)))
     )
-    ce = 1.0 + 1.275 * (1.0 - np.exp(-0.004625 * pe * np.power(er, 1.674) * np.power(fn / 18.365, 2.745))) - q12 + q16 - q17 + q18 + q20
+    ce = (
+        1.0
+        + 1.275
+        * (
+            1.0
+            - np.exp(
+                -0.004625 * pe * np.power(er, 1.674) * np.power(fn / 18.365, 2.745)
+            )
+        )
+        - q12
+        + q16
+        - q17
+        + q18
+        + q20
+    )
 
     r1 = 0.03891 * np.power(er, 1.4)
     r2 = 0.267 * np.power(u, 7.0)
@@ -1071,9 +1277,15 @@ def coupled_microstrip_z0_even_odd(
     r12 = 1.0 / (1.0 + 0.00245 * u * u)
     r15 = 0.707 * r10 * np.power(fn / 12.3, 1.097)
     r16 = 1.0 + 0.0503 * er * er * r11 * (1.0 - np.exp(-np.power(u / 15.0, 6.0)))
-    q0 = r7 * (1.0 - 1.1241 * (r12 / r16) * np.exp(-0.026 * np.power(fn, 1.15656) - r15))
+    q0 = r7 * (
+        1.0 - 1.1241 * (r12 / r16) * np.exp(-0.026 * np.power(fn, 1.15656) - r15)
+    )
 
-    z_even = z_even_0 * np.power(0.9408 * np.power(ee_single_f, ce) - 0.9603, q0) / np.power((0.9408 - de) * np.power(ee_single_0, ce) - 0.9603, q0)
+    z_even = (
+        z_even_0
+        * np.power(0.9408 * np.power(ee_single_f, ce) - 0.9603, q0)
+        / np.power((0.9408 - de) * np.power(ee_single_0, ce) - 0.9603, q0)
+    )
 
     q29 = 15.16 / (1.0 + 0.196 * np.power(er - 1.0, 2.0))
     tmp = np.power(er - 1.0, 3.0)
@@ -1084,11 +1296,25 @@ def coupled_microstrip_z0_even_odd(
     q26 = 30.0 - 22.2 * (tmp / (1.0 + 3.0 * tmp)) - q29
     tmp = np.power(er - 1.0, 2.0)
     q25 = (0.3 * fn * fn / (10.0 + fn * fn)) * (1.0 + 2.333 * tmp / (5.0 + tmp))
-    q24 = 2.506 * q28 * np.power(u, 0.894) * np.power((1.0 + 1.3 * u) * fn / 99.25, 4.29) / (3.575 + np.power(u, 0.894))
-    q23 = 1.0 + 0.005 * fn * q27 / ((1.0 + 0.812 * np.power(fn / 15.0, 1.9)) * (1.0 + 0.025 * u * u))
-    q22 = 0.925 * np.power(fn / max(q26, 1e-30), 1.536) / (1.0 + 0.3 * np.power(fn / 30.0, 1.536))
+    q24 = (
+        2.506
+        * q28
+        * np.power(u, 0.894)
+        * np.power((1.0 + 1.3 * u) * fn / 99.25, 4.29)
+        / (3.575 + np.power(u, 0.894))
+    )
+    q23 = 1.0 + 0.005 * fn * q27 / (
+        (1.0 + 0.812 * np.power(fn / 15.0, 1.9)) * (1.0 + 0.025 * u * u)
+    )
+    q22 = (
+        0.925
+        * np.power(fn / max(q26, 1e-30), 1.536)
+        / (1.0 + 0.3 * np.power(fn / 30.0, 1.536))
+    )
 
-    z_odd = z_single_f + (z_odd_0 * np.power(ee_o / ee_o0, q22) - z_single_f * q23) / (1.0 + q24 + np.power(0.46 * g, 2.2) * q25)
+    z_odd = z_single_f + (z_odd_0 * np.power(ee_o / ee_o0, q22) - z_single_f * q23) / (
+        1.0 + q24 + np.power(0.46 * g, 2.2) * q25
+    )
     return float(z_even), float(z_odd)
 
 
@@ -1111,7 +1337,9 @@ def differential_cpw_zdiff_zcm(
     sp = float(S_pair)
     h = float(th)
     if np.any(w <= 0.0) or sg <= 0.0 or sp <= 0.0 or h <= 0.0:
-        raise ValueError("W, S_ground, S_pair and th must be > 0 for differential CPW/DCPWG.")
+        raise ValueError(
+            "W, S_ground, S_pair and th must be > 0 for differential CPW/DCPWG."
+        )
 
     # Quasi-static decomposition:
     # - even mode: pair gap carries negligible E-field -> dominated by outer CPW slots
@@ -1139,19 +1367,43 @@ class _MicrostripAPI:
     # Args: w width [unit], layer/ground_layer indices, f0 frequency [Hz], er override dielectric, t thickness [unit].
     # Returns: Numeric result for the requested quantity; may be a tuple or dict for grouped outputs.
     # Notes: Geometry args are in stackup units and are converted internally using self._pcb.unit.
-    def z0(self, w: float, layer: int = -1, ground_layer: int = 0, f0: float = 1e9, er: float | None = None, t: float = 0.0):
+    def z0(
+        self,
+        w: float,
+        layer: int = -1,
+        ground_layer: int = 0,
+        f0: float = 1e9,
+        er: float | None = None,
+        t: float = 0.0,
+    ):
         h = self._pcb.layer_distance(layer, ground_layer)
         ee = self._pcb.effective_er(layer, ground_layer, f0, er=er)
-        return float(microstrip_z0_dispersion(w * self._pcb.unit, h, ee, f=f0, t=t * self._pcb.unit))
+        return float(
+            microstrip_z0_dispersion(
+                w * self._pcb.unit, h, ee, f=f0, t=t * self._pcb.unit
+            )
+        )
 
     # Solve microstrip effective permittivity on a stackup pair.
     # Args: w width [unit], layer/ground_layer indices, f0 frequency [Hz], er override dielectric, t thickness [unit].
     # Returns: Numeric result for the requested quantity; may be a tuple or dict for grouped outputs.
     # Notes: Geometry args are in stackup units and are converted internally using self._pcb.unit.
-    def eeff(self, w: float, layer: int = -1, ground_layer: int = 0, f0: float = 1e9, er: float | None = None, t: float = 0.0):
+    def eeff(
+        self,
+        w: float,
+        layer: int = -1,
+        ground_layer: int = 0,
+        f0: float = 1e9,
+        er: float | None = None,
+        t: float = 0.0,
+    ):
         h = self._pcb.layer_distance(layer, ground_layer)
         ee = self._pcb.effective_er(layer, ground_layer, f0, er=er)
-        return float(microstrip_eeff_dispersion(w * self._pcb.unit, h, ee, f=f0, t=t * self._pcb.unit))
+        return float(
+            microstrip_eeff_dispersion(
+                w * self._pcb.unit, h, ee, f=f0, t=t * self._pcb.unit
+            )
+        )
 
     # Inverse microstrip width from target impedance.
     # Args: Z0 target impedance, layer/ground_layer indices, f0 frequency [Hz], er override, t thickness [unit], w_min/w_max search bounds [unit], n sample count.
@@ -1168,16 +1420,30 @@ class _MicrostripAPI:
         w_min: float = 1e-6,
         w_max: float = 1e-1,
         n: int = 401,
+        incl_dispersion: bool = True,
     ):
         h = self._pcb.layer_distance(layer, ground_layer)
         ee = self._pcb.effective_er(layer, ground_layer, f0, er=er)
-        wm = _scan_inverse(
-            Z0,
-            lambda ws: microstrip_z0_dispersion(ws, h, ee, f=f0, t=t * self._pcb.unit),
-            w_min,
-            w_max,
-            n,
-        )
+        w_min = 0.1 * h
+        w_max = 10 * h
+        if incl_dispersion:
+            wm = _scan_inverse(
+                Z0,
+                lambda ws: microstrip_z0_dispersion(
+                    ws, h, ee, f=f0, t=t * self._pcb.unit
+                ),
+                w_min,
+                w_max,
+                n,
+            )
+        else:
+            wm = _scan_inverse(
+                Z0,
+                lambda ws: microstrip_z0(ws, h, ee, t=t * self._pcb.unit),
+                w_min,
+                w_max,
+                n,
+            )
         return float(wm / self._pcb.unit)
 
     # Quarter-wave physical length helper for microstrip.
@@ -1210,7 +1476,15 @@ class _StriplineAPI:
     # Args: w width [unit], gnd_top/gnd_bot indices, f0 frequency [Hz], er override dielectric, t thickness [unit].
     # Returns: Numeric result for the requested quantity; may be a tuple or dict for grouped outputs.
     # Notes: Geometry args are in stackup units and are converted internally using self._pcb.unit.
-    def z0(self, w: float, gnd_top: int, gnd_bot: int, f0: float = 1e9, er: float | None = None, t: float = 0.0):
+    def z0(
+        self,
+        w: float,
+        gnd_top: int,
+        gnd_bot: int,
+        f0: float = 1e9,
+        er: float | None = None,
+        t: float = 0.0,
+    ):
         b = self._pcb.layer_distance(gnd_top, gnd_bot)
         ee = self._pcb.effective_er(gnd_top, gnd_bot, f0, er=er)
         return float(stripline_z0(w * self._pcb.unit, b, ee, t=t * self._pcb.unit))
@@ -1233,7 +1507,13 @@ class _StriplineAPI:
     ):
         b = self._pcb.layer_distance(gnd_top, gnd_bot)
         ee = self._pcb.effective_er(gnd_top, gnd_bot, f0, er=er)
-        wm = _scan_inverse(Z0, lambda ws: stripline_z0(ws, b, ee, t=t * self._pcb.unit), w_min, w_max, n)
+        wm = _scan_inverse(
+            Z0,
+            lambda ws: stripline_z0(ws, b, ee, t=t * self._pcb.unit),
+            w_min,
+            w_max,
+            n,
+        )
         return float(wm / self._pcb.unit)
 
 
@@ -1245,19 +1525,39 @@ class _EdgeCoupledStriplineAPI:
     # Args: w width [unit], s edge spacing [unit], gnd_top/gnd_bot indices, f0 frequency [Hz], er override dielectric.
     # Returns: Numeric result for the requested quantity; may be a tuple or dict for grouped outputs.
     # Notes: Geometry args are in stackup units and are converted internally using self._pcb.unit.
-    def zodd(self, w: float, s: float, gnd_top: int, gnd_bot: int, f0: float = 1e9, er: float | None = None):
+    def zodd(
+        self,
+        w: float,
+        s: float,
+        gnd_top: int,
+        gnd_bot: int,
+        f0: float = 1e9,
+        er: float | None = None,
+    ):
         b = self._pcb.layer_distance(gnd_top, gnd_bot)
         ee = self._pcb.effective_er(gnd_top, gnd_bot, f0, er=er)
-        return float(coupled_stripline_zodd(w * self._pcb.unit, s * self._pcb.unit, b, ee))
+        return float(
+            coupled_stripline_zodd(w * self._pcb.unit, s * self._pcb.unit, b, ee)
+        )
 
     # Edge-coupled stripline differential impedance.
     # Args: w width [unit], s edge spacing [unit], gnd_top/gnd_bot indices, f0 frequency [Hz], er override dielectric.
     # Returns: Numeric result for the requested quantity; may be a tuple or dict for grouped outputs.
     # Notes: Geometry args are in stackup units and are converted internally using self._pcb.unit.
-    def zdiff(self, w: float, s: float, gnd_top: int, gnd_bot: int, f0: float = 1e9, er: float | None = None):
+    def zdiff(
+        self,
+        w: float,
+        s: float,
+        gnd_top: int,
+        gnd_bot: int,
+        f0: float = 1e9,
+        er: float | None = None,
+    ):
         b = self._pcb.layer_distance(gnd_top, gnd_bot)
         ee = self._pcb.effective_er(gnd_top, gnd_bot, f0, er=er)
-        return float(coupled_stripline_zdiff(w * self._pcb.unit, s * self._pcb.unit, b, ee))
+        return float(
+            coupled_stripline_zdiff(w * self._pcb.unit, s * self._pcb.unit, b, ee)
+        )
 
     # Inverse edge-coupled stripline width from target differential impedance.
     # Args: Zdiff target differential impedance, s fixed spacing [unit], gnd_top/gnd_bot indices, f0 frequency [Hz], er override, w_min/w_max bounds [unit], n sample count.
@@ -1322,10 +1622,20 @@ class _BroadsideCoupledStriplineAPI:
     # Args: w strip width [unit], g broadside spacing [unit], gnd_top/gnd_bot indices, f0 frequency [Hz], er override dielectric.
     # Returns: Numeric result for the requested quantity; may be a tuple or dict for grouped outputs.
     # Notes: Geometry args are in stackup units and are converted internally using self._pcb.unit.
-    def zdiff_zcm(self, w: float, g: float, gnd_top: int, gnd_bot: int, f0: float = 1e9, er: float | None = None):
+    def zdiff_zcm(
+        self,
+        w: float,
+        g: float,
+        gnd_top: int,
+        gnd_bot: int,
+        f0: float = 1e9,
+        er: float | None = None,
+    ):
         b = self._pcb.layer_distance(gnd_top, gnd_bot)
         ee = self._pcb.effective_er(gnd_top, gnd_bot, f0, er=er)
-        zd, zc = broadside_stripline_zdiff_zcm(w * self._pcb.unit, g * self._pcb.unit, b, ee)
+        zd, zc = broadside_stripline_zdiff_zcm(
+            w * self._pcb.unit, g * self._pcb.unit, b, ee
+        )
         return float(zd), float(zc)
 
     # Inverse broadside stripline width from target differential impedance.
@@ -1382,7 +1692,10 @@ class _BroadsideCoupledStriplineAPI:
         # Restrict solve interval to the initial monotonic (increasing) branch.
         gs_probe = np.geomspace(g0, g1, 129)
         zd_probe = np.asarray(
-            [broadside_stripline_zdiff_zcm(w * self._pcb.unit, float(gm), b, ee)[0] for gm in gs_probe],
+            [
+                broadside_stripline_zdiff_zcm(w * self._pcb.unit, float(gm), b, ee)[0]
+                for gm in gs_probe
+            ],
             dtype=float,
         )
         m = np.isfinite(zd_probe)
@@ -1417,7 +1730,16 @@ class _CPWAPI:
     # Args: w center width [unit], s slot [unit], layer/ref_layer indices, f0 frequency [Hz], er override dielectric, t thickness [unit].
     # Returns: Numeric result for the requested quantity; may be a tuple or dict for grouped outputs.
     # Notes: Geometry args are in stackup units and are converted internally using self._pcb.unit.
-    def z0(self, w: float, s: float, layer: int = -1, ref_layer: int = 0, f0: float = 1e9, er: float | None = None, t: float = 0.0):
+    def z0(
+        self,
+        w: float,
+        s: float,
+        layer: int = -1,
+        ref_layer: int = 0,
+        f0: float = 1e9,
+        er: float | None = None,
+        t: float = 0.0,
+    ):
         h = self._pcb.layer_distance(layer, ref_layer)
         ee = self._pcb.effective_er(layer, ref_layer, f0, er=er)
         return float(
@@ -1436,7 +1758,16 @@ class _CPWAPI:
     # Args: w center width [unit], s slot [unit], layer/ref_layer indices, f0 frequency [Hz], er override dielectric, t thickness [unit].
     # Returns: Numeric result for the requested quantity; may be a tuple or dict for grouped outputs.
     # Notes: Geometry args are in stackup units and are converted internally using self._pcb.unit.
-    def eeff(self, w: float, s: float, layer: int = -1, ref_layer: int = 0, f0: float = 1e9, er: float | None = None, t: float = 0.0):
+    def eeff(
+        self,
+        w: float,
+        s: float,
+        layer: int = -1,
+        ref_layer: int = 0,
+        f0: float = 1e9,
+        er: float | None = None,
+        t: float = 0.0,
+    ):
         h = self._pcb.layer_distance(layer, ref_layer)
         ee = self._pcb.effective_er(layer, ref_layer, f0, er=er)
         return float(
@@ -1496,7 +1827,16 @@ class _EdgeCoupledMicrostripAPI:
     # Args: w width [unit], s edge spacing [unit], layer/ground_layer indices, f0 frequency [Hz], er override dielectric, t thickness [unit].
     # Returns: Numeric result for the requested quantity; may be a tuple or dict for grouped outputs.
     # Notes: Geometry args are in stackup units and are converted internally using self._pcb.unit.
-    def even_odd(self, w: float, s: float, layer: int = -1, ground_layer: int = 0, f0: float = 1e9, er: float | None = None, t: float = 0.0):
+    def even_odd(
+        self,
+        w: float,
+        s: float,
+        layer: int = -1,
+        ground_layer: int = 0,
+        f0: float = 1e9,
+        er: float | None = None,
+        t: float = 0.0,
+    ):
         h = self._pcb.layer_distance(layer, ground_layer)
         ee = self._pcb.effective_er(layer, ground_layer, f0, er=er)
         return coupled_microstrip_z0_even_odd(
@@ -1512,8 +1852,19 @@ class _EdgeCoupledMicrostripAPI:
     # Args: w width [unit], s edge spacing [unit], layer/ground_layer indices, f0 frequency [Hz], er override dielectric, t thickness [unit].
     # Returns: Numeric result for the requested quantity; may be a tuple or dict for grouped outputs.
     # Notes: Geometry args are in stackup units and are converted internally using self._pcb.unit.
-    def zdiff_zcm(self, w: float, s: float, layer: int = -1, ground_layer: int = 0, f0: float = 1e9, er: float | None = None, t: float = 0.0):
-        ze, zo = self.even_odd(w, s, layer=layer, ground_layer=ground_layer, f0=f0, er=er, t=t)
+    def zdiff_zcm(
+        self,
+        w: float,
+        s: float,
+        layer: int = -1,
+        ground_layer: int = 0,
+        f0: float = 1e9,
+        er: float | None = None,
+        t: float = 0.0,
+    ):
+        ze, zo = self.even_odd(
+            w, s, layer=layer, ground_layer=ground_layer, f0=f0, er=er, t=t
+        )
         return float(2.0 * zo), float(0.5 * ze)
 
     # Inverse edge-coupled microstrip width from target differential impedance.
@@ -1755,7 +2106,14 @@ class _CoaxAPI:
     # Args: d_inner/d_outer diameters [unit], er/mur medium constants, exact exact-root flag.
     # Returns: Numeric result for the requested quantity; may be a tuple or dict for grouped outputs.
     # Notes: Geometry args are in stackup units and are converted internally using self._pcb.unit.
-    def cutoffs(self, d_inner: float, d_outer: float, er: float = 1.0, mur: float = 1.0, exact: bool = True):
+    def cutoffs(
+        self,
+        d_inner: float,
+        d_outer: float,
+        er: float = 1.0,
+        mur: float = 1.0,
+        exact: bool = True,
+    ):
         di = d_inner * self._pcb.unit
         do = d_outer * self._pcb.unit
         return (
@@ -1871,22 +2229,56 @@ class _RectangularWaveguideAPI:
     # Args: a/b waveguide dimensions [unit], m/n mode indices, er/mur medium constants.
     # Returns: Numeric result for the requested quantity; may be a tuple or dict for grouped outputs.
     # Notes: Geometry args are in stackup units and are converted internally using self._pcb.unit.
-    def fc(self, a: float, b: float, m: int = 1, n: int = 0, er: float = 1.0, mur: float = 1.0):
-        return float(rectwg_fc(a * self._pcb.unit, b * self._pcb.unit, m=m, n=n, er=er, mur=mur))
+    def fc(
+        self,
+        a: float,
+        b: float,
+        m: int = 1,
+        n: int = 0,
+        er: float = 1.0,
+        mur: float = 1.0,
+    ):
+        return float(
+            rectwg_fc(a * self._pcb.unit, b * self._pcb.unit, m=m, n=n, er=er, mur=mur)
+        )
 
     # Waveguide propagation constant wrapper.
     # Args: f frequency [Hz], a/b dimensions [unit], m/n mode indices, er/mur medium constants.
     # Returns: Numeric result for the requested quantity; may be a tuple or dict for grouped outputs.
     # Notes: Geometry args are in stackup units and are converted internally using self._pcb.unit.
-    def beta(self, f: float, a: float, b: float, m: int = 1, n: int = 0, er: float = 1.0, mur: float = 1.0):
-        return float(rectwg_beta(f, a * self._pcb.unit, b * self._pcb.unit, m=m, n=n, er=er, mur=mur))
+    def beta(
+        self,
+        f: float,
+        a: float,
+        b: float,
+        m: int = 1,
+        n: int = 0,
+        er: float = 1.0,
+        mur: float = 1.0,
+    ):
+        return float(
+            rectwg_beta(
+                f, a * self._pcb.unit, b * self._pcb.unit, m=m, n=n, er=er, mur=mur
+            )
+        )
 
     # Waveguide guided wavelength wrapper.
     # Args: f frequency [Hz], a/b dimensions [unit], m/n mode indices, er/mur medium constants.
     # Returns: Numeric result for the requested quantity; may be a tuple or dict for grouped outputs.
     # Notes: Geometry args are in stackup units and are converted internally using self._pcb.unit.
-    def lambda_g(self, f: float, a: float, b: float, m: int = 1, n: int = 0, er: float = 1.0, mur: float = 1.0):
-        lg = rectwg_lambda_g(f, a * self._pcb.unit, b * self._pcb.unit, m=m, n=n, er=er, mur=mur)
+    def lambda_g(
+        self,
+        f: float,
+        a: float,
+        b: float,
+        m: int = 1,
+        n: int = 0,
+        er: float = 1.0,
+        mur: float = 1.0,
+    ):
+        lg = rectwg_lambda_g(
+            f, a * self._pcb.unit, b * self._pcb.unit, m=m, n=n, er=er, mur=mur
+        )
         if np.isinf(lg):
             return np.inf
         return float(lg / self._pcb.unit)
@@ -1895,15 +2287,41 @@ class _RectangularWaveguideAPI:
     # Args: f frequency [Hz], a/b dimensions [unit], m/n mode indices, er/mur medium constants.
     # Returns: Numeric result for the requested quantity; may be a tuple or dict for grouped outputs.
     # Notes: Geometry args are in stackup units and are converted internally using self._pcb.unit.
-    def z_te(self, f: float, a: float, b: float, m: int = 1, n: int = 0, er: float = 1.0, mur: float = 1.0):
-        return float(rectwg_z_te(f, a * self._pcb.unit, b * self._pcb.unit, m=m, n=n, er=er, mur=mur))
+    def z_te(
+        self,
+        f: float,
+        a: float,
+        b: float,
+        m: int = 1,
+        n: int = 0,
+        er: float = 1.0,
+        mur: float = 1.0,
+    ):
+        return float(
+            rectwg_z_te(
+                f, a * self._pcb.unit, b * self._pcb.unit, m=m, n=n, er=er, mur=mur
+            )
+        )
 
     # Waveguide TM impedance wrapper.
     # Args: f frequency [Hz], a/b dimensions [unit], m/n mode indices, er/mur medium constants.
     # Returns: Numeric result for the requested quantity; may be a tuple or dict for grouped outputs.
     # Notes: Geometry args are in stackup units and are converted internally using self._pcb.unit.
-    def z_tm(self, f: float, a: float, b: float, m: int = 1, n: int = 1, er: float = 1.0, mur: float = 1.0):
-        return float(rectwg_z_tm(f, a * self._pcb.unit, b * self._pcb.unit, m=m, n=n, er=er, mur=mur))
+    def z_tm(
+        self,
+        f: float,
+        a: float,
+        b: float,
+        m: int = 1,
+        n: int = 1,
+        er: float = 1.0,
+        mur: float = 1.0,
+    ):
+        return float(
+            rectwg_z_tm(
+                f, a * self._pcb.unit, b * self._pcb.unit, m=m, n=n, er=er, mur=mur
+            )
+        )
 
     # Inverse broad wall size from cutoff.
     # Args: fc cutoff frequency [Hz], er/mur medium constants, m mode index.
@@ -1923,8 +2341,20 @@ class _RectangularWaveguideAPI:
     # Args: angle_rad target phase angle [rad], f frequency [Hz], a/b dimensions [unit], m/n mode indices, er/mur medium constants.
     # Returns: Numeric result for the requested quantity; may be a tuple or dict for grouped outputs.
     # Notes: Geometry args are in stackup units and are converted internally using self._pcb.unit.
-    def length_for_angle(self, angle_rad: float, f: float, a: float, b: float, m: int = 1, n: int = 0, er: float = 1.0, mur: float = 1.0):
-        beta = rectwg_beta(f, a * self._pcb.unit, b * self._pcb.unit, m=m, n=n, er=er, mur=mur)
+    def length_for_angle(
+        self,
+        angle_rad: float,
+        f: float,
+        a: float,
+        b: float,
+        m: int = 1,
+        n: int = 0,
+        er: float = 1.0,
+        mur: float = 1.0,
+    ):
+        beta = rectwg_beta(
+            f, a * self._pcb.unit, b * self._pcb.unit, m=m, n=n, er=er, mur=mur
+        )
         if beta <= 0.0:
             return np.inf
         return float((float(angle_rad) / beta) / self._pcb.unit)
@@ -1965,7 +2395,9 @@ class PCBCalculator:
         self.edge_coupled_microstrip = _EdgeCoupledMicrostripAPI(self)
         self.edge_coupled_stripline = _EdgeCoupledStriplineAPI(self)
         self.broadside_coupled_stripline = _BroadsideCoupledStriplineAPI(self)
-        self.coplanar_microstrip_diff = _DifferentialCPWAPI(self, has_metal_backside=False)
+        self.coplanar_microstrip_diff = _DifferentialCPWAPI(
+            self, has_metal_backside=False
+        )
         self.dcpwg = _DifferentialCPWAPI(self, has_metal_backside=True)
         self.coax = _CoaxAPI(self)
         self.twisted_pair = _TwistedPairAPI(self)
@@ -1979,8 +2411,23 @@ class PCBCalculator:
     # Args: Z0 target impedance, layer/ground_layer indices, f0 frequency [Hz], er override dielectric.
     # Returns: Numeric result for the requested quantity; may be a tuple or dict for grouped outputs.
     # Notes: Geometry args are in stackup units and are converted internally using self._pcb.unit.
-    def z0(self, Z0: float, layer: int = -1, ground_layer: int = 0, f0: float = 1e9, er: float | None = None) -> float:
-        return self.microstrip.w_for_z0(Z0, layer=layer, ground_layer=ground_layer, f0=f0, er=er)
+    def z0(
+        self,
+        Z0: float,
+        layer: int = -1,
+        ground_layer: int = 0,
+        f0: float = 1e9,
+        er: float | None = None,
+        include_dispersion: bool = True,
+    ) -> float:
+        return self.microstrip.w_for_z0(
+            Z0,
+            layer=layer,
+            ground_layer=ground_layer,
+            f0=f0,
+            er=er,
+            incl_dispersion=include_dispersion,
+        )
 
     # Normalize positive/negative layer index to absolute index.
     # Args: layer signed layer index.
@@ -2012,7 +2459,9 @@ class PCBCalculator:
     # Args: layer/ground_layer signed indices, f0 frequency [Hz], er optional direct override.
     # Returns: Numeric result for the requested quantity; may be a tuple or dict for grouped outputs.
     # Notes: Geometry args are in stackup units and are converted internally using self._pcb.unit.
-    def effective_er(self, layer: int, ground_layer: int, f0: float, er: float | None = None) -> float:
+    def effective_er(
+        self, layer: int, ground_layer: int, f0: float, er: float | None = None
+    ) -> float:
         if er is not None:
             return float(er)
         i1 = self.layer_index(layer)
@@ -2034,4 +2483,3 @@ class PCBCalculator:
         if sw <= 0.0:
             return float(np.mean(ers))
         return float(np.sum(ers * ths) / sw)
-    

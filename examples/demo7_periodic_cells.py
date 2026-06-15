@@ -22,17 +22,17 @@ shown below.
 +--------+--------+--------+--------+--------+--------+
 
 """
-mm      = 0.001
-a       = 106*mm # Cell width
-b       = 30*mm  # Cell depth
-H       = 70*mm  # Airbox Height
-wga     = 70*mm  # Waveguide width
-wgb     = 18*mm  # Waveguide Height
-fl      = 25*mm  # Feed length
+mm = 0.001
+a = 106 * mm  # Cell width
+b = 30 * mm  # Cell depth
+H = 70 * mm  # Airbox Height
+wga = 70 * mm  # Waveguide width
+wgb = 18 * mm  # Waveguide Height
+fl = 25 * mm  # Feed length
 
 # We start again by defining our simulation model
-model = em.Simulation('Periodic')
-model.check_version("2.6.1") # Checks version compatibility.
+model = em.Simulation("Periodic")
+model.check_version("2.6.1")  # Checks version compatibility.
 
 # Next we will create a PeriodicCell class (in our case a hexagonal cell). This class
 # is simply meant to simplify our lives and improve the simulation setup flow.
@@ -57,13 +57,13 @@ model.check_version("2.6.1") # Checks version compatibility.
 #            \_____/
 
 # In the case of our rectangular waveguide array we will use the following;
-#(1)-------+--------+--------+--------+--------+--------+
+# (1)-------+--------+--------+--------+--------+--------+
 # |  +-----------+  |  +-----------+  |  +-----------+  |
 # |  |           |  |  |           |  |  |           |  |
 # |  +-----------+  |  +-----------+  |  +-----------+  |
-#(2)------(3)-------+--------+--------+--------+--------+
+# (2)------(3)-------+--------+--------+--------+--------+
 
-periodic_cell = em.HexCell((-a/2, b/2, 0), (-a/2, -b/2, 0), (0, -b/2, 0))
+periodic_cell = em.HexCell((-a / 2, b / 2, 0), (-a / 2, -b / 2, 0), (0, -b / 2, 0))
 
 # To make sure that we can run a periodic simulation we must tell the simulation that
 # it has to copy the meshing on each face that is duplcated. We can simply pass our periodic
@@ -77,7 +77,7 @@ model.set_periodic_cell(periodic_cell)
 box = periodic_cell.volume(0, H)
 
 # We also create a waveguide foor the feed
-waveguide = em.geo.Box(wga,wgb,fl, (-wga/2, -wgb/2,-fl) )
+waveguide = em.geo.Box(wga, wgb, fl, (-wga / 2, -wgb / 2, -fl))
 
 # Next we define our geometry as usual
 # Beause we stored our geometry in our model object using the get and set-item notation. We don't have to pass the items anymore.
@@ -103,7 +103,7 @@ abc = model.mw.bc.AbsorbingBoundary(box.back)
 # ky = sin(θ)·sin(ϕ)
 # kz = cos(θ)
 # The arguments of the function are θ,ϕ in degrees.
-periodic_cell.set_scanangle(30,45)
+periodic_cell.set_scanangle(30, 45)
 model.view(bc=True)
 
 # And at last we run our simulation and view the results.
@@ -111,6 +111,10 @@ data = model.mw.run_sweep()
 
 model.display.add_object(waveguide)
 model.display.add_object(box)
-model.display.add_field(data.field[0].cutplane(3*mm, y=0).scalar('Ey','real'), symmetrize=True)
-model.display.add_field(data.field[0].cutplane(3*mm, x=0).scalar('Ey','real'), symmetrize=True)
+model.display.cbar("Ey").add_field(
+    data.field[0].cutplane(3 * mm, y=0).scalar("Ey", "real"), symmetrize=True
+)
+model.display.cbar("Ey").add_field(
+    data.field[0].cutplane(3 * mm, x=0).scalar("Ey", "real"), symmetrize=True
+)
 model.display.show()

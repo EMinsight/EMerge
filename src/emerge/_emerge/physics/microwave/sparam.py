@@ -16,68 +16,24 @@
 # <https://www.gnu.org/licenses/>.
 
 # Last Cleanup: 2025-01-01
-from .microwave_bc import PortBC
+from .bcs import PortBC
 from ...mth.integrals import surface_integral
 import numpy as np
 from typing import Callable
+from ...const import Z0
 
-def sparam_waveport(nodes: np.ndarray,
-                    tri_vertices: np.ndarray,
-                    bc: PortBC, 
-                    freq: float,
-                    fieldf: Callable,
-                    ndpts: int = 4):
-    ''' Compute the S-parameters assuming a wave port mode
-    
-    Arguments:
-    ----------
-    nodes: np.ndarray = (3,:) np.ndarray of all nodes in the mesh.
-    tri_vertices: np.ndarray = (3,:) np.ndarray of triangle indices that need to be integrated,
-    bc: RobinBC = The port boundary condition object
-    freq: float = The frequency at which to do the calculation
-    fielf: Callable = The interpolation fuction that computes the E-field from the simulation
-    ndpts: int = 4 the number of Duvanant integration points to use (default = 4)
-    '''
-    
-    def modef(x, y, z):
-        return bc.port_mode_3d_global(x, y, z, freq)
 
-    def modef_c(x, y, z):
-        return np.conj(modef(x, y, z))
-    
-    Q = 0
-    if bc.active:
-        Q = 1
+def sparam_mode_power(
+    nodes: np.ndarray,
+    tri_vertices: np.ndarray,
+    bc: PortBC,
+    mode_nr: int,
+    k0: float,
+    const: np.ndarray,
+    gq_order: int = 4,
+):
+    """Compute the S-parameters assuming a wave port mode
 
-    def fieldf_p(x, y, z):
-        return fieldf(x,y,z) - Q * modef(x,y,z)
-    
-    
-    def inproduct1(x, y, z):
-        Ex1, Ey1, Ez1 = fieldf_p(x,y,z)
-        Ex2, Ey2, Ez2 = modef_c(x,y,z)
-        return Ex1*Ex2 + Ey1*Ey2 + Ez1*Ez2
-    
-    def inproduct2(x, y, z):
-        Ex1, Ey1, Ez1 = modef(x,y,z)
-        Ex2, Ey2, Ez2 = modef_c(x,y,z)
-        return Ex1*Ex2 + Ey1*Ey2 + Ez1*Ez2
-    
-    mode_dot_field = surface_integral(nodes, tri_vertices, inproduct1, gq_order=ndpts)
-    norm = surface_integral(nodes, tri_vertices, inproduct2, gq_order=ndpts)
-    
-    svec = mode_dot_field/norm
-    return svec
-
-def sparam_mode_power(nodes: np.ndarray,
-                    tri_vertices: np.ndarray,
-                    bc: PortBC, 
-                    mode_nr: int,
-                    k0: float,
-                    const: np.ndarray,
-                    gq_order: int = 4):
-    ''' Compute the S-parameters assuming a wave port mode
-    
     Arguments:
     ----------
     nodes: np.ndarray = (3,:) np.ndarray of all nodes in the mesh.
@@ -86,29 +42,34 @@ def sparam_mode_power(nodes: np.ndarray,
     freq: float = The frequency at which to do the calculation
     fielf: Callable = The interpolation fuction that computes the E-field from the simulation
     gq_order: int = 4 the Gauss-Quadrature order (default = 4)
-    '''
+    """
 
     def inproduct2(x, y, z):
-        Ex1, Ey1, Ez1 = bc.port_mode_3d_global(x, y, z, k0, mode_nr=mode_nr)
+        Ex1, Ey1, Ez1 = bc.port_mode_3d_global(
+            x, y, z, k0, which="Exy", mode_nr=mode_nr
+        )
         Ex2 = np.conj(Ex1)
         Ey2 = np.conj(Ey1)
         Ez2 = np.conj(Ez1)
-        return (Ex1*Ex2 + Ey1*Ey2 + Ez1*Ez2)/(2*bc.Zmode(k0))
+        return (Ex1 * Ex2 + Ey1 * Ey2 + Ez1 * Ez2) / (2 * Z0)
 
     norm = surface_integral(nodes, tri_vertices, inproduct2, const, gq_order=gq_order)
     return norm
 
-def sparam_field_power(nodes: np.ndarray,
-                    tri_vertices: np.ndarray,
-                    bc: PortBC, 
-                    mode_nr: int,
-                    active: bool,
-                    k0: float,
-                    fieldf: Callable,
-                    const: np.ndarray,
-                    gq_order: int = 4) -> complex:
-    ''' Compute the S-parameters assuming a wave port mode
-    
+
+def sparam_field_power(
+    nodes: np.ndarray,
+    tri_vertices: np.ndarray,
+    bc: PortBC,
+    mode_nr: int,
+    active: bool,
+    k0: float,
+    fieldf: Callable,
+    const: np.ndarray,
+    gq_order: int = 4,
+) -> complex:
+    """Compute the S-parameters assuming a wave port mode
+
     Arguments:
     ----------
     nodes: np.ndarray = (3,:) np.ndarray of all nodes in the mesh.
@@ -117,19 +78,20 @@ def sparam_field_power(nodes: np.ndarray,
     freq: float = The frequency at which to do the calculation
     fielf: Callable = The interpolation fuction that computes the E-field from the simulation
     gq_order: int = 4 the Gauss-Quadrature order (default = 4)
-    '''
-    
+    """
 
     Q = 0
     if active:
         Q = 1
-    
+
     def inproduct1(x, y, z):
-        mode_field = bc.port_mode_3d_global(x, y, z, k0, mode_nr=mode_nr)
-        Ex1, Ey1, Ez1 = fieldf(x,y,z) - Q * mode_field
+        mode_field = bc.port_mode_3d_global(x, y, z, k0, which="Exy", mode_nr=mode_nr)
+        Ex1, Ey1, Ez1 = fieldf(x, y, z) - Q * mode_field
         Ex2, Ey2, Ez2 = np.conj(mode_field)
-        return (Ex1*Ex2 + Ey1*Ey2 + Ez1*Ez2) / (2*bc.Zmode(k0))
-    
-    mode_dot_field = surface_integral(nodes, tri_vertices, inproduct1, const, gq_order=gq_order)
+        return (Ex1 * Ex2 + Ey1 * Ey2 + Ez1 * Ez2) / (2 * Z0)
+
+    mode_dot_field = surface_integral(
+        nodes, tri_vertices, inproduct1, const, gq_order=gq_order
+    )
     svec = mode_dot_field
     return svec

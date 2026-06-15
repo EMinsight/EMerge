@@ -24,7 +24,6 @@ from emsutil import Saveable
 
 
 class FEMBasis(Saveable):
-
     def __init__(self, mesh: Mesh3D):
         self.mesh: Mesh3D = mesh
         self.n_edges: int = self.mesh.n_edges
@@ -73,22 +72,25 @@ class FEMBasis(Saveable):
         self._cols = cols
         return rows, cols
 
-    def empty_tri_rowcol(self) -> tuple[np.ndarray, np.ndarray]:
+    def empty_tri_rowcol(
+        self, other_side: bool = False
+    ) -> tuple[np.ndarray, np.ndarray]:
         N = self.n_tri_dofs
         N2 = N**2
         nnz = self.n_tris * N2
         rows = np.empty(nnz, dtype=np.int64)
         cols = np.empty(nnz, dtype=np.int64)
 
+        t2f = self.tri_to_field
+        if other_side:
+            t2f = self.tri_to_field_os
+
         for itri in range(self.n_tris):
             p = itri * N2
-            indices = self.tri_to_field[:, itri]
+            indices = t2f[:, itri]
             for ii in range(N):
                 rows[p + N * ii : p + N * (ii + 1)] = indices[ii]
                 cols[p + ii : p + N2 : N] = indices[ii]
-
-        self._rows = rows
-        self._cols = cols
         return rows, cols
 
     def tetslice(self, itet: int) -> slice:
@@ -99,12 +101,20 @@ class FEMBasis(Saveable):
         N = self.n_tri_dofs**2
         return slice(itri * N, (itri + 1) * N)
 
-    def generate_csc(self, data: np.ndarray):
+    def generate_csc(
+        self, data: np.ndarray, rowcol: tuple[np.ndarray, np.ndarray] | None = None
+    ):
+
         from scipy.sparse import csc_matrix  # type: ignore
+
+        if rowcol is None:
+            rows, cols = self._rows, self._cols
+        else:
+            rows, cols = rowcol
 
         ids = np.argwhere(data != 0)[:, 0]
         return csc_matrix(
-            (data[ids], (self._rows[ids], self._cols[ids])),
+            (data[ids], (rows[ids], cols[ids])),
             shape=(self.n_field, self.n_field),
         )
 
@@ -133,11 +143,20 @@ class FEMBasis(Saveable):
         def func(xs: np.ndarray, ys: np.ndarray, zs: np.ndarray) -> np.ndarray:
             xyz = np.array([xs, ys, zs]) + origin[:, np.newaxis]
             xyzg = matmul(basis, xyz)
+            tet_mapping = self.interpolate_index(
+                xyzg[0, :], xyzg[1, :], xyzg[2, :], tetids, usenan=False
+            )
             return matmul(
                 ibasis,
                 np.array(
                     self.interpolate(
-                        field, xyzg[0, :], xyzg[1, :], xyzg[2, :], tetids, usenan=False
+                        field,
+                        xyzg[0, :],
+                        xyzg[1, :],
+                        xyzg[2, :],
+                        tet_mapping,
+                        tetids,
+                        usenan=False,
                     )
                 ),
             )
@@ -150,6 +169,7 @@ class FEMBasis(Saveable):
         xs: np.ndarray,
         ys: np.ndarray,
         zs: np.ndarray,
+        tet_mapping: np.ndarray,
         tetids: np.ndarray | None = None,
         usenan: bool = True,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -161,6 +181,7 @@ class FEMBasis(Saveable):
         xs: np.ndarray,
         ys: np.ndarray,
         zs: np.ndarray,
+        tet_mapping: np.ndarray,
         tetids: np.ndarray | None = None,
         usenan: bool = True,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -173,6 +194,7 @@ class FEMBasis(Saveable):
         ys: np.ndarray,
         zs: np.ndarray,
         constants: np.ndarray,
+        tet_mapping: np.ndarray,
         tetids: np.ndarray | None = None,
         usenan: bool = True,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -187,6 +209,7 @@ class FEMBasis(Saveable):
         xs: np.ndarray,
         ys: np.ndarray,
         zs: np.ndarray,
+        tet_mapping: np.ndarray,
         tetids: np.ndarray | None = None,
         cs: tuple[float, float] = (1.0, 1.0),
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

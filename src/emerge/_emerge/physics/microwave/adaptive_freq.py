@@ -271,6 +271,7 @@ class SparamModel:
         self.f: np.ndarray = frequencies
         self.S: np.ndarray = Sparam
 
+        maxS = max(1.0, 1.0001 * np.max(np.abs(Sparam)))
         s = 1j * frequencies
         try:
             if n_poles == "auto":
@@ -289,8 +290,11 @@ class SparamModel:
 
                     S = self(fdense)
 
-                    self.error = np.mean(np.abs(Sparam - self(self.f)))
-                    if all(np.abs(S) <= 1.0) and self.error < 1e-4:
+                    self.error = np.max(np.abs(Sparam - self(self.f)))
+                    logger.trace(
+                        f"poles = {nps} inc real = {inc_real}, {np.max(np.abs(S))}, error={self.error}"
+                    )
+                    if all(np.abs(S) <= maxS) and self.error < 1e-3:
                         logger.debug(f"Using {nps} poles.")
                         success = True
                         break

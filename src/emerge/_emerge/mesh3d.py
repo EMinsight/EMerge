@@ -180,9 +180,9 @@ class Mesh3D(Mesh, Saveable):
 
         ## Memory
         # These
-        self.geonodes: list[int] = (
-            []
-        )  # All nodes that are characteristic of the geometry (excluding mesh nodes)
+        self.geonodes: list[
+            int
+        ] = []  # All nodes that are characteristic of the geometry (excluding mesh nodes)
 
         # These quantities link more abstract geometric entities such as boxes/faces etc to their
         # respective triangles, nodes etc. They link GMSH tags to mesh indices
@@ -1139,7 +1139,11 @@ class Mesh3D(Mesh, Saveable):
         groups = sorted(groups, key=lambda x: sum(self.edge_lengths[np.array(x)]))
         return groups
 
-    def outward_normals(self, tri_ids: list[int]) -> np.ndarray:
+    def outward_normals(
+        self,
+        tri_ids: list[int],
+        alignment_origin: tuple[float, float, float] | None = None,
+    ) -> np.ndarray:
         """Computes strictly outward facing normals for given triangle indices.
 
         Outwards is defined as pointing away from the simulation domain.
@@ -1149,6 +1153,7 @@ class Mesh3D(Mesh, Saveable):
 
         Args:
             tri_ids (list[int]): _description_
+            alignment_origin (tuple[float, float, float], optional): A normal alignment origin in case inside vs. outside is not apparant.
 
         Returns:
             np.ndarray: _description_
@@ -1172,11 +1177,20 @@ class Mesh3D(Mesh, Saveable):
         align = tri_centers - tet_centers
         signflip = np.sign(np.sum(align * normals, axis=0))
         normals = signflip * normals
+
+        if alignment_origin is not None:
+            rad_vec = tri_centers.copy()
+            rad_vec[0, :] -= alignment_origin[0]
+            rad_vec[1, :] -= alignment_origin[1]
+            rad_vec[2, :] -= alignment_origin[2]
+            signflip = np.sign(np.sum(normals * rad_vec, axis=0))
+            normals = normals * signflip
         return normals
 
     def boundary_surface(
         self,
         face_tags: Union[int, list[int]],
+        inward_normal: bool = True,
         origin: tuple[float, float, float] | None = None,
     ) -> SurfaceMesh:
         """Returns a SurfaceMesh class that is a 2D mesh isolated from the 3D mesh
@@ -1188,32 +1202,61 @@ class Mesh3D(Mesh, Saveable):
 
         Args:
             face_tags (Union[int, list[int]]): The list of face tags to use
-            origin (tuple[float, float, float], optional): The normal vecor alignment origin.. Defaults to None.
+            origin (tuple[float, float, float], optional): The normal vecor alignment origin. Defaults to None.
 
         Returns:
             SurfaceMesh: The resultant surface mesh
         """
         tri_ids = self.get_triangles(face_tags)
 
-        if origin is None:
-            nodes = self.nodes[:, self.get_nodes(face_tags)]
-            x0 = float(np.mean(nodes[0, :]))
-            y0 = float(np.mean(nodes[1, :]))
-            z0 = float(np.mean(nodes[2, :]))
-            sf_origin = (x0, y0, z0)
-        else:
-            sf_origin = origin
+        normals = self.outward_normals(tri_ids, alignment_origin=origin)
+        if inward_normal:
+            normals = -normals
 
-        smesh = SurfaceMesh(self, tri_ids, sf_origin)
+        smesh = SurfaceMesh(self, tri_ids, normals)
 
-        if origin is None:
-            tet_ids = np.max(self.tri_to_tet[:, tri_ids], axis=0)
-            tet_centers = self.centers[:, tet_ids]
-            tri_centers = self.tri_centers[:, tri_ids]
-            align = tri_centers - tet_centers
-            signflip = np.sign(np.sum(align * smesh.normals, axis=0))
-            smesh.normals = signflip * smesh.normals
         return smesh
+
+    def get_normal(self, itri: int) -> np.ndarray:
+        """Returns a triangle normal which with an
+        arbitrarily assigned normal direction.
+        (Deterministic but not consistent with faces)
+
+        Args:
+            itri (int): The triangle index
+
+        Returns:
+            np.ndarray: _description_
+        """
+        i1, i2, i3 = self.tris[:, itri]
+        p0, p1, p2 = (
+            self.nodes[:, i1],
+            self.nodes[:, i2],
+            self.nodes[:, i3],
+        )
+
+        normal = np.cross(p1 - p0, p2 - p0)
+        norm = np.linalg.norm(normal)
+        return normal / norm
+
+    def inward_normal(self, face_tags: list[int]) -> np.ndarray:
+        """Compute the inward pointing normal vector and return it."""
+        tri_ids = self.get_triangles(face_tags)
+
+        tri_ids = np.array(sorted(list(set(tri_ids))))
+
+        tri1 = tri_ids[0]
+        tri_center = self.tri_centers[:, tri1]
+        tet_center = self.centers[:, self.tri_to_tet[0, tri1]]
+
+        inside = tet_center - tri_center
+        port_normal = self.get_normal(tri1)
+
+        # Align normal
+        if sum(inside * port_normal) < 0:
+            port_normal = -port_normal
+
+        return port_normal
 
 
 class SurfaceMesh(Mesh):
@@ -1225,7 +1268,10 @@ class SurfaceMesh(Mesh):
     """
 
     def __init__(
-        self, original: Mesh3D, tri_ids: np.ndarray, origin: tuple[float, float, float]
+        self,
+        original: Mesh3D,
+        tri_ids: np.ndarray,
+        normals: tuple[float, float, float],
     ):
 
         ## Compute derived mesh properties
@@ -1242,13 +1288,12 @@ class SurfaceMesh(Mesh):
 
         ### Store information
         self._tri_ids = tri_ids
-        self._origin = origin
+        self.normals = normals
 
         self.original_tris: np.ndarray = original.tris
 
         self.old_new_node_map: dict = old_to_new_node_id_map
         self.original: Mesh3D = original
-        self._alignment_origin: np.ndarray = np.array(origin).astype(np.float64)
         self.nodes: np.ndarray = original.nodes[:, unique_nodes]
         self.tris: np.ndarray = new_tris
 
@@ -1259,14 +1304,14 @@ class SurfaceMesh(Mesh):
         self.n_tris = self.tris.shape[1]
         self.n_edges: float = -1
         self.areas: np.ndarray = np.array([])
-        self.normals: np.ndarray = np.array([])
+        self.centroids: np.ndarray = np.array([])
         self.tri_to_edge: np.ndarray = np.array([])
         self.edge_to_tri: dict | defaultdict = dict()
         # Generate derived
         self.update()
 
     def copy(self) -> SurfaceMesh:
-        return SurfaceMesh(self.original, self._tri_ids, self._origin)
+        return SurfaceMesh(self.original, self._tri_ids.copy(), self.normals.copy())
 
     def flip(self, ax: str) -> SurfaceMesh:
         if ax.lower() == "x":
@@ -1282,18 +1327,21 @@ class SurfaceMesh(Mesh):
         self.nodes[0, :] = -self.nodes[0, :]
         self.normals[0, :] = -self.normals[0, :]
         self.edge_centers[0, :] = -self.edge_centers[0, :]
+        self.centroids[0, :] = -self.centroids[0, :]
         return self
 
     def flipY(self) -> SurfaceMesh:
         self.nodes[1, :] = -self.nodes[1, :]
         self.normals[1, :] = -self.normals[1, :]
         self.edge_centers[1, :] = -self.edge_centers[1, :]
+        self.centroids[1, :] = -self.centroids[1, :]
         return self
 
     def flipZ(self) -> SurfaceMesh:
         self.nodes[2, :] = -self.nodes[2, :]
         self.normals[2, :] = -self.normals[2, :]
         self.edge_centers[2, :] = -self.edge_centers[2, :]
+        self.centroids[2, :] = -self.centroids[2, :]
         return self
 
     def from_source_tri(self, triid: int) -> int | None:
@@ -1344,7 +1392,7 @@ class SurfaceMesh(Mesh):
     def update(self) -> None:
         ## First Edges
 
-        from .mth.optimized import outward_normal, area
+        from .mth.optimized import area
 
         edges = set()
         for i in range(self.n_tris):
@@ -1375,8 +1423,6 @@ class SurfaceMesh(Mesh):
             for i in range(self.tris.shape[1])
         }
         ##
-        origin = self._alignment_origin
-
         self.areas = np.array(
             [
                 area(
@@ -1387,18 +1433,12 @@ class SurfaceMesh(Mesh):
                 for i in range(self.n_tris)
             ]
         ).T
-        self.normals = np.array(
-            [
-                outward_normal(
-                    self.nodes[:, self.tris[0, i]],
-                    self.nodes[:, self.tris[1, i]],
-                    self.nodes[:, self.tris[2, i]],
-                    origin,
-                )
-                for i in range(self.n_tris)
-            ]
-        ).T
 
+        n1 = self.nodes[:, self.tris[0, :]]
+        n2 = self.nodes[:, self.tris[1, :]]
+        n3 = self.nodes[:, self.tris[2, :]]
+
+        self.centroids = 1 / 3 * (n1 + n2 + n3)
         self.tri_to_edge = np.ndarray((3, self.tris.shape[1]), dtype=int)
         self.edge_to_tri = defaultdict(list)
 

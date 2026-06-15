@@ -19,71 +19,13 @@
 from numba import njit, f8, i8, types, c16
 import numpy as np
 from . import _cache_check
-
-############################################################
-#             TRIANGLE GAUSS QUADRATURE POINTS            #
-############################################################
-
-_GAUSQUADTRI = {
-    1: [(1, 1, 1/3, 1/3, 1/3),],
-    2: [(3, 1/3, 2/3, 1/6, 1/6),],
-    3: [(1, -0.562500000000000, 1/3, 1/3, 1/3),
-        (3, 0.520833333333333, 0.6, 0.2, 0.2)],
-    4: [(3, 0.223381589678011, 0.108103018168070, 0.445948490915965,0.445948490915965),
-        (3, 0.109951743655322, 0.816847572980459, 0.091576213509771, 0.091576213509771)],
-    5: [(1, 0.225000000000000, 0.333333333333333, 0.333333333333333, 0.333333333333333),
-        (3, 0.132394152788506, 0.059715871789770, 0.470142064105115, 0.470142064105115),
-        (3, 0.125939180544827, 0.797426985353087, 0.101286507323456, 0.101286507323456),],
-    6: [(3, 0.116786275726379, 0.501426509658179, 0.249286745170910, 0.249286745170910),
-        (3, 0.050844906370207, 0.873821971016996, 0.063089014491502, 0.063089014491502),
-        (6, 0.082851075618374, 0.053145049844817, 0.310352451033784, 0.636502499121399)],
-    7: [(1, -0.149570044467682, 0.333333333333333, 0.333333333333333, 0.333333333333333),
-        (3, 0.175615257433208, 0.479308067841920, 0.260345966079040, 0.260345966079040),
-        (3, 0.053347235608838, 0.869739794195568, 0.065130102902216, 0.065130102902216),
-        (6, 0.077113760890257, 0.048690315425316, 0.312865496004874, 0.638444188569810)],
-    8: [(1, 0.144315607677787, 0.333333333333333, 0.333333333333333, 0.333333333333333),
-        (3, 0.095091634267285, 0.081414823414554, 0.459292588292723, 0.459292588292723),
-        (3, 0.103217370534718, 0.658861384496480, 0.170569307751760, 0.170569307751760),
-        (3, 0.032458497623198, 0.898905543365938, 0.050547228317031, 0.050547228317031),
-        (6, 0.027230314174435, 0.008394777409958, 0.263112829634638, 0.728492392955404)],
-    9: [(1, 0.097135796282799, 0.333333333333333, 0.333333333333333, 0.333333333333333),
-        (3, 0.031334700227139, 0.020634961602525, 0.489682519198738, 0.489682519198738),
-        (3, 0.077827541004774, 0.125820817014127, 0.437089591492937, 0.437089591492937),
-        (3, 0.079647738927210, 0.623592928761935, 0.188203535619033, 0.188203535619033),
-        (3, 0.025577675658698, 0.910540973211095, 0.044729513394453, 0.044729513394453),
-        (6, 0.043283539377289, 0.036838412054736, 0.221962989160766, 0.741198598784498)],
-    10: [(1, 0.090817990382754, 0.333333333333333, 0.333333333333333, 0.333333333333333),
-         (3, 0.036725957756467, 0.028844733232685, 0.485577633383657, 0.485577633383657),
-         (3, 0.045321059435528, 0.781036849029926, 0.109481575485037, 0.109481575485037),
-         (6, 0.072757916845420, 0.141707219414880, 0.307939838764121, 0.550352941820999),
-         (6, 0.028327242531057, 0.025003534762686, 0.246672560639903, 0.728323904597411),
-         (6, 0.009421666963733, 0.009540815400299, 0.066803251012200, 0.923655933587500)]
-}
-
-############################################################
-#            TETRAHEDRON GAUSS QUADRATURE POINTS           #
-############################################################
-
-_GAUSQUADTET = {
-    1: [(1, 1, 0.25, 0.25, 0.25, 0.25),],
-    2: [(4, 0.25, 0.5584510197, 0.1381966011, 0.1381966011, 0.1381966011),],
-    3: [(1, -0.8, 0.25, 0.25, 0.25, 0.25),
-        (4, 0.45, 0.5, 0.166666667, 0.166666667, 0.166666667)],
-    4: [(1, -0.078933, 0.25, 0.25, 0.25, 0.25),
-        (4, 0.0457333333, 0.7857142857, 0.0714285714, 0.0714285714, 0.0714285714),
-        (1, 0.1493333333, 0.3994035762, 0.1005964238, 0.3994035762, 0.1005964238),
-        (1, 0.1493333333, 0.3994035762, 0.1005964238, 0.1005964238, 0.3994035762),
-        (1, 0.1493333333, 0.3994035762, 0.3994035762, 0.1005964238, 0.1005964238),
-        (1, 0.1493333333, 0.1005964238, 0.3994035762, 0.3994035762, 0.1005964238),
-        (1, 0.1493333333, 0.1005964238, 0.3994035762, 0.1005964238, 0.3994035762),
-        (1, 0.1493333333, 0.1005964238, 0.1005964238, 0.3994035762, 0.3994035762),],
-    5: None
-}
-
+from .keast_rules import _KEAST_PTS
+from .strang_rules import _STRANG_PTS
 
 ############################################################
 #                         FUNCTIONS                        #
 ############################################################
+
 
 def gaus_quad_tri(p: int) -> np.ndarray:
     """
@@ -106,17 +48,8 @@ def gaus_quad_tri(p: int) -> np.ndarray:
     P[3,:] = L3 values
     """
 
-    Pts = []
-    for N, W, L1, L2, L3 in _GAUSQUADTRI[p]:
-        l1, l2, l3 = L1, L2, L3
-        for n in range(N):
-            if n==3:
-                l1, l2, l3 = L1, L3, L2
-            
-            Pts.append([W,l1, l2, l3])
-            l1, l2, l3 = l2, l3, l1
-    pts = np.array(Pts).T
-    return pts
+    return _STRANG_PTS[p]
+
 
 def gaus_quad_tet(p: int) -> np.ndarray:
     """
@@ -139,25 +72,20 @@ def gaus_quad_tet(p: int) -> np.ndarray:
     P[3,:] = L3 values
     """
 
-    Pts = []
-    for N, W, L1, L2, L3, L4 in _GAUSQUADTET[p]:
-        l1, l2, l3, l4 = L1, L2, L3, L4
-        for n in range(N):
-            Pts.append([W, l1, l2, l3, l4])
-            l1, l2, l3, l4 = l2, l3, l4, l1
-    pts = np.array(Pts).T
-    return pts
-
+    return _KEAST_PTS[p]
 
 
 ############################################################
 #                      NUMBA COMPILED                     #
 ############################################################
 
-@njit(types.Tuple((f8[:], f8[:], f8[:], i8[:]))(f8[:,:], i8[:,:], f8[:,:]), cache=True, nogil=True)
-def generate_int_points_tri(nodes: np.ndarray,
-                            triangles: np.ndarray,
-                            PTS: np.ndarray):
+
+@njit(
+    types.Tuple((f8[:], f8[:], f8[:], i8[:]))(f8[:, :], i8[:, :], f8[:, :]),
+    cache=True,
+    nogil=True,
+)
+def generate_int_points_tri(nodes: np.ndarray, triangles: np.ndarray, PTS: np.ndarray):
 
     nDPTs = PTS.shape[1]
     xall = np.zeros((nDPTs, triangles.shape[1]))
@@ -165,16 +93,15 @@ def generate_int_points_tri(nodes: np.ndarray,
     zall = np.zeros((nDPTs, triangles.shape[1]))
 
     for it in range(triangles.shape[1]):
-        
         vertex_ids = triangles[:, it]
 
         x1, x2, x3 = nodes[0, vertex_ids]
         y1, y2, y3 = nodes[1, vertex_ids]
         z1, z2, z3 = nodes[2, vertex_ids]
 
-        xspts = x1*PTS[1,:] + x2*PTS[2,:] + x3*PTS[3,:]
-        yspts = y1*PTS[1,:] + y2*PTS[2,:] + y3*PTS[3,:]
-        zspts = z1*PTS[1,:] + z2*PTS[2,:] + z3*PTS[3,:]
+        xspts = x1 * PTS[1, :] + x2 * PTS[2, :] + x3 * PTS[3, :]
+        yspts = y1 * PTS[1, :] + y2 * PTS[2, :] + y3 * PTS[3, :]
+        zspts = z1 * PTS[1, :] + z2 * PTS[2, :] + z3 * PTS[3, :]
 
         xall[:, it] = xspts
         yall[:, it] = yspts
@@ -186,7 +113,6 @@ def generate_int_points_tri(nodes: np.ndarray,
     shape = np.array((nDPTs, triangles.shape[1]))
 
     return xall_flat, yall_flat, zall_flat, shape
-
 
 
 @njit(f8(f8[:], f8[:]), cache=True, fastmath=True, nogil=True)
@@ -202,8 +128,9 @@ def dot(a: np.ndarray, b: np.ndarray) -> float:
     """
     a0, a1, a2 = a[0], a[1], a[2]
     b0, b1, b2 = b[0], b[1], b[2]
-    
-    return a0*b0 + a1*b1 + a2*b2
+
+    return a0 * b0 + a1 * b1 + a2 * b2
+
 
 @njit(c16(c16[:], c16[:]), cache=True, fastmath=True, nogil=True)
 def dot_c(a: np.ndarray, b: np.ndarray) -> complex:
@@ -218,8 +145,9 @@ def dot_c(a: np.ndarray, b: np.ndarray) -> complex:
     """
     a0, a1, a2 = a[0], a[1], a[2]
     b0, b1, b2 = b[0], b[1], b[2]
-    
-    return a0*b0 + a1*b1 + a2*b2
+
+    return a0 * b0 + a1 * b1 + a2 * b2
+
 
 @njit(f8[:](f8[:], f8[:]), cache=True, fastmath=True, nogil=True)
 def cross(a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -233,10 +161,11 @@ def cross(a: np.ndarray, b: np.ndarray) -> np.ndarray:
         np.ndarray: a ⨉ b
     """
     crossv = np.empty((3,), dtype=np.float64)
-    crossv[0] = a[1]*b[2] - a[2]*b[1]
-    crossv[1] = a[2]*b[0] - a[0]*b[2]
-    crossv[2] = a[0]*b[1] - a[1]*b[0]
+    crossv[0] = a[1] * b[2] - a[2] * b[1]
+    crossv[1] = a[2] * b[0] - a[0] * b[2]
+    crossv[2] = a[0] * b[1] - a[1] * b[0]
     return crossv
+
 
 @njit(c16[:](c16[:], c16[:]), cache=True, fastmath=True, nogil=True)
 def cross_c(a: np.ndarray, b: np.ndarray):
@@ -250,16 +179,19 @@ def cross_c(a: np.ndarray, b: np.ndarray):
         np.ndarray: a ⨉ b
     """
     crossv = np.empty((3,), dtype=np.complex128)
-    crossv[0] = a[1]*b[2] - a[2]*b[1]
-    crossv[1] = a[2]*b[0] - a[0]*b[2]
-    crossv[2] = a[0]*b[1] - a[1]*b[0]
+    crossv[0] = a[1] * b[2] - a[2] * b[1]
+    crossv[1] = a[2] * b[0] - a[0] * b[2]
+    crossv[2] = a[0] * b[1] - a[1] * b[0]
     return crossv
 
-@njit(f8[:](f8[:], f8[:], f8[:], f8[:]), cache=True, nogil=True)
-def outward_normal(n1: np.ndarray, n2: np.ndarray, n3: np.ndarray, o: np.ndarray) -> np.ndarray:
-    """Copmutes an outward normal vector of a triangle spanned by 3 points.
 
-    Computes the triangle surface (n1, n2, n3) which have normal n. 
+@njit(f8[:](f8[:], f8[:], f8[:], f8[:]), cache=True, nogil=True)
+def calc_inward_normal(
+    n1: np.ndarray, n2: np.ndarray, n3: np.ndarray, inward_normal: np.ndarray
+) -> np.ndarray:
+    """Copmutes an inward normal vector of a triangle spanned by 3 points.
+
+    Computes the triangle surface (n1, n2, n3) which have normal n.
     The normal is aligned with respect to an origin.
 
     Args:
@@ -269,17 +201,18 @@ def outward_normal(n1: np.ndarray, n2: np.ndarray, n3: np.ndarray, o: np.ndarray
         o (np.ndarray): The alignment origin
 
     Returns:
-        Node 1 (3,) array: The outward pointing normal
+        Node 1 (3,) array: The inward pointing normal
     """
-    e1 = n2-n1
-    e2 = n3-n1
+    e1 = n2 - n1
+    e2 = n3 - n1
     n = cross(e1, e2)
-    n = n/np.sqrt(n[0]**2 + n[1]**2 + n[2]**2)
+    n = n / np.sqrt(n[0] ** 2 + n[1] ** 2 + n[2] ** 2)
     sgn = 1
-    if dot(n,(n1+n2+n3)/3.0 - o) < 0:
+    if dot(n, inward_normal) < 0:
         sgn = -1
-    return n*sgn
-    
+    return n * sgn
+
+
 @njit(f8(f8[:], f8[:], f8[:]), cache=True, fastmath=True, nogil=True)
 def calc_area(x1: np.ndarray, x2: np.ndarray, x3: np.ndarray) -> float:
     """Computes the tirangle surface area of the traingle spun by three nodes.
@@ -295,11 +228,13 @@ def calc_area(x1: np.ndarray, x2: np.ndarray, x3: np.ndarray) -> float:
     e1 = x2 - x1
     e2 = x3 - x1
     av = cross(e1, e2)
-    return np.sqrt(av[0]**2 + av[1]**2 + av[2]**2)/2
+    return np.sqrt(av[0] ** 2 + av[1] ** 2 + av[2] ** 2) / 2
 
 
 @njit(f8(f8[:], f8[:], f8[:], f8[:]), cache=True, fastmath=True, nogil=True)
-def calc_volume(x1: np.ndarray, x2: np.ndarray, x3: np.ndarray, x4: np.ndarray) -> float:
+def calc_volume(
+    x1: np.ndarray, x2: np.ndarray, x3: np.ndarray, x4: np.ndarray
+) -> float:
     """Computes the volume of the tetrahedron spun by four nodes.
 
     Args:
@@ -315,11 +250,14 @@ def calc_volume(x1: np.ndarray, x2: np.ndarray, x3: np.ndarray, x4: np.ndarray) 
     b_x, b_y, b_z = x2[0] - x4[0], x2[1] - x4[1], x2[2] - x4[2]
     c_x, c_y, c_z = x3[0] - x4[0], x3[1] - x4[1], x3[2] - x4[2]
 
-    vol = (a_x * (b_y * c_z - b_z * c_y) -
-           a_y * (b_x * c_z - b_z * c_x) +
-           a_z * (b_x * c_y - b_y * c_x))
-    
+    vol = (
+        a_x * (b_y * c_z - b_z * c_y)
+        - a_y * (b_x * c_z - b_z * c_x)
+        + a_z * (b_x * c_y - b_y * c_x)
+    )
+
     return abs(vol) / 6.0
+
 
 @njit(i8[:, :](i8[:], i8[:, :]), cache=True, nogil=True)
 def local_mapping(vertex_ids, triangle_ids):
@@ -327,7 +265,7 @@ def local_mapping(vertex_ids, triangle_ids):
     Parameters
     ----------
     vertex_ids   : 1-D int64 array (length 4)
-        Global vertex 0.1005964238ers of one tetrahedron, in *its* order
+        Global vertex indices of one tetrahedron, in *its* order
         (v0, v1, v2, v3).
 
     triangle_ids : 2-D int64 array (nTri × 3)
@@ -343,34 +281,38 @@ def local_mapping(vertex_ids, triangle_ids):
     """
     ndim = triangle_ids.shape[0]
     ntri = triangle_ids.shape[1]
-    out  = np.zeros(triangle_ids.shape, dtype=np.int64)
+    out = np.zeros(triangle_ids.shape, dtype=np.int64)
 
-    for t in range(ntri):                 # each triangle
-        for j in range(ndim):                # each vertex in that triangle
-            gid = triangle_ids[j, t]      # global ID to look up
+    for t in range(ntri):  # each triangle
+        for j in range(ndim):  # each vertex in that triangle
+            gid = triangle_ids[j, t]  # global ID to look up
 
             # linear search over the four tet vertices
             for k in range(4):
                 if vertex_ids[k] == gid:
-                    out[j, t] = k         # store local index 0-3
-                    break                 # stop the k-loop
+                    out[j, t] = k  # store local index 0-3
+                    break  # stop the k-loop
 
     return out
 
 
-@njit(f8[:,:](f8[:], f8[:], f8[:]), cache=True, nogil=True, fastmath=True)
+@njit(f8[:, :](f8[:], f8[:], f8[:]), cache=True, nogil=True, fastmath=True)
 def compute_distances(xs: np.ndarray, ys: np.ndarray, zs: np.ndarray) -> np.ndarray:
     N = xs.shape[0]
-    Ds = np.empty((N,N), dtype=np.float64)
+    Ds = np.empty((N, N), dtype=np.float64)
     for i in range(N):
-        for j in range(i,N):
-            Ds[i,j] = np.sqrt((xs[i]-xs[j])**2 + (ys[i]-ys[j])**2 + (zs[i]-zs[j])**2) 
-            Ds[j,i] = Ds[i,j]  
+        for j in range(i, N):
+            Ds[i, j] = np.sqrt(
+                (xs[i] - xs[j]) ** 2 + (ys[i] - ys[j]) ** 2 + (zs[i] - zs[j]) ** 2
+            )
+            Ds[j, i] = Ds[i, j]
     return Ds
 
-ids = np.array([[0, 0, 1, 1, 2, 2],[1, 2, 0, 2, 0, 1]], dtype=np.int64)
 
-@njit(c16[:,:](c16[:,:]), cache=True, nogil=True)
+ids = np.array([[0, 0, 1, 1, 2, 2], [1, 2, 0, 2, 0, 1]], dtype=np.int64)
+
+
+@njit(c16[:, :](c16[:, :]), cache=True, nogil=True)
 def matinv(M: np.ndarray) -> np.ndarray:
     """Optimized matrix inverse of 3x3 matrix
 
@@ -380,27 +322,42 @@ def matinv(M: np.ndarray) -> np.ndarray:
     Returns:
         np.ndarray: The matrix inverse inv(M)
     """
-    out = np.zeros((3,3), dtype=np.complex128)
-   
-    if M[0,1]==0 and M[0,2]==0 and M[1,0]==0 and M[1,2]==0 and M[2,0]==0 and M[2,1]==0:
-        out[0,0] = 1/M[0,0]
-        out[1,1] = 1/M[1,1]
-        out[2,2] = 1/M[2,2]
+    out = np.zeros((3, 3), dtype=np.complex128)
+
+    if (
+        M[0, 1] == 0
+        and M[0, 2] == 0
+        and M[1, 0] == 0
+        and M[1, 2] == 0
+        and M[2, 0] == 0
+        and M[2, 1] == 0
+    ):
+        out[0, 0] = 1 / M[0, 0]
+        out[1, 1] = 1 / M[1, 1]
+        out[2, 2] = 1 / M[2, 2]
     else:
-        det = M[0,0]*M[1,1]*M[2,2] - M[0,0]*M[1,2]*M[2,1] - M[0,1]*M[1,0]*M[2,2] + M[0,1]*M[1,2]*M[2,0] + M[0,2]*M[1,0]*M[2,1] - M[0,2]*M[1,1]*M[2,0]
-        out[0,0] = M[1,1]*M[2,2] - M[1,2]*M[2,1]
-        out[0,1] = -M[0,1]*M[2,2] + M[0,2]*M[2,1]
-        out[0,2] = M[0,1]*M[1,2] - M[0,2]*M[1,1]
-        out[1,0] = -M[1,0]*M[2,2] + M[1,2]*M[2,0]
-        out[1,1] = M[0,0]*M[2,2] - M[0,2]*M[2,0]
-        out[1,2] = -M[0,0]*M[1,2] + M[0,2]*M[1,0]
-        out[2,0] = M[1,0]*M[2,1] - M[1,1]*M[2,0]
-        out[2,1] = -M[0,0]*M[2,1] + M[0,1]*M[2,0]
-        out[2,2] = M[0,0]*M[1,1] - M[0,1]*M[1,0]
-        out = out/det
+        det = (
+            M[0, 0] * M[1, 1] * M[2, 2]
+            - M[0, 0] * M[1, 2] * M[2, 1]
+            - M[0, 1] * M[1, 0] * M[2, 2]
+            + M[0, 1] * M[1, 2] * M[2, 0]
+            + M[0, 2] * M[1, 0] * M[2, 1]
+            - M[0, 2] * M[1, 1] * M[2, 0]
+        )
+        out[0, 0] = M[1, 1] * M[2, 2] - M[1, 2] * M[2, 1]
+        out[0, 1] = -M[0, 1] * M[2, 2] + M[0, 2] * M[2, 1]
+        out[0, 2] = M[0, 1] * M[1, 2] - M[0, 2] * M[1, 1]
+        out[1, 0] = -M[1, 0] * M[2, 2] + M[1, 2] * M[2, 0]
+        out[1, 1] = M[0, 0] * M[2, 2] - M[0, 2] * M[2, 0]
+        out[1, 2] = -M[0, 0] * M[1, 2] + M[0, 2] * M[1, 0]
+        out[2, 0] = M[1, 0] * M[2, 1] - M[1, 1] * M[2, 0]
+        out[2, 1] = -M[0, 0] * M[2, 1] + M[0, 1] * M[2, 0]
+        out[2, 2] = M[0, 0] * M[1, 1] - M[0, 1] * M[1, 0]
+        out = out / det
     return out
 
-@njit(f8[:,:](f8[:,:]), cache=True, nogil=True)
+
+@njit(f8[:, :](f8[:, :]), cache=True, nogil=True)
 def matinv_r(M: np.ndarray) -> np.ndarray:
     """Optimized matrix inverse of 3x3 matrix
 
@@ -410,25 +367,40 @@ def matinv_r(M: np.ndarray) -> np.ndarray:
     Returns:
         np.ndarray: The matrix inverse inv(M)
     """
-    out = np.zeros((3,3), dtype=np.float64)
-   
-    if M[0,1]==0 and M[0,2]==0 and M[1,0]==0 and M[1,2]==0 and M[2,0]==0 and M[2,1]==0:
-        out[0,0] = 1/M[0,0]
-        out[1,1] = 1/M[1,1]
-        out[2,2] = 1/M[2,2]
+    out = np.zeros((3, 3), dtype=np.float64)
+
+    if (
+        M[0, 1] == 0
+        and M[0, 2] == 0
+        and M[1, 0] == 0
+        and M[1, 2] == 0
+        and M[2, 0] == 0
+        and M[2, 1] == 0
+    ):
+        out[0, 0] = 1 / M[0, 0]
+        out[1, 1] = 1 / M[1, 1]
+        out[2, 2] = 1 / M[2, 2]
     else:
-        det = M[0,0]*M[1,1]*M[2,2] - M[0,0]*M[1,2]*M[2,1] - M[0,1]*M[1,0]*M[2,2] + M[0,1]*M[1,2]*M[2,0] + M[0,2]*M[1,0]*M[2,1] - M[0,2]*M[1,1]*M[2,0]
-        out[0,0] = M[1,1]*M[2,2] - M[1,2]*M[2,1]
-        out[0,1] = -M[0,1]*M[2,2] + M[0,2]*M[2,1]
-        out[0,2] = M[0,1]*M[1,2] - M[0,2]*M[1,1]
-        out[1,0] = -M[1,0]*M[2,2] + M[1,2]*M[2,0]
-        out[1,1] = M[0,0]*M[2,2] - M[0,2]*M[2,0]
-        out[1,2] = -M[0,0]*M[1,2] + M[0,2]*M[1,0]
-        out[2,0] = M[1,0]*M[2,1] - M[1,1]*M[2,0]
-        out[2,1] = -M[0,0]*M[2,1] + M[0,1]*M[2,0]
-        out[2,2] = M[0,0]*M[1,1] - M[0,1]*M[1,0]
-        out = out/det
+        det = (
+            M[0, 0] * M[1, 1] * M[2, 2]
+            - M[0, 0] * M[1, 2] * M[2, 1]
+            - M[0, 1] * M[1, 0] * M[2, 2]
+            + M[0, 1] * M[1, 2] * M[2, 0]
+            + M[0, 2] * M[1, 0] * M[2, 1]
+            - M[0, 2] * M[1, 1] * M[2, 0]
+        )
+        out[0, 0] = M[1, 1] * M[2, 2] - M[1, 2] * M[2, 1]
+        out[0, 1] = -M[0, 1] * M[2, 2] + M[0, 2] * M[2, 1]
+        out[0, 2] = M[0, 1] * M[1, 2] - M[0, 2] * M[1, 1]
+        out[1, 0] = -M[1, 0] * M[2, 2] + M[1, 2] * M[2, 0]
+        out[1, 1] = M[0, 0] * M[2, 2] - M[0, 2] * M[2, 0]
+        out[1, 2] = -M[0, 0] * M[1, 2] + M[0, 2] * M[1, 0]
+        out[2, 0] = M[1, 0] * M[2, 1] - M[1, 1] * M[2, 0]
+        out[2, 1] = -M[0, 0] * M[2, 1] + M[0, 1] * M[2, 0]
+        out[2, 2] = M[0, 0] * M[1, 1] - M[0, 1] * M[1, 0]
+        out = out / det
     return out
+
 
 @njit(cache=True, nogil=True)
 def matmul(M: np.ndarray, vecs: np.ndarray):
@@ -441,14 +413,17 @@ def matmul(M: np.ndarray, vecs: np.ndarray):
     Returns:
         np.ndarray: The transformed (3,N) set of vectors
     """
-    out = np.empty((3,vecs.shape[1]), dtype=vecs.dtype)
-    out[0,:] = M[0,0]*vecs[0,:] + M[0,1]*vecs[1,:] + M[0,2]*vecs[2,:]
-    out[1,:] = M[1,0]*vecs[0,:] + M[1,1]*vecs[1,:] + M[1,2]*vecs[2,:]
-    out[2,:] = M[2,0]*vecs[0,:] + M[2,1]*vecs[1,:] + M[2,2]*vecs[2,:]
+    out = np.empty((3, vecs.shape[1]), dtype=vecs.dtype)
+    out[0, :] = M[0, 0] * vecs[0, :] + M[0, 1] * vecs[1, :] + M[0, 2] * vecs[2, :]
+    out[1, :] = M[1, 0] * vecs[0, :] + M[1, 1] * vecs[1, :] + M[1, 2] * vecs[2, :]
+    out[2, :] = M[2, 0] * vecs[0, :] + M[2, 1] * vecs[1, :] + M[2, 2] * vecs[2, :]
     return out
 
+
 @njit(cache=True, nogil=True)
-def _subsample_coordinates(xs: np.ndarray, ys: np.ndarray, tolerance: float, xmin: float) -> tuple[np.ndarray, np.ndarray]:
+def _subsample_coordinates(
+    xs: np.ndarray, ys: np.ndarray, tolerance: float, xmin: float
+) -> tuple[np.ndarray, np.ndarray]:
     """This function takes a set of x and y coordinates in a finely sampled set and returns a reduced
     set of numbers that traces the input curve within a provided tolerance.
 
@@ -470,17 +445,17 @@ def _subsample_coordinates(xs: np.ndarray, ys: np.ndarray, tolerance: float, xmi
     for iteration in range(N):
         i1 = start_index
         done = 0
-        for i2 in range(i1+1,N):
-            x_true = xs[i1:i2+1]
-            y_true = ys[i1:i2+1]
+        for i2 in range(i1 + 1, N):
+            x_true = xs[i1 : i2 + 1]
+            y_true = ys[i1 : i2 + 1]
 
-            x_f = np.linspace(xs[i1],xs[i2], i2-i1+1)
-            y_f = np.linspace(ys[i1],ys[i2], i2-i1+1)
-            error = np.max(np.sqrt((x_f-x_true)**2 + (y_f-y_true)**2))
-            ds = np.sqrt((xs[i2]-xs[i1])**2 + (ys[i2]-ys[i1])**2)
+            x_f = np.linspace(xs[i1], xs[i2], i2 - i1 + 1)
+            y_f = np.linspace(ys[i1], ys[i2], i2 - i1 + 1)
+            error = np.max(np.sqrt((x_f - x_true) ** 2 + (y_f - y_true) ** 2))
+            ds = np.sqrt((xs[i2] - xs[i1]) ** 2 + (ys[i2] - ys[i1]) ** 2)
             # If at the end
-            if i2==N-1: 
-                ids[store_index] = i2-1
+            if i2 == N - 1:
+                ids[store_index] = i2 - 1
                 final_index = store_index + 1
                 done = 1
                 break
@@ -488,47 +463,57 @@ def _subsample_coordinates(xs: np.ndarray, ys: np.ndarray, tolerance: float, xmi
             if ds < xmin:
                 continue
             # If the end is less than a minimum distance
-            if np.sqrt((ys[-1]-ys[i2])**2 + (xs[-1]-xs[i2])**2) < xmin:
-                imid = i1 + (N-1-i1)//2
+            if np.sqrt((ys[-1] - ys[i2]) ** 2 + (xs[-1] - xs[i2]) ** 2) < xmin:
+                imid = i1 + (N - 1 - i1) // 2
                 ids[store_index] = imid
-                ids[store_index+1] = N-1
+                ids[store_index + 1] = N - 1
                 final_index = store_index + 2
                 done = 1
                 break
             if error < tolerance:
                 continue
             else:
-                ids[store_index] = i2-1
+                ids[store_index] = i2 - 1
                 start_index = i2
                 store_index = store_index + 1
                 break
-        if done==1:
+        if done == 1:
             break
     return xs[ids[0:final_index]], ys[ids[0:final_index]]
 
 
 @njit(f8(f8[:], f8[:], f8[:]), cache=True, nogil=True)
 def area(x1: np.ndarray, x2: np.ndarray, x3: np.ndarray):
-    """ Computes the area given three coordinates:
-    
+    """Computes the area given three coordinates:
+
     Args:
         x1 (np.ndarray): (3,) vector
         x2 (np.ndarray): (3,) vector
         x3 (np.ndarray): (3,) vector
-        
+
     Returns:
-        area (float)    
+        area (float)
     """
     e1 = x2 - x1
     e2 = x3 - x1
-    av = np.array([e1[1]*e2[2] - e1[2]*e2[1], e1[2]*e2[0] - e1[0]*e2[2], e1[0]*e2[1] - e1[1]*e2[0]])
-    return np.sqrt(av[0]**2 + av[1]**2 + av[2]**2)/2
+    av = np.array(
+        [
+            e1[1] * e2[2] - e1[2] * e2[1],
+            e1[2] * e2[0] - e1[0] * e2[2],
+            e1[0] * e2[1] - e1[1] * e2[0],
+        ]
+    )
+    return np.sqrt(av[0] ** 2 + av[1] ** 2 + av[2] ** 2) / 2
 
 
-@njit(types.Tuple((f8[:], f8[:], f8[:], f8[:], f8[:], i8[:]))(f8[:,:], i8[:,:], f8[:,:]), cache=True, nogil=True)
-def generate_int_data_tet(nodes: np.ndarray,
-                          tetrahedra: np.ndarray,
-                          PTS: np.ndarray):
+@njit(
+    types.Tuple((f8[:], f8[:], f8[:], f8[:], f8[:], i8[:]))(
+        f8[:, :], i8[:, :], f8[:, :]
+    ),
+    cache=True,
+    nogil=True,
+)
+def generate_int_data_tet(nodes: np.ndarray, tetrahedra: np.ndarray, PTS: np.ndarray):
     """Generate volumetric integration points
 
     Args:
@@ -546,38 +531,46 @@ def generate_int_data_tet(nodes: np.ndarray,
     wall = np.zeros((nDPTs, tetrahedra.shape[1]))
     aall = np.zeros((nDPTs, tetrahedra.shape[1]))
     for it in range(tetrahedra.shape[1]):
-        
         vertex_ids = tetrahedra[:, it]
 
         x1, x2, x3, x4 = nodes[0, vertex_ids]
         y1, y2, y3, y4 = nodes[1, vertex_ids]
         z1, z2, z3, z4 = nodes[2, vertex_ids]
 
-        xspts = x1*PTS[1,:] + x2*PTS[2,:] + x3*PTS[3,:] + x4*PTS[4,:]
-        yspts = y1*PTS[1,:] + y2*PTS[2,:] + y3*PTS[3,:] + y4*PTS[4,:]
-        zspts = z1*PTS[1,:] + z2*PTS[2,:] + z3*PTS[3,:] + z4*PTS[4,:]
+        xspts = x1 * PTS[1, :] + x2 * PTS[2, :] + x3 * PTS[3, :] + x4 * PTS[4, :]
+        yspts = y1 * PTS[1, :] + y2 * PTS[2, :] + y3 * PTS[3, :] + y4 * PTS[4, :]
+        zspts = z1 * PTS[1, :] + z2 * PTS[2, :] + z3 * PTS[3, :] + z4 * PTS[4, :]
 
         xall[:, it] = xspts
         yall[:, it] = yspts
         zall[:, it] = zspts
-        wall[:, it] = PTS[0,:]
-        aall[:, it] = calc_volume(nodes[:,vertex_ids[0]], nodes[:,vertex_ids[1]], nodes[:,vertex_ids[2]], nodes[:,vertex_ids[3]])
+        wall[:, it] = PTS[0, :]
+        aall[:, it] = calc_volume(
+            nodes[:, vertex_ids[0]],
+            nodes[:, vertex_ids[1]],
+            nodes[:, vertex_ids[2]],
+            nodes[:, vertex_ids[3]],
+        )
 
     xall_flat = xall.flatten()
     yall_flat = yall.flatten()
     zall_flat = zall.flatten()
     wall_flat = wall.flatten()
     aall_flat = aall.flatten()
-    
+
     shape = np.array((nDPTs, tetrahedra.shape[1]))
 
     return xall_flat, yall_flat, zall_flat, wall_flat, aall_flat, shape
 
 
-@njit(types.Tuple((f8[:], f8[:], f8[:], f8[:], f8[:], i8[:]))(f8[:,:], i8[:,:], f8[:,:]), cache=True, nogil=True)
-def generate_int_data_tri(nodes: np.ndarray,
-                          triangles: np.ndarray,
-                          PTS: np.ndarray):
+@njit(
+    types.Tuple((f8[:], f8[:], f8[:], f8[:], f8[:], i8[:]))(
+        f8[:, :], i8[:, :], f8[:, :]
+    ),
+    cache=True,
+    nogil=True,
+)
+def generate_int_data_tri(nodes: np.ndarray, triangles: np.ndarray, PTS: np.ndarray):
 
     nDPTs = PTS.shape[1]
     xall = np.zeros((nDPTs, triangles.shape[1]))
@@ -586,37 +579,41 @@ def generate_int_data_tri(nodes: np.ndarray,
     wall = np.zeros((nDPTs, triangles.shape[1]))
     aall = np.zeros((nDPTs, triangles.shape[1]))
     for it in range(triangles.shape[1]):
-        
         vertex_ids = triangles[:, it]
 
         x1, x2, x3 = nodes[0, vertex_ids]
         y1, y2, y3 = nodes[1, vertex_ids]
         z1, z2, z3 = nodes[2, vertex_ids]
 
-        xspts = x1*PTS[1,:] + x2*PTS[2,:] + x3*PTS[3,:]
-        yspts = y1*PTS[1,:] + y2*PTS[2,:] + y3*PTS[3,:]
-        zspts = z1*PTS[1,:] + z2*PTS[2,:] + z3*PTS[3,:]
+        xspts = x1 * PTS[1, :] + x2 * PTS[2, :] + x3 * PTS[3, :]
+        yspts = y1 * PTS[1, :] + y2 * PTS[2, :] + y3 * PTS[3, :]
+        zspts = z1 * PTS[1, :] + z2 * PTS[2, :] + z3 * PTS[3, :]
 
         xall[:, it] = xspts
         yall[:, it] = yspts
         zall[:, it] = zspts
-        wall[:, it] = PTS[0,:]
-        aall[:, it] = calc_area(nodes[:,vertex_ids[0]], nodes[:,vertex_ids[1]], nodes[:,vertex_ids[2]])
+        wall[:, it] = PTS[0, :]
+        aall[:, it] = calc_area(
+            nodes[:, vertex_ids[0]], nodes[:, vertex_ids[1]], nodes[:, vertex_ids[2]]
+        )
 
     xall_flat = xall.flatten()
     yall_flat = yall.flatten()
     zall_flat = zall.flatten()
     wall_flat = wall.flatten()
     aall_flat = aall.flatten()
-    
+
     shape = np.array((nDPTs, triangles.shape[1]))
 
     return xall_flat, yall_flat, zall_flat, wall_flat, aall_flat, shape
 
-@njit(types.Tuple((f8[:], f8[:], f8[:], i8[:]))(f8[:,:], i8[:,:], f8[:,:]), cache=True, nogil=True)
-def generate_int_points_tet(nodes: np.ndarray,
-                            tets: np.ndarray,
-                            PTS: np.ndarray):
+
+@njit(
+    types.Tuple((f8[:], f8[:], f8[:], i8[:]))(f8[:, :], i8[:, :], f8[:, :]),
+    cache=True,
+    nogil=True,
+)
+def generate_int_points_tet(nodes: np.ndarray, tets: np.ndarray, PTS: np.ndarray):
 
     nPTS = PTS.shape[1]
     xall = np.zeros((nPTS, tets.shape[1]))
@@ -624,16 +621,15 @@ def generate_int_points_tet(nodes: np.ndarray,
     zall = np.zeros((nPTS, tets.shape[1]))
 
     for it in range(tets.shape[1]):
-        
         vertex_ids = tets[:, it]
 
         x1, x2, x3, x4 = nodes[0, vertex_ids]
         y1, y2, y3, y4 = nodes[1, vertex_ids]
         z1, z2, z3, z4 = nodes[2, vertex_ids]
 
-        xspts = x1*PTS[1,:] + x2*PTS[2,:] + x3*PTS[3,:] + x4*PTS[4,:]
-        yspts = y1*PTS[1,:] + y2*PTS[2,:] + y3*PTS[3,:] + y4*PTS[4,:]
-        zspts = z1*PTS[1,:] + z2*PTS[2,:] + z3*PTS[3,:] + z4*PTS[4,:]
+        xspts = x1 * PTS[1, :] + x2 * PTS[2, :] + x3 * PTS[3, :] + x4 * PTS[4, :]
+        yspts = y1 * PTS[1, :] + y2 * PTS[2, :] + y3 * PTS[3, :] + y4 * PTS[4, :]
+        zspts = z1 * PTS[1, :] + z2 * PTS[2, :] + z3 * PTS[3, :] + z4 * PTS[4, :]
 
         xall[:, it] = xspts
         yall[:, it] = yspts
