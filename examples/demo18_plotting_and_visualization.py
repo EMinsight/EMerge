@@ -28,7 +28,7 @@ distance = 2 * mm
 # Setup the simulation
 
 m = em.Simulation("PlottingDemo")
-m.check_version("2.7.0")
+m.check_version("2.7.1")
 
 box = em.geo.Box(wgb, wga, L, (-wgb / 2, -wga / 2, -L))
 cut1 = em.geo.Box(
