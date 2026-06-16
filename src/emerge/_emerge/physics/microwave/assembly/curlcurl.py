@@ -223,7 +223,11 @@ def tet_coefficients(xs, ys, zs):
 
 
 def tet_mass_stiffness_matrices(
-    field: Nedelec2, er: np.ndarray, ur: np.ndarray, cscmap: CSRMapping | None = None
+    field: Nedelec2,
+    er: np.ndarray,
+    ur: np.ndarray,
+    conductor_tets: np.ndarray,
+    cscmap: CSRMapping | None = None,
 ) -> tuple[np.ndarray, np.ndarray, CSRMapping]:
     """Computes the curl-curl Nedelec-2 mass and stiffness matrices
 
@@ -244,6 +248,10 @@ def tet_mass_stiffness_matrices(
     tet_to_edge = field.mesh.tet_to_edge
     tet_to_tri = field.mesh.tet_to_tri
 
+    tet_assy = np.arange(tets.shape[1])
+    if conductor_tets.shape[0] > 0:
+        tet_assy = np.delete(tet_assy, conductor_tets)
+
     dataE, dataB, rows, cols = _matrix_builder(
         nodes,
         tets,
@@ -254,6 +262,7 @@ def tet_mass_stiffness_matrices(
         tet_to_tri,
         ur,
         er,
+        tet_assy,
     )
 
     if cscmap is None:
@@ -400,25 +409,36 @@ def ned2_tet_stiff_mass(tet_vertices, local_edge_map, local_tri_map, Ms, Mm):
         i8[:, :],
         c16[:, :, :],
         c16[:, :, :],
+        i8[:],
     ),
     cache=True,
     nogil=True,
     parallel=True,
 )
 def _matrix_builder(
-    nodes, tets, tris, edges, tet_to_field, tet_to_edge, tet_to_tri, ur, er
+    nodes,
+    tets,
+    tris,
+    edges,
+    tet_to_field,
+    tet_to_edge,
+    tet_to_tri,
+    ur,
+    er,
+    tetids,
 ):
     nT = tets.shape[1]
-
-    nnz = nT * 400
+    ntets_assy = tetids.shape[0]
+    nnz = ntets_assy * 400
 
     rows = np.empty(nnz, dtype=np.int64)
     cols = np.empty_like(rows)
     dataE = np.empty_like(rows, dtype=np.complex128)
     dataB = np.empty_like(rows, dtype=np.complex128)
 
-    for itet in prange(nT):  # ty: ignore
-        p = itet * 400
+    for iassy in prange(ntets_assy):  # ty: ignore
+        itet = tetids[iassy]
+        p = iassy * 400
         urt = ur[:, :, itet]
         ert = er[:, :, itet]
 
