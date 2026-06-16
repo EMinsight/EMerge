@@ -29,7 +29,7 @@ from ....bc import (
 from emsutil import Material, AIR, Saveable
 from ....const import Z0, C0, EPS0, MU0
 from . import background_field as bf
-
+from ....logsettings import DEBUG_COLLECTOR
 
 ############################################################
 #                    BOUNDARY CONDITIONS                   #
@@ -617,6 +617,10 @@ class ThinConductor(RobinBC, Saveable):
         self._sr: float = surface_roughness
         self._sr_model: str = sr_model
         self._Zf: Callable | None = impedance_function
+
+        DEBUG_COLLECTOR.add_report(
+            "The ThinConductor boundary condition uses a new DoF splitting algorithm which may not be perfect. If you run into any issues, please condtact info@emerge-software.com to resolve any issues! :)"
+        )
 
     def get_basis(self) -> np.ndarray | None:
         return None
