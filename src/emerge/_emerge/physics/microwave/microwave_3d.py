@@ -570,10 +570,14 @@ class Microwave3D:
                     geometry.material.cond.value
                     > self.assembler.settings.mw_3d_surfimplim
                 ) and (thickness is not None):
-                    logger.debug(f"Assigning ThinConductor BC to {geometry}")
-                    self.bc.ThinConductor(
-                        geometry.selection, geometry.material, thickness
-                    )
+                    if geometry.material.name == "PEC":
+                        logger.debug(f"Assigning PEC BC to {geometry}")
+                        self.bc.PEC(geometry.selection)
+                    else:
+                        logger.debug(f"Assigning ThinConductor BC to {geometry}")
+                        self.bc.ThinConductor(
+                            geometry.selection, geometry.material, thickness
+                        )
             elif geometry.dim == 3:
                 material = geometry.material
                 if material.cond.value > self.assembler.settings.mw_3d_surfimplim:

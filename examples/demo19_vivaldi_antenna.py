@@ -18,7 +18,7 @@ For ARM MacOS users it is reccommended to install the Accelerate solver using:
 
 """
 
-model = em.Simulation("Vivaldi", loglevel="INFO")
+model = em.Simulation("Vivaldi")
 model.check_version("2.7.2")
 
 mm = 0.001  # Millimeter
