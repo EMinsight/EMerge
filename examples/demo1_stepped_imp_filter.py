@@ -30,7 +30,7 @@ pcbmat = em.Material(er=er, color="#217627", opacity=0.2)
 
 model = em.Simulation("SteppedImpedanceFilter")
 
-model.check_version("2.7.1")  # Checks version compatibility.
+model.check_version("2.7.2")  # Checks version compatibility.
 
 # To accomodate PCB routing we make use of the PCBLayouter class. To use it we need to
 # supply it with a thickness, the desired air-box height, the units at which we supply
