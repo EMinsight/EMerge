@@ -33,6 +33,7 @@ from ...coord import Line
 from emsutil.emdata import EHField, EHFieldFF, DataStructure
 from ...file import Saveable
 from .bcs import background_field as bf
+from .bcs import LumpedElement
 
 EMField = Literal[
     "er",
@@ -785,8 +786,8 @@ class MWField(Saveable):
         """Performs a line integral on the provided line with the an integral argument.
 
         Args:
-            line (Line | list[tuple[float, float, float]]): _description_
-            argument (Callable): _description_
+            line (Line | list[tuple[float, float, float]]): Either an emerge.Line object or a list of points that define a discrete integration path.
+            argument (Callable): a function that takes an EMfield and returns a scalar argument. Example lambda x: x.Ex
 
         Returns:
             EHField: _description_
@@ -805,6 +806,56 @@ class MWField(Saveable):
         nint.dlz = dz
 
         return line._integrate(argument(nint))
+
+    def int_lumped_element(
+        self,
+        lumped_element: LumpedElement,
+        axis: Axis | tuple[float, float, float] | np.ndarray,
+        quantity: Literal["E", "H", "S"] = "E",
+    ) -> float:
+        """Performs a voltage integration of a lumped element.
+        It needs an integration direction axis to work.
+
+        Args:
+            lumped_element (LumpedElement): The lumped element object.
+            axis (Axis | tuple[float,float,float]): The integration axis direction
+
+        Returns:
+            float: _description_
+        """
+        logger.debug(" - Finding Lumped Element integration points")
+        field_axis = _parse_axis(axis).np
+
+        points = self.mesh.get_nodes(lumped_element.tags)
+
+        if points.size == 0:
+            raise ValueError(
+                f"The lumped port {LumpedElement} has no nodes associated with it"
+            )
+
+        xs = self.mesh.nodes[0, points]
+        ys = self.mesh.nodes[1, points]
+        zs = self.mesh.nodes[2, points]
+
+        dotprod = xs * field_axis[0] + ys * field_axis[1] + zs * field_axis[2]
+
+        start_id = np.argwhere(dotprod == np.min(dotprod)).flatten()
+
+        xs = xs[start_id]
+        ys = ys[start_id]
+        zs = zs[start_id]
+
+        voltages = []
+        for x, y, z in zip(xs, ys, zs):
+            start = np.array([x, y, z])
+            end = start + field_axis * lumped_element.height
+            line = Line.from_points(start, end, 51)
+            logger.debug(f" - Integration Line {start} -> {end}.")
+            V = line.line_integral(
+                lambda x, y, z: getattr(self.interpolate(x, y, z), quantity)
+            )
+            voltages.append(V)
+        return sum(voltages) / len(voltages)
 
     def boundary(self, selection: FaceSelection) -> EHField:
         """Interpolate the field on the node coordinates of the surface."""

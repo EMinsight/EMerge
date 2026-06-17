@@ -262,8 +262,38 @@ class Line(Saveable):
         return Line(xs, ys, zs)
 
     def line_integral(self, evalfunc: Callable) -> complex:
-        """Compute the line integral for a complex vector field function evalfunc."""
-        Fx, Fy, Fz = evalfunc(*self.cmid)
+        """Computes a line integral of some vector field function.
+
+        The function will be passed the arguments (x,y,z)
+        The variables x,y,z will be np.ndarray's of shape (N,)
+        The function must return a vector field of shape (3,N), (1,N) or (N,)
+
+        For E-field integration you can typically use:
+        >>> lambda x,y,z: field.interpolate(x,y,z).E
+
+        Args:
+            evalfunc (Callable): The vector field function
+
+        Returns:
+            complex: The line integral value
+        """
+        Fout = evalfunc(*self.cmid)
+
+        N = self.dxs.shape[0]
+        if isinstance(Fout, tuple):
+            Fx, Fy, Fz = Fout
+        elif isinstance(Fout, np.ndarray):
+            if Fout.shape == (3, self.dxs.shape[0]):
+                Fx, Fy, Fz = Fout
+            elif Fout.shape == (1, N) or Fout.shape == (N,):
+                ds = (self.dxs**2 + self.dys**2 + self.dzs**2) ** 0.5
+                Fx = Fout * self.dxs / ds
+                Fy = Fout * self.dys / ds
+                Fz = Fout * self.dzs / ds
+        else:
+            raise ValueError(
+                "Output of function must be either a (3,N) array, (1,N) array, or an (N,) array."
+            )
         EdotL = Fx * self.dxs + Fy * self.dys + Fz * self.dzs
         # plot(np.cumsum(self.dl), EdotL)
         return np.sum(EdotL)

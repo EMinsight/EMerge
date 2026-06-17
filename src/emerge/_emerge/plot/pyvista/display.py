@@ -30,6 +30,7 @@ from ...selection import (
 from .... import __version__
 from ...physics.microwave.bcs import PortBC, ModalPort
 from ...cs import Anchor
+from ...coord import Line
 from pathlib import Path
 from importlib.resources import files
 
@@ -435,6 +436,26 @@ class PVDisplay(EMergeDisplay):
         cloud = pv.PolyData(np.array([xs, ys, zs]).T)
         self._data_sets.append(cloud)
         self._plot.add_points(cloud)
+
+    def add_line(self, line: Line, width: float = 3.0, color: str = "EMERGE-RED"):
+        """Adds a Line object to the plot
+
+        Args:
+            line (Line): The line object
+            width (float, optional): The line width. Defaults to 3.0.
+            color (str, optional): The line color. Defaults to "EMERGE-RED".
+        """
+        xs, ys, zs = line.cpoint
+        p_line = pv.Line(
+            pointa=(xs[0], ys[0], zs[0]),
+            pointb=(xs[-1], ys[-1], zs[-1]),
+        )
+        self._plot.add_mesh(
+            p_line,
+            color=self.set.theme.parse_color(color),
+            pickable=False,
+            line_width=width,
+        )
 
     def add_portmode(
         self,

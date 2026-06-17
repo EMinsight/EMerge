@@ -888,9 +888,11 @@ class StripPath:
         """
         if size in _SMD_SIZE_DICT:
             length, width = _SMD_SIZE_DICT[size]
+            length = length * 0.001 / self.pcb.unit * 2.54
+            width = width * 0.001 / self.pcb.unit * 2.54
         else:
             length, width = size
-
+        print(length * 1000, width * 1000)
         dx, dy = self.end.direction
         x, y = self.end.x, self.end.y
         rx, ry = self.end.dirright
