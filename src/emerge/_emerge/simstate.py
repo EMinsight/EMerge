@@ -17,7 +17,7 @@
 # Last Cleanup: 2025-01-01
 from __future__ import annotations
 from .mesh3d import Mesh3D
-from .geometry import GeoObject, _GeometryManager, _GEOMANAGER
+from .geometry import GeoObject, GeoVolume, GeoSurface, _GeometryManager, _GEOMANAGER
 from .dataset import SimulationDataset
 from loguru import logger
 from typing import Any
@@ -95,6 +95,14 @@ class SimState:
     def current_geo_state(self) -> list[GeoObject]:
         return self.manager.all_geometries()
 
+    @property
+    def all3d(self) -> list[GeoVolume]:
+        return [geo for geo in self.manager.all_geometries() if geo.dim == 3]
+    
+    @property
+    def all2d(self) -> list[GeoVolume]:
+        return [geo for geo in self.manager.all_geometries() if geo.dim == 2]
+    
     def simulation_geostate(self) -> list[GeoObject]:
         geodict: dict[int, dict[int, GeoObject]] = {
             0: dict(),

@@ -451,6 +451,9 @@ class XYPolygon:
 
         Args:
             cs (CoordinateSystem, optional): _description_. Defaults to None.
+            origin: tuple[float, float, float]: The origin of the revolution axis
+            axis: tuple[float, float, float] | Axis: The revolution axis.
+            angle: float - The revolution angle. Defaults to 360 degrees
             angle (float, optional): _description_. Defaults to 360.0.
 
         Returns:

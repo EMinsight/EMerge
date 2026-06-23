@@ -142,7 +142,7 @@ def embed(main: GeoVolume, other: GeoSurface) -> None:
     gmsh.model.geo.synchronize()
     gmsh.model.mesh.embed(other.dim, other.tags, main.dim, main.tags)
 
-def rotate(main: GeoVolume, 
+def rotate(main: GeoObject, 
            c0: tuple[float, float, float],
            ax: tuple[float, float, float],
            angle: float,
@@ -284,7 +284,7 @@ def stretch(main: GeoObject, fx: float = 1, fy: float = 1, fz: float = 1, origin
     
     return main
 
-def extrude(main: GeoSurface, dx: float = 0.0, dy: float = 0.0, dz: float = 0.0) -> GeoObject:
+def extrude(main: GeoSurface, dx: float = 0.0, dy: float = 0.0, dz: float = 0.0) -> GeoVolume:
     """Extrudes a surface entity by a displacement
 
     Args:

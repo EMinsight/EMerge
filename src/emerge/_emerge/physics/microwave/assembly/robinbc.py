@@ -292,7 +292,7 @@ def ned2_tri_force(glob_vertices, glob_Uinc):
     c16[:](f8[:, :], i8[:, :], c16[:], i8[:], c16[:, :, :], i8[:, :]),
     cache=True,
     nogil=True,
-    parallel=False,
+    parallel=True,
 )
 def compute_force_entries(
     vertices_global, tris, Bvec, surf_triangle_indices, Uglobal_all, tri_to_field
@@ -395,7 +395,7 @@ def ned2_tri_stiff(glob_vertices, gamma):
     c16[:](f8[:, :], i8[:, :], c16[:], i8[:], c16),
     cache=True,
     nogil=True,
-    parallel=False,
+    parallel=True,
 )
 def compute_bc_entries(vertices, tris, Bmat, surf_triangle_indices, gamma):
     N = 64
@@ -462,7 +462,7 @@ def assemble_robin_bc(
     c16[:](f8[:, :], c16[:, :], c16[:, :], f8[:]),
     cache=True,
     nogil=True,
-    parallel=False,
+    parallel=True,
 )
 def ned2_tri_force_scat(glob_vertices, glob_Uinc, glob_Uinc_curl, nhat):
     """Nedelec-2 Triangle forcing vector (scattered field, Robin BC)"""
@@ -541,7 +541,7 @@ def ned2_tri_force_scat(glob_vertices, glob_Uinc, glob_Uinc_curl, nhat):
     ),
     cache=True,
     nogil=True,
-    parallel=False,
+    parallel=True,
 )
 def compute_force_entries_scat(
     vertices_global,

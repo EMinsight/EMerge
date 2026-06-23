@@ -21,7 +21,7 @@ from ..geometry import GeoObject, GeoSurface, GeoVolume
 from ..cs import CoordinateSystem, GCS, Axis, _parse_vector, Anchor, _parse_axis
 import numpy as np
 from enum import Enum
-from .operations import subtract
+from .operations import subtract, change_coordinate_system
 from ..selection import FaceSelection, Selector, SELECTOR_OBJ
 
 from typing import Literal
@@ -84,6 +84,7 @@ class Box(GeoVolume):
         tag = gmsh.model.occ.addBox(x,y,z,width,depth,height)
         super().__init__(tag, name=name)
 
+        change_coordinate_system(self, cs, GCS)
         self.center = (x+width/2, y+depth/2, z+height/2)
         self.width = width
         self.height = height

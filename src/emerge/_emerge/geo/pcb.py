@@ -2021,20 +2021,11 @@ class PCBNew:
     ) -> GeoPolygon:
         """Generate a lumped-port object to be created.
 
-        You can flag any point during routing using list comprehensions and then pass those keys here.
-
-        Example:
-         >>> mypcb.new(...).straight(...)['mykey']
-         >>> myport = mypcb.lumped_port('mykey')
-
-        Lumped ports created this way automatically have auxilliary data properties set for the LumpedPort boundary condition.
-        Example:
-         >>> mymodel.mw.bc.LumpedPort(myport, port_nr)
-
-        No width, height or axis data is needed.
-
+        The lumped port will be drawn and extruded form the line specified by two points.
         Args:
-            stripline (StripLine | str): The stripline object or a reference to the stripline object
+            p1: (tuple[float, float]) - Point one of the line to be extruded
+            p2: (tuple[float, float]) - POint two of the line to be extruded
+            z: (float) - The starting z-height for the extrusion.
             z_ground (float | None, optional): The ground height to extrude the port to. Defaults to None.
             name (str | None, optional): The name for the resultant object. Defaults to 'LumpedPort'.
 
@@ -2199,7 +2190,6 @@ class PCBNew:
         xs: list[float],
         ys: list[float],
         z: float = 0,
-        material: Material = None,
         name: str | None = None,
     ) -> None:
         """Add a custom polygon hole to the PCB
@@ -2208,10 +2198,9 @@ class PCBNew:
             xs (list[float]): A list of x-coordinates
             ys (list[float]): A list of y-coordinates
             z (float, optional): The z-height. Defaults to 0.
-            material (Material, optional): The material. Defaults to COPPER.
+            
         """
-        if material is None:
-            material = self.trace_material
+        material = self.trace_material
         poly = PCBPoly(xs, ys, z, material, name=name)
 
         self.hole_polies.append(poly)
