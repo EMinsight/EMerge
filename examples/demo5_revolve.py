@@ -31,7 +31,7 @@ airbox_width = 15 * cm  # airbox width
 
 # --- Create simulation object -------------------------------------------
 model = em.Simulation("ConicalHornAntenna")
-model.check_version("2.7.4")  # Checks version compatibility
+model.check_version("2.7.5")  # Checks version compatibility
 model.display.set_theme(em.themes.GigawaveStudio)
 # --- Feed geometry -------------------------------------------------------
 feed = em.geo.Cylinder(waveguide_radius, waveguide_length, cs=em.YZPLANE.cs())
