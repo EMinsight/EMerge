@@ -52,10 +52,11 @@ class AASDSInterface:
         - Complex symmetric: factorization='lu', symmetry='nonsymmetric'
         - Real SPD: factorization='cholesky', symmetry='symmetric'
     """
-    
+    _fact: type[Factorization] = Factorization
     def __init__(self, verbose=0):
         self._solver = None
         self._factorization = Factorization.LU
+        self._usfactorization = Factorization.LU
         self._csym: bool = True
         
         self._factored = False
@@ -68,10 +69,18 @@ class AASDSInterface:
         else:
             return Symmetry.NONSYMMETRIC
     
+    @property
+    def factorization(self):
+        if self._symmetry is Symmetry.SYMMETRIC:
+            return self._factorization
+        else:
+            return self._usfactorization
+        
     def initialize(self): 
         from emerge_aasds.interface import AccelerateInterface
+
         self._solver = AccelerateInterface(
-            factorization=self._factorization,
+            factorization=self.factorization,
             ordering=Ordering.MTMETIS,
             pivot_tolerance=0.001,
             symmetry=self._symmetry,

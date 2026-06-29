@@ -254,7 +254,7 @@ class ModalPort(PortBC, Saveable):
         self,
         c1: tuple[float, float, float],
         c2: tuple[float, float, float],
-        N: int = 21,
+        N: int = 51,
     ) -> None:
         """Define the integration line start and end point
 

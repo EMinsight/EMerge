@@ -386,6 +386,20 @@ class MWData(Saveable):
         frequencies: list[float] | None = None,
         **parameters,
     ) -> None:
+        """Exports all farfield data to a file.
+
+        Args:
+            filename (str): The filename to export to
+            face (FaceSelection | GeoSurface): The integration surface for the farfield calculation.
+            thetas (np.ndarray): An optional array of theta angles
+            phis (np.ndarray): An optional array of phi angles
+            origin (tuple[float, float, float] | None, optional): An optional array for a radiation origin 
+                used to determine the normal vectors of farfield boundaries if inside vs. outside 
+                is not well defined. Defaults to None.
+            syms ("Ex","Ey","Ez","Hx","Hy","Hz" | None), optional): Optional simulation domain symmetries. Defaults to None.
+            precision (int, optional): The number of decimals for the output file. Defaults to 4.
+            frequencies (list[float] | None, optional): The frequencies to pick for the output. Defaults to None.
+        """
         from emsutil.inexport.ffdata import export_ffdata
 
         if frequencies is None:
@@ -541,17 +555,42 @@ class MWField(Saveable):
 
     @property
     def relative(self) -> MWData:
+        """ Returns the same MWField object but with the relative flag turned on
+        so that all fields are the relative field instead of the total field.
+        """
         self._rel = True
         return self
 
-    def backE(self, x: np.ndarray, y: np.ndarray, z: np.ndarray, mask) -> np.ndarray:
+    def backE(self, x: np.ndarray, y: np.ndarray, z: np.ndarray, mask: np.ndarray) -> np.ndarray:
+        """Compute the background E-field at the provided coordinates.
+
+        Args:
+            x (np.ndarray): An array of X-coordinates
+            y (np.ndarray): An array of X-coordinates
+            z (np.ndarray): An array of X-coordinates
+            mask (np.ndarray): A binary mask array that tells this funtion on which coordinates to evaluate the field.
+
+        Returns:
+            np.ndarray: _description_
+        """
         out = np.zeros((3, x.shape[0]), dtype=np.complex128)
         out[:, ~mask] = np.nan
         for field in self.background_fields:
             out[:, mask] += self.excitation[field] * field.E(x, y, z)[:, mask]
         return out
 
-    def backH(self, x: np.ndarray, y: np.ndarray, z: np.ndarray, mask) -> np.ndarray:
+    def backH(self, x: np.ndarray, y: np.ndarray, z: np.ndarray, mask: np.ndarray) -> np.ndarray:
+        """Compute the background H-field at the provided coordinates.
+
+        Args:
+            x (np.ndarray): An array of X-coordinates
+            y (np.ndarray): An array of X-coordinates
+            z (np.ndarray): An array of X-coordinates
+            mask (np.ndarray): A binary mask array that tells this funtion on which coordinates to evaluate the field.
+
+        Returns:
+            np.ndarray: _description_
+        """
         out = np.zeros((3, x.shape[0]), dtype=np.complex128)
         out[:, ~mask] = np.nan
         for field in self.background_fields:
@@ -747,7 +786,7 @@ class MWField(Saveable):
         return np.sum(output * A * W, axis=axis)
 
     def int_vol(
-        self, domain: DomainSelection, argument: Callable, gqo: int = 2
+        self, domain: DomainSelection, argument: Callable, gqo: int = 4
     ) -> EHField:
         """Performs a surface integral on the provided surface object.
 
@@ -963,7 +1002,11 @@ class MWField(Saveable):
         return field
 
     def cutplane_normal(
-        self, point=(0, 0, 0), normal=(0, 0, 1), npoints: int = 300, usenan: bool = True
+        self, 
+        point: tuple[float, float, float] = (0, 0, 0), 
+        normal: tuple[float, float, float] = (0, 0, 1), 
+        npoints: int = 300, 
+        usenan: bool = True
     ) -> EHField:
         """
         Take a 2D slice of the field along an arbitrary plane.

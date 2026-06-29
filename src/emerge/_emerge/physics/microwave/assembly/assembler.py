@@ -489,7 +489,6 @@ class Assembler:
         from .periodicbc import gen_periodic_matrix
         from .robin_abc_order2 import abc_order_2_matrix
         from .wpbc import assemble_wpbc
-
         # PREDEFINE CONSTANTS
         W0 = 2 * np.pi * frequency
         K0 = W0 / C0

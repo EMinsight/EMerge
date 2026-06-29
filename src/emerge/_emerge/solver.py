@@ -1128,6 +1128,9 @@ class SolverAASDS(Solver):
 
         self.aasds: AASDSInterface | None = None
         self._csym: bool = True
+        self.sym_fact: str = 'lu'   # Ensures backwards compatibility with older installations of emerge-aasds
+        self.unsym_fact: str = 'lu' # Ensures backwards compatibility with older installations of emerge-aasds
+
         # SETTINGS
         self._pivoting_threshold: float = 0.001
 
@@ -1137,12 +1140,47 @@ class SolverAASDS(Solver):
     def set_symmetry(self, complex_symmetric: bool) -> None:
         self.aasds._csym = complex_symmetric
 
+    def set_factorization(self, sym_fact: Literal['LU','LUUP','LUSPP','LUTPP','LDLT','LDLTUP','LDLTSBK','LDLTTPP'] = 'LU',
+                          unsym_fact: Literal['LU','LUUP','LUSPP','LUTPP','LDLT','LDLTUP','LDLTSBK','LDLTTPP'] = 'LU'):
+        """Defines the factorization algorithm:
+
+        Options:
+            'LU'      = Default LU factorization.
+            'LUUP'    = LU factorization Unpivoted (no numerical pivoting).
+            'LUSPP'   = LU factorization with Supernode Partial Pivoting (restricted to within supernodes).
+            'LUTPP'   = LU factorization with Threshold Partial Pivoting.
+            'LDLT'    = Default LDLᵀ factorization (for symmetric matrices).
+            'LDLTUP'  = LDLᵀ factorization Unpivoted (Cholesky-like, no pivoting).
+            'LDLTSBK' = LDLᵀ factorization with Supernode-Bunch-Kaufman and static pivoting.
+            'LDLTTPP' = LDLᵀ factorization with full-threshold partial pivoting.
+
+        Args:
+            sym_fact (str): Factorization algorithm for Symmetric matrices
+            unsym_fact (str): Factorization algorithm for Unsymmetric matrices
+        """
+        unsym_options = ['LU','LUUP','LUSPP','LUTPP']
+
+        self.sym_fact = sym_fact.lower()
+        if unsym_fact not in unsym_options:
+            logger.warning('Unsymmetric matrices cannot ude LDLT algorithms. Defaulting to LU')
+            self.unsym_fact = 'lu'
+        else:
+            self.unsym_fact = unsym_fact.lower()
+
+        self.initialize()
+        self.configure()
+
     def initialize(self):
         if self.initalized:
             return
         logger.trace(self.pre + " Initializing Apple Accelerate Solver")
         self.aasds = AASDSInterface()
+        self.configure()
         self.initalized = True
+
+    def configure(self):
+        self.aasds._factorization = self.aasds._fact(self.sym_fact)
+        self.aasds._usfactorization = self.aasds._fact(self.unsym_fact)
 
     def reset(self) -> None:
         logger.trace(self.pre + " Resetting Apple Accelerate solver state")

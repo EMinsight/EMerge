@@ -453,11 +453,12 @@ class SurfaceImpedance(RobinBC, Saveable):
         self,
         face: FaceSelection | GeoSurface,
         material: Material | None = None,
-        surface_conductance: float | None = None,
+        surface_conductivity: float | None = None,
         surface_roughness: float = 0,
         thickness: float | None = None,
         sr_model: Literal["Hammerstad-Jensen"] = "Hammerstad-Jensen",
         impedance_function: Callable | None = None,
+        surface_conductance: float | None = None,
     ):
         """Generates a SurfaceImpedance bounary condition.
 
@@ -477,14 +478,18 @@ class SurfaceImpedance(RobinBC, Saveable):
         Args:
             face (FaceSelection | GeoSurface): The face to apply this condition to.
             material (Material | None, optional): The matrial to assign. Defaults to None.
-            surface_conductance (float | None, optional): The specific bulk conductivity to use. Defaults to None.
+            surface_conductivity (float | None, optional): The specific bulk conductivity to use. Defaults to None.
             surface_roughness (float, optional): The surface roughness. Defaults to 0.
             thickness (float | None, optional): The layer thickness. Defaults to None
             sr_model (Literal["Hammerstad-Jensen", optional): The surface roughness model. Defaults to 'Hammerstad-Jensen'.
             impedance_function (Callable, optional): A user defined surface impedance function as function of frequency.
         """
         super().__init__(face)
-
+        
+        # Backwards compatibility for this misnomed property :(
+        if surface_conductance is not None:
+            surface_conductivity = surface_conductance
+        
         self._material: Material | None = material
         self._mur: float | complex = 1.0
         self._epsr: float | complex = 1.0

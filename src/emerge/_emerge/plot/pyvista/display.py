@@ -460,16 +460,28 @@ class PVDisplay(EMergeDisplay):
     def add_portmode(
         self,
         port: PortBC,
-        Npoints: int = 10,
-        dv=(0, 0, 0),
-        XYZ=None,
+        dv: tuple[float, float, float] = (0, 0, 0),
+        XYZ: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None,
         field: Literal["E", "H", "gradE", "Ez"] = "E",
         k0: float | None = None,
         cmap: str | None = None,
         mode_number: int | None = None,
         color: str | None = None,
+        Npoints: int = 10,
     ) -> None:
+        """Add a port boundary condition's mode to the plot window
 
+        Args:
+            port (PortBC): The port boundary condition
+            dv (tuple[float, float, float], optional): Slight offset to give to the port mode plot. Defaults to (0, 0, 0).
+            XYZ (tuple[np.ndarray, np.ndarray, np.ndarray] | None, optional): A set of grid points where to evaluate the modal field vectors. Defaults to None.
+            field ("E","H","gradE","Ez", optional): The field component to plot. Defaults to "E".
+            k0 (float | None, optional): The k0 valow for which to evaluate the mode. Defaults to None.
+            cmap (str | None, optional): The colormap to use. Defaults to None.
+            mode_number (int | None, optional): The mode number to plot. Defaults to None.
+            color (str | None, optional): The color to use for the vector arrow. Defaults to None.
+            Npoints (int, optional): Depricated property. Defaults to 10.
+        """
         if XYZ:
             X, Y, Z = XYZ
         else:

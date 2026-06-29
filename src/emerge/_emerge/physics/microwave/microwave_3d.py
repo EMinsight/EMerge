@@ -865,8 +865,8 @@ class Microwave3D:
         nmodes: int = 6,
         direct: bool = True,
         TEM: bool = False,
-        target_kz=None,
-        target_neff=None,
+        target_kz: float | None = None,
+        target_neff: float | None = None,
         freq: float | None = None,
     ) -> None:
         """Execute a modal analysis on a given ModalPort boundary condition.

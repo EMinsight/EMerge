@@ -298,18 +298,28 @@ def compute_force_entries(
     vertices_global, tris, Bvec, surf_triangle_indices, Uglobal_all, tri_to_field
 ):
     Niter = surf_triangle_indices.shape[0]
-    for i in prange(Niter):  # type: ignore
-        itri = surf_triangle_indices[i]
+    n_threads = 20
+    
+    Bvec_private = np.zeros((n_threads, Bvec.shape[0]), dtype=np.complex128)
+    chunk_size = (Niter + n_threads - 1) // n_threads
 
-        vertex_ids = tris[:, itri]
+    for t in prange(n_threads):
+        start_idx = t * chunk_size
+        end_idx = min(start_idx + chunk_size, Niter)
+        
+        for i in range(start_idx, end_idx):
+            itri = surf_triangle_indices[i]
+            vertex_ids = tris[:, itri]
+            Ulocal = Uglobal_all[:, :, i]
+            bvec = ned2_tri_force(vertices_global[:, vertex_ids], Ulocal)
+            indices = tri_to_field[:, itri]
+            
+            Bvec_private[t, indices] += bvec
 
-        Ulocal = Uglobal_all[:, :, i]
-
-        bvec = ned2_tri_force(vertices_global[:, vertex_ids], Ulocal)
-
-        indices = tri_to_field[:, itri]
-
-        Bvec[indices] += bvec
+    for idx in prange(Bvec.shape[0]):
+        for t in range(n_threads):
+            Bvec[idx] += Bvec_private[t, idx]
+            
     return Bvec
 
 
@@ -462,7 +472,7 @@ def assemble_robin_bc(
     c16[:](f8[:, :], c16[:, :], c16[:, :], f8[:]),
     cache=True,
     nogil=True,
-    parallel=True,
+    parallel=False,
 )
 def ned2_tri_force_scat(glob_vertices, glob_Uinc, glob_Uinc_curl, nhat):
     """Nedelec-2 Triangle forcing vector (scattered field, Robin BC)"""
@@ -554,21 +564,34 @@ def compute_force_entries_scat(
     normals,
 ):
     Niter = surf_triangle_indices.shape[0]
-    for i in prange(Niter):  # type: ignore
-        itri = surf_triangle_indices[i]
+    n_threads = 20
+    
+    Bvec_private = np.zeros((n_threads, Bvec.shape[0]), dtype=np.complex128)
+    chunk_size = (Niter + n_threads - 1) // n_threads
 
-        vertex_ids = tris[:, itri]
+    for t in prange(n_threads):
+        start_idx = t * chunk_size
+        end_idx = min(start_idx + chunk_size, Niter)
+        
+        for i in range(start_idx, end_idx):
+            itri = surf_triangle_indices[i]
+            vertex_ids = tris[:, itri]
+            
+            Uglobal = Uglobal_all[:, :, i]
+            UglobalCurl = Uglobal_all_curl[:, :, i]
 
-        Uglobal = Uglobal_all[:, :, i]
-        UglobalCurl = Uglobal_all_curl[:, :, i]
+            bvec = ned2_tri_force_scat(
+                vertices_global[:, vertex_ids], Uglobal, UglobalCurl, normals[:, i]
+            )
 
-        bvec = ned2_tri_force_scat(
-            vertices_global[:, vertex_ids], Uglobal, UglobalCurl, normals[:, i]
-        )
+            indices = tri_to_field[:, itri]
+            
+            Bvec_private[t, indices] += bvec
 
-        indices = tri_to_field[:, itri]
-
-        Bvec[indices] += bvec
+    for idx in prange(Bvec.shape[0]):
+        for t in range(n_threads):
+            Bvec[idx] += Bvec_private[t, idx]
+            
     return Bvec
 
 
