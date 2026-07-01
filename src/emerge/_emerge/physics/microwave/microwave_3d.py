@@ -23,6 +23,7 @@ from ...coord import Line
 from ...geometry import GeoSurface, GeoVolume
 from ...elements.femdata import FEMBasis
 from ...elements.nedelec2 import Nedelec2
+from ...elements.dofsets import DoF_SAVAGE, DoF_VOLAKIS, DoF_FIRST, DoF_COMPLETE
 from ...solver import DEFAULT_ROUTINE, SolveRoutine
 from ...system import _called_from_main_function
 from ...selection import FaceSelection
@@ -495,17 +496,15 @@ class Microwave3D:
         Currently it defaults to Nedelec2. Mixed basis are used for modal analysis.
         This function does not have to be called by the user. Its automatically invoked.
         """
+        from ...elements.nedelec2 import Nedelec2
         if self.basis is not None:
             return
         if self.order == 1:
-            raise NotImplementedError("Nedelec 1 is currently not supported")
-            from ...elements import Nedelec1
-
-            self.basis = Nedelec1(self.mesh)
+            self.basis = Nedelec2(self.mesh, DoF_FIRST)
         elif self.order == 2:
-            from ...elements.nedelec2 import Nedelec2
-
-            self.basis = Nedelec2(self.mesh)
+            self.basis = Nedelec2(self.mesh, DoF_VOLAKIS)
+        elif self.order == 2.5:
+            self.basis = Nedelec2(self.mesh, DoF_COMPLETE)
 
     ############################################################
     #                        PRIVATE METHODS                   #
@@ -2530,7 +2529,7 @@ class Microwave3D:
                 5,
             )
             mode_p = sparam_mode_power(
-                self.mesh.nodes, tri_vertices, bc, mode_nr, k0, const, 5
+                self.mesh.nodes, tri_vertices, bc, mode_nr, k0, const, 7
             )
 
             return field_p, mode_p

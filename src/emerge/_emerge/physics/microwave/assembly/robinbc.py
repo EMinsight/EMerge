@@ -21,18 +21,14 @@ import numpy as np
 from numba import njit, f8, c16, i8, types, prange
 from ....mth.optimized import cross
 from ....elements import Nedelec2
-from ....compiled.volakis import (
-    SCALE_LENGTH,
-    _ne1_tri,
-    _ne2_tri,
-    _nf1_tri,
-    _nf2_tri,
+from ....compiled.ccbf import (
+    _eval_f_2d, _eval_curl_f_2d, parse_dofcode
 )
 from typing import Callable
 from loguru import logger
 import functools
 
-#
+
 # Toggle this to True when you want to use standard Python breakpoints
 DEBUG_MODE = False
 
@@ -190,10 +186,10 @@ def construct_local_vertices(glob_vertices):
 ############################################################
 # fmt: off
 DPTS = np.array([
-    [0.10995174365532, 0.10995174365532, 0.10995174365532, 0.22338158967801, 0.22338158967801, 0.22338158967801],  # weights
-    [0.81684757298046, 0.09157621350977, 0.09157621350977, 0.10810301816807, 0.44594849091597, 0.44594849091597],  # L1
-    [0.09157621350977, 0.81684757298046, 0.09157621350977, 0.44594849091597, 0.10810301816807, 0.44594849091597],  # L2
-    [0.09157621350977, 0.09157621350977, 0.81684757298046, 0.44594849091597, 0.44594849091597, 0.10810301816807],  # L3
+    [0.10995174365532200, 0.10995174365532200, 0.10995174365532200, 0.22338158967801100, 0.22338158967801100, 0.22338158967801100],  # weights
+    [0.81684757298045896, 0.09157621350977101, 0.09157621350977101, 0.10810301816807000, 0.44594849091596500, 0.44594849091596500],  # L1
+    [0.09157621350977101, 0.81684757298045896, 0.09157621350977101, 0.44594849091596500, 0.10810301816807000, 0.44594849091596500],  # L2
+    [0.09157621350977004, 0.09157621350977008, 0.81684757298045807, 0.44594849091596500, 0.44594849091596500, 0.10810301816807000],  # L3
 ], dtype=np.float64)
 # fmt: on
 
@@ -221,15 +217,17 @@ def tri_coefficients(vxs, vys):
     return As, Bs, Cs, np.abs(sA)
 
 
-@njit(c16[:](f8[:, :], c16[:, :]), cache=True, nogil=True, parallel=False)
-def ned2_tri_force(glob_vertices, glob_Uinc):
+@njit(c16[:](f8[:, :], c16[:, :], i8[:]), cache=True, nogil=True, parallel=False)
+def ned2_tri_force(glob_vertices, glob_Uinc, dofcodes):
     """Nedelec-2 Triangle forcing vector (For Boundary Condition of the Third Kind)"""
-    bvec = np.zeros((8,), dtype=np.complex128)
+    typearry, indexarry, idofarry = parse_dofcode(dofcodes)
+    ndof = dofcodes.shape[0]
+    bvec = np.zeros((ndof,), dtype=np.complex128)
 
     basis, local_vertices = construct_local_vertices(glob_vertices)
     txs = local_vertices[0, :]
     tys = local_vertices[1, :]
-    Ds = compute_distances(txs, tys)
+    
     aas, bbs, ccs, A = tri_coefficients(txs, tys)
     coeff = np.empty((3, 3), dtype=np.float64)
     coeff[0, :] = aas
@@ -255,47 +253,38 @@ def ned2_tri_force(glob_vertices, glob_Uinc):
     Uinc_2d = np.empty((2, xs.shape[0]), dtype=np.complex128)
     Uinc_2d[0, :] = Ux
     Uinc_2d[1, :] = Uy
+    
+    ivec = np.array([0, 1, 0])
+    jvec = np.array([1, 2, 2])
+    kvec = np.array([0, 0, 0])
 
-    ivec = np.array([0, 1, 0, 0, 0, 1, 0, 0])
-    jvec = np.array([1, 2, 2, 1, 1, 2, 2, 1])
-    kvec = np.array([0, 0, 0, 2, 0, 0, 0, 2])
-
-    Lvec = np.empty(8, dtype=np.float64)
-    for idof in range(8):
-        Lvec[idof] = (
-            Ds[ivec[idof], jvec[idof]]
-            if idof < 3 or (4 <= idof < 7)
-            else Ds[jvec[idof], kvec[idof]]
-        )
-
-    for idof in range(8):
-        i1 = ivec[idof]
-        j1 = jvec[idof]
-        k1 = kvec[idof]
-
-        if idof < 3:
-            fdof = _ne1_tri(coeff, coords, i1, j1, k1)
-        elif idof == 3:
-            fdof = _nf1_tri(coeff, coords, i1, j1, k1)
-        elif idof < 7:
-            fdof = _ne2_tri(coeff, coords, i1, j1, k1)
+    for idof in range(ndof):
+        i_type = typearry[idof]
+        i_index = indexarry[idof]
+        if i_type==0:
+            i1 = ivec[i_index]
+            j1 = jvec[i_index]
+            k1 = kvec[i_index]
         else:
-            fdof = _nf2_tri(coeff, coords, i1, j1, k1)
-
+            i1 = 0
+            j1 = 1
+            k1 = 2
+        
+        fdof = _eval_f_2d(coeff, coords, i1, j1, k1, dofcodes[idof])
+        
         bvec[idof] = -A * np.sum(WEIGHTS * (fdof[0, :] * Ux + fdof[1, :] * Uy))
-    if SCALE_LENGTH == True:
-        bvec = bvec * Lvec
+    #print(bvec)
     return bvec
 
 
 @njit(
-    c16[:](f8[:, :], i8[:, :], c16[:], i8[:], c16[:, :, :], i8[:, :]),
+    c16[:](f8[:, :], i8[:, :], c16[:], i8[:], c16[:, :, :], i8[:, :], i8[:]),
     cache=True,
     nogil=True,
     parallel=True,
 )
 def compute_force_entries(
-    vertices_global, tris, Bvec, surf_triangle_indices, Uglobal_all, tri_to_field
+    vertices_global, tris, Bvec, surf_triangle_indices, Uglobal_all, tri_to_field, dofcodes
 ):
     Niter = surf_triangle_indices.shape[0]
     n_threads = 20
@@ -311,7 +300,7 @@ def compute_force_entries(
             itri = surf_triangle_indices[i]
             vertex_ids = tris[:, itri]
             Ulocal = Uglobal_all[:, :, i]
-            bvec = ned2_tri_force(vertices_global[:, vertex_ids], Ulocal)
+            bvec = ned2_tri_force(vertices_global[:, vertex_ids], Ulocal, dofcodes)
             indices = tri_to_field[:, itri]
             
             Bvec_private[t, indices] += bvec
@@ -323,16 +312,18 @@ def compute_force_entries(
     return Bvec
 
 
-@njit(c16[:, :](f8[:, :], c16), cache=True, nogil=True, parallel=False)
-def ned2_tri_stiff(glob_vertices, gamma):
+@njit(c16[:, :](f8[:, :], c16, i8[:]), cache=True, nogil=True, parallel=False)
+def ned2_tri_stiff(glob_vertices, gamma, dofcodes):
     """Nedelec-2 Triangle Stiffness matrix and forcing vector (For Boundary Condition of the Third Kind)"""
-    Bmat = np.zeros((8, 8), dtype=np.complex128)
+    typearry, indexarry, idofarry = parse_dofcode(dofcodes)
+    ndof = dofcodes.shape[0]
+    
+    Bmat = np.zeros((ndof, ndof), dtype=np.complex128)
 
     basis, local_vertices = construct_local_vertices(glob_vertices)
     txs = local_vertices[0, :]
     tys = local_vertices[1, :]
 
-    Ds = compute_distances(txs, tys)
     aas, bbs, ccs, A = tri_coefficients(txs, tys)
     A = np.abs(A)
     coeff = np.empty((3, 3), dtype=np.float64)
@@ -352,69 +343,57 @@ def ned2_tri_stiff(glob_vertices, gamma):
     coords[0, :] = xs
     coords[1, :] = ys
 
-    ivec = np.array([0, 1, 0, 0, 0, 1, 0, 0])
-    jvec = np.array([1, 2, 2, 1, 1, 2, 2, 1])
-    kvec = np.array([0, 0, 0, 2, 0, 0, 0, 2])
+    ivec = np.array([0, 1, 0])
+    jvec = np.array([1, 2, 2])
+    kvec = np.array([0, 0, 0])
 
-    Ls = np.ones((8, 8), dtype=np.float64)
-    for idof in range(8):
-        Le = (
-            Ds[ivec[idof], jvec[idof]]
-            if idof < 3 or (4 <= idof < 7)
-            else Ds[jvec[idof], kvec[idof]]
-        )
-        Ls[idof, :] *= Le
-        Ls[:, idof] *= Le
-
-    for idof1 in range(8):
-        i1 = ivec[idof1]
-        j1 = jvec[idof1]
-        k1 = kvec[idof1]
-
-        if idof1 < 3:
-            fdof1 = _ne1_tri(coeff, coords, i1, j1, k1)
-        elif idof1 == 3:
-            fdof1 = _nf1_tri(coeff, coords, i1, j1, k1)
-        elif idof1 < 7:
-            fdof1 = _ne2_tri(coeff, coords, i1, j1, k1)
+    for idof1 in range(ndof):
+        i_type1 = typearry[idof1]
+        i_index1 = indexarry[idof1]
+        if i_type1==0:
+            i1 = ivec[i_index1]
+            j1 = jvec[i_index1]
+            k1 = kvec[i_index1]
         else:
-            fdof1 = _nf2_tri(coeff, coords, i1, j1, k1)
+            i1 = 0
+            j1 = 1
+            k1 = 2
 
-        for idof2 in range(8):
-            i2 = ivec[idof2]
-            j2 = jvec[idof2]
-            k2 = kvec[idof2]
+        fdof1 = _eval_f_2d(coeff, coords, i1, j1, k1, dofcodes[idof1])
 
-            if idof2 < 3:
-                fdof2 = _ne1_tri(coeff, coords, i2, j2, k2)
-            elif idof2 == 3:
-                fdof2 = _nf1_tri(coeff, coords, i2, j2, k2)
-            elif idof2 < 7:
-                fdof2 = _ne2_tri(coeff, coords, i2, j2, k2)
+        for idof2 in range(ndof):
+            i_type2 = typearry[idof2]
+            i_index2 = indexarry[idof2]
+            if i_type2==0:
+                i2 = ivec[i_index2]
+                j2 = jvec[i_index2]
+                k2 = kvec[i_index2]
             else:
-                fdof2 = _nf2_tri(coeff, coords, i2, j2, k2)
+                i2 = 0
+                j2 = 1
+                k2 = 2
+
+            fdof2 = _eval_f_2d(coeff, coords, i2, j2, k2, dofcodes[idof2])
 
             Bmat[idof1, idof2] = gamma * np.sum(dot(fdof1, fdof2) * WEIGHTS)
-
-    if SCALE_LENGTH == True:
-        Bmat = Bmat * Ls
     return Bmat * A
 
 
 @njit(
-    c16[:](f8[:, :], i8[:, :], c16[:], i8[:], c16),
+    c16[:](f8[:, :], i8[:, :], c16[:], i8[:], c16, i8[:]),
     cache=True,
     nogil=True,
     parallel=True,
 )
-def compute_bc_entries(vertices, tris, Bmat, surf_triangle_indices, gamma):
-    N = 64
+def compute_bc_entries(vertices, tris, Bmat, surf_triangle_indices, gamma, dofcodes):
+
+    N = dofcodes.shape[0]**2
     Niter = surf_triangle_indices.shape[0]
     for i in prange(Niter):  # type: ignore
         itri = surf_triangle_indices[i]
 
         vertex_ids = tris[:, itri]
-        Bsub = ned2_tri_stiff(vertices[:, vertex_ids], gamma)
+        Bsub = ned2_tri_stiff(vertices[:, vertex_ids], gamma, dofcodes)
 
         Bmat[itri * N : (itri + 1) * N] = Bmat[itri * N : (itri + 1) * N] + Bsub.ravel()
     return Bmat
@@ -444,6 +423,7 @@ def assemble_robin_bc_bvec(
         surf_triangle_indices,
         U_global_all,
         field.tri_to_field,
+        field.dofcodes2d
     )
     return Bvec
 
@@ -457,7 +437,7 @@ def assemble_robin_bc(
 
     vertices = field.mesh.nodes
     Bmat = compute_bc_entries(
-        vertices, field.mesh.tris, Bmat, surf_triangle_indices, gamma
+        vertices, field.mesh.tris, Bmat, surf_triangle_indices, gamma, field.dofcodes2d
     )
 
     return Bmat
@@ -469,20 +449,20 @@ def assemble_robin_bc(
 
 
 @njit(
-    c16[:](f8[:, :], c16[:, :], c16[:, :], f8[:]),
+    c16[:](f8[:, :], c16[:, :], c16[:, :], f8[:], i8[:]),
     cache=True,
     nogil=True,
     parallel=False,
 )
-def ned2_tri_force_scat(glob_vertices, glob_Uinc, glob_Uinc_curl, nhat):
+def ned2_tri_force_scat(glob_vertices, glob_Uinc, glob_Uinc_curl, nhat, dofcodes):
     """Nedelec-2 Triangle forcing vector (scattered field, Robin BC)"""
-    bvec = np.zeros((8,), dtype=np.complex128)
+    typearry, indexarry, idofarry = parse_dofcode(dofcodes)
+    ndof = dofcodes.shape[0]
+    bvec = np.zeros((ndof,), dtype=np.complex128)
 
     basis, local_vertices = construct_local_vertices(glob_vertices)
     txs = local_vertices[0, :]
     tys = local_vertices[1, :]
-
-    Ds = compute_distances(txs, tys)
 
     aas, bbs, ccs, A = tri_coefficients(txs, tys)
     coeff = np.empty((3, 3), dtype=np.float64)
@@ -506,35 +486,27 @@ def ned2_tri_force_scat(glob_vertices, glob_Uinc, glob_Uinc_curl, nhat):
     Ux = lcs_Uinc[0, :] + lcs_Uinc_curl[1, :] * sgn
     Uy = lcs_Uinc[1, :] - lcs_Uinc_curl[0, :] * sgn
 
-    ivec = np.array([0, 1, 0, 0, 0, 1, 0, 0])
-    jvec = np.array([1, 2, 2, 1, 1, 2, 2, 1])
-    kvec = np.array([0, 0, 0, 2, 0, 0, 0, 2])
+    ivec = np.array([0, 1, 0])
+    jvec = np.array([1, 2, 2])
+    kvec = np.array([0, 0, 0])
 
-    Lvec = np.empty(8, dtype=np.float64)
-    for idof in range(8):
-        Lvec[idof] = (
-            Ds[ivec[idof], jvec[idof]]
-            if idof < 3 or (4 <= idof < 7)
-            else Ds[jvec[idof], kvec[idof]]
-        )
-
-    for idof in range(8):
-        i1 = ivec[idof]
-        j1 = jvec[idof]
-        k1 = kvec[idof]
-
-        if idof < 3:
-            fdof = _ne1_tri(coeff, coords, i1, j1, k1)
-        elif idof == 3:
-            fdof = _nf1_tri(coeff, coords, i1, j1, k1)
-        elif idof < 7:
-            fdof = _ne2_tri(coeff, coords, i1, j1, k1)
+    for idof in range(ndof):
+        i_type = typearry[idof]
+        i_index = indexarry[idof]
+        i_dof = idofarry[idof]
+        if i_type==0:
+            i1 = ivec[i_index]
+            j1 = jvec[i_index]
+            k1 = kvec[i_index]
         else:
-            fdof = _nf2_tri(coeff, coords, i1, j1, k1)
+            i1 = 0
+            j1 = 1
+            k1 = 2
+        
+        fdof = _eval_f_2d(coeff, coords, i1, j1, k1, dofcodes[idof])
 
         bvec[idof] = -A * np.sum(WEIGHTS * (fdof[0, :] * Ux + fdof[1, :] * Uy))
-    if SCALE_LENGTH == True:
-        bvec = bvec * Lvec
+
     return bvec
 
 
@@ -548,6 +520,7 @@ def ned2_tri_force_scat(glob_vertices, glob_Uinc, glob_Uinc_curl, nhat):
         c16[:, :, :],
         i8[:, :],
         f8[:, :],
+        i8[:]
     ),
     cache=True,
     nogil=True,
@@ -562,6 +535,7 @@ def compute_force_entries_scat(
     Uglobal_all_curl,
     tri_to_field,
     normals,
+    dofcodes,
 ):
     Niter = surf_triangle_indices.shape[0]
     n_threads = 20
@@ -581,7 +555,7 @@ def compute_force_entries_scat(
             UglobalCurl = Uglobal_all_curl[:, :, i]
 
             bvec = ned2_tri_force_scat(
-                vertices_global[:, vertex_ids], Uglobal, UglobalCurl, normals[:, i]
+                vertices_global[:, vertex_ids], Uglobal, UglobalCurl, normals[:, i], dofcodes
             )
 
             indices = tri_to_field[:, itri]
@@ -628,5 +602,6 @@ def assemble_robin_bc_bvec_scat(
         U_global_all_curl,
         field.tri_to_field,
         normals,
+        field.dofcodes2d
     )
     return Bvec

@@ -24,7 +24,7 @@ from ..cs import CoordinateSystem
 from ..const import MU0, C0
 from emsutil import Saveable
 from typing import Literal
-
+from .dofsets import DoFSet
 ## TODO: TEMPORARY SOLUTION FIX THIS
 
 
@@ -53,6 +53,7 @@ class FieldFunctionClass:
         diadic: np.ndarray | None = None,
         beta: float | None = None,
         constant: float | int | complex = 1.0,
+        dofcodes: np.ndarray = None,
     ):
         self.field: np.ndarray = field
         self.cs: CoordinateSystem = cs
@@ -63,6 +64,7 @@ class FieldFunctionClass:
         self.diadic: np.ndarray | None = diadic
         self.beta: float | None = beta
         self.constant: float = constant
+        self.dofcodes: np.ndarray = dofcodes
 
         if EH == "H":
             if diadic is None:
@@ -100,7 +102,7 @@ class FieldFunctionClass:
 
         coordinates = np.array([xs, ys])
         vals = MATHLIB.ned2_tri_interp_full(
-            coordinates, self.field, self.tris, self.nodes, self.tri_to_field
+            coordinates, self.field, self.tris, self.nodes, self.tri_to_field, self.dofcodes
         )
         if not usenan:
             vals = np.nan_to_num(vals)
@@ -198,7 +200,7 @@ class FieldFunctionClass:
         xl, yl, zl = self.cs.in_local_cs(xs, ys, zs)
         coordinates = np.array([xl, yl])
         gEzx, gEzy = MATHLIB.ned2_tri_interp_ezgrad(
-            coordinates, self.field, self.tris, self.nodes, self.tri_to_field
+            coordinates, self.field, self.tris, self.nodes, self.tri_to_field, self.dofcodes
         )
         gEzx = np.nan_to_num(gEzx)
         gEzy = np.nan_to_num(gEzy)
@@ -240,6 +242,7 @@ class FieldFunctionClass:
             self.tri_to_field,
             self.diadic,
             self.beta,
+            self.dofcodes,
         )
         if not usenan:
             vals = np.nan_to_num(vals)
@@ -250,13 +253,14 @@ class FieldFunctionClass:
 
 
 class NedelecLegrange2(FEMBasis, Saveable):
-    def __init__(self, mesh: SurfaceMesh, cs: CoordinateSystem):
+    def __init__(self, mesh: SurfaceMesh, cs: CoordinateSystem, dofset: DoFSet):
 
         self.mesh: SurfaceMesh = mesh
 
         self.cs: CoordinateSystem = cs
 
-        LGORDER = 2
+        self.dofset2d: DoFSet = dofset.set2d
+        self.dofcodes: np.ndarray = np.array(dofset.set2d.codes, dtype=np.int64)
 
         ##
         nodes = self.mesh.nodes
@@ -270,58 +274,49 @@ class NedelecLegrange2(FEMBasis, Saveable):
         self.n_tris: int = self.mesh.n_tris
         self.n_tri_dofs: int = None
 
-        if LGORDER == 2:
-            self.n_field: int = (
-                2 * self.n_edges + 2 * self.n_tris + self.n_nodes + self.n_edges
-            )
-        else:
-            self.n_field: int = (
-                2 * self.n_edges
-                + 2 * self.n_tris
-                + self.n_nodes
-                + self.n_edges * 2
-                + self.n_tris
-            )
+        self.n_field: int = (
+            self.dofset2d.n_edge_dofs * self.n_edges + self.dofset2d.n_face_dofs * self.n_tris + self.n_nodes + self.n_edges
+        )
 
-        self.n_xy: int = 2 * self.n_edges + 2 * self.n_tris
+        self.n_xy: int = self.dofset2d.n_edge_dofs * self.n_edges + self.dofset2d.n_face_dofs * self.n_tris
+        
         ######## MESH Derived
         Nn = self.mesh.n_nodes
         Ne = self.mesh.n_edges
         Nt = self.mesh.n_tris
 
-        if LGORDER == 3:
-            self.tri_to_field: np.ndarray = np.zeros((8 + 10, self.n_tris), dtype=int)
-        else:
-            self.tri_to_field: np.ndarray = np.zeros((8 + 6, self.n_tris), dtype=int)
 
-        self.tri_to_field[:3, :] = self.mesh.tri_to_edge
-        self.tri_to_field[3, :] = np.arange(Nt) + Ne
-        self.tri_to_field[4:7, :] = self.mesh.tri_to_edge + Ne + Nt
-        self.tri_to_field[7, :] = np.arange(Nt) + 2 * Ne + Nt
-        self.tri_to_field[8:11, :] = self.mesh.tris + (
-            2 * Ne + 2 * Nt
-        )  # + E + T + E + T
-        self.tri_to_field[11:14, :] = self.mesh.tri_to_edge + (2 * Ne + 2 * Nt + Nn)
+        self.tri_to_field: np.ndarray = np.zeros((self.dofset2d.n_edge_dofs*3 + self.dofset2d.n_face_dofs + 6, self.n_tris), dtype=int)
 
-        if LGORDER == 3:
-            # Legrange 3
-            self.tri_to_field[14:17, :] = self.mesh.tri_to_edge + (
-                2 * Ne + 2 * Nt + Nn + Ne
-            )
-            self.tri_to_field[17, :] = np.arange(Nt) + (2 * Ne + 2 * Nt + Nn + Ne + Ne)
+        for i in range(self.dofset2d.n_edge_dofs):
+            self.tri_to_field[i*3:(i+1)*3, :] = self.mesh.tri_to_edge + i*Ne
+        
+        N = self.dofset2d.n_edge_dofs * 3
+        for i in range(self.dofset2d.n_face_dofs):
+            self.tri_to_field[i + N, :] = np.arange(Nt) + Ne*self.dofset2d.n_edge_dofs + i * Nt
+        
+        N = self.dofset2d.n_edge_dofs * 3 + self.dofset2d.n_face_dofs
 
+        self.tri_to_field[N:N+3, :] = self.mesh.tris + self.n_xy
+        self.tri_to_field[N+3:, :] = self.mesh.tri_to_edge + (self.n_xy + Nn)
+
+        
         self.edge_to_field: np.ndarray = np.zeros(
-            (5, Ne), dtype=int
-        )  # edge mode 1, edge mode 2, edge legrande mode, edge vertex mode 1, edge vertex mode 2
+            (self.dofset2d.n_edge_dofs + 3, Ne), dtype=int
+        ) 
 
-        self.edge_to_field[0, :] = np.arange(Ne)
-        self.edge_to_field[1, :] = np.arange(Ne) + Nt + Ne
-        self.edge_to_field[2:4, :] = self.mesh.edges + Ne * 2 + Nt * 2
-        self.edge_to_field[4, :] = np.arange(Ne) + Ne * 2 + Nt * 2 + Nn
-
-        if LGORDER == 3:
-            self.edge_to_field[5:, :] = np.arange(Ne) + Ne * 2 + Nt * 2 + Nn + Ne
-
+        for i in range(self.dofset2d.n_edge_dofs):
+            self.edge_to_field[i, :] = np.arange(Ne) + i*Ne
+        
+        # Edge to field indices
+        # 0..n1 - Edge modes
+        # n1..n1+2 - Vector modes (used for PEC 0 setting)
+        # n1+2 - Last edge mode (used for PEC 0 setting)
+        ne0 = self.dofset2d.n_edge_dofs
+        self.edge_to_field[ne0, :] = self.mesh.edges[0,:] + self.n_xy
+        self.edge_to_field[ne0+1, :] = self.mesh.edges[1,:] + self.n_xy
+        self.edge_to_field[ne0+2, :] = np.arange(Ne) + self.n_xy + self.n_nodes
+        
         ##
         self._field: np.ndarray = None
         self._rows: np.ndarray = None
@@ -334,7 +329,7 @@ class NedelecLegrange2(FEMBasis, Saveable):
     def interpolate_Ef(self, field: np.ndarray) -> FieldFunctionClass:
         """Generates the Interpolation function as a function object for a given coordiante basis and origin."""
         return FieldFunctionClass(
-            field, self.cs, self.local_nodes, self.mesh.tris, self.tri_to_field, "E"
+            field, self.cs, self.local_nodes, self.mesh.tris, self.tri_to_field, "E", dofcodes=self.dofcodes
         )
 
     def interpolate_Hf(
@@ -359,44 +354,45 @@ class NedelecLegrange2(FEMBasis, Saveable):
             urinv,
             beta,
             constant,
+            dofcodes=self.dofcodes
         )
 
-    def tri_interpolate(
-        self, field, xs: np.ndarray, ys: np.ndarray, usenan: bool = False
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        from .ned2_interp import ned2_tri_interp_full
+    # def tri_interpolate(
+    #     self, field, xs: np.ndarray, ys: np.ndarray, usenan: bool = False
+    # ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    #     from .ned2_interp import ned2_tri_interp_full
 
-        coordinates = np.array([xs, ys])
-        vals = ned2_tri_interp_full(
-            coordinates, field, self.mesh.tris, self.local_nodes, self.tri_to_field
-        )
-        if not usenan:
-            vals = np.nan_to_num(vals)
-        return vals
+    #     coordinates = np.array([xs, ys])
+    #     vals = ned2_tri_interp_full(
+    #         coordinates, field, self.mesh.tris, self.local_nodes, self.tri_to_field
+    #     )
+    #     if not usenan:
+    #         vals = np.nan_to_num(vals)
+    #     return vals
 
-    def tri_interpolate_curl(
-        self,
-        field,
-        xs: np.ndarray,
-        ys: np.ndarray,
-        diadic: np.ndarray | None = None,
-        beta: float = 0.0,
-        usenan: bool = False,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        from .ned2_interp import ned2_tri_interp_curl
+    # def tri_interpolate_curl(
+    #     self,
+    #     field,
+    #     xs: np.ndarray,
+    #     ys: np.ndarray,
+    #     diadic: np.ndarray | None = None,
+    #     beta: float = 0.0,
+    #     usenan: bool = False,
+    # ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    #     from .ned2_interp import ned2_tri_interp_curl
 
-        coordinates = np.array([xs, ys])
-        if diadic is None:
-            diadic = np.eye(3)[:, :, np.newaxis()] * np.ones((self.mesh.n_tris))  # type: ignore
-        vals = ned2_tri_interp_curl(
-            coordinates,
-            field,
-            self.mesh.tris,
-            self.local_nodes,
-            self.tri_to_field,
-            diadic,
-            beta,
-        )
-        if not usenan:
-            vals = np.nan_to_num(vals)
-        return vals
+    #     coordinates = np.array([xs, ys])
+    #     if diadic is None:
+    #         diadic = np.eye(3)[:, :, np.newaxis()] * np.ones((self.mesh.n_tris))  # type: ignore
+    #     vals = ned2_tri_interp_curl(
+    #         coordinates,
+    #         field,
+    #         self.mesh.tris,
+    #         self.local_nodes,
+    #         self.tri_to_field,
+    #         diadic,
+    #         beta,
+    #     )
+    #     if not usenan:
+    #         vals = np.nan_to_num(vals)
+    #     return vals

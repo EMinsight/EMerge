@@ -31,6 +31,7 @@ from ..bcs import (
 from ....periodic import Periodic
 from ....elements.nedelec2 import Nedelec2
 from ....elements.nedleg2 import NedelecLegrange2
+from ....elements.dofsets import DoF_SAVAGE, DoF_COMPLETE, DoFSet, DoF_WEBB
 from ....mth.csc_cast import CSCMapping
 from emsutil import Material
 from ....settings import Settings
@@ -278,79 +279,6 @@ def plane_basis_from_points(points: np.ndarray) -> np.ndarray:
     return eigvecs
 
 
-def get_select_from_index(index):
-    # 0-5 are Edges (paired with mode+6), 6-9 are Faces (paired with mode+4)
-    # Total 10 entities
-    entities = [
-        (0, 6),
-        (1, 7),
-        (2, 8),
-        (3, 9),
-        (4, 10),
-        (5, 11),  # Edges
-        (12, 16),
-        (13, 17),
-        (14, 18),
-        (15, 19),  # Faces
-    ]
-
-    n = len(entities)
-    permuted_entities = []
-    temp_entities = list(entities)
-
-    # Factoradic conversion to find the specific permutation
-    k = index
-    for i in range(n, 0, -1):
-        idx = k // math.factorial(i - 1)
-        k %= math.factorial(i - 1)
-        permuted_entities.append(temp_entities.pop(idx))
-
-    # Flatten the list of tuples into the 20-element array
-    select = np.array([item for pair in permuted_entities for item in pair])
-    return select
-
-
-def get_morton_order(centroids):
-    # centroids shape: (3, N_tets)
-    coords = centroids.T  # Shape (N_tets, 3)
-
-    # Normalize coordinates to [0, 1023] for 10-bit resolution (30 bits total)
-    # This fits within standard 32-bit integers
-    c_min = coords.min(axis=0)
-    c_max = coords.max(axis=0)
-
-    # Avoid division by zero for 2D/1D cases
-    denom = c_max - c_min
-    denom[denom == 0] = 1.0
-
-    scaled = ((coords - c_min) / denom * 1023).astype(np.uint32)
-
-    def interleave_bits(n):
-        n = (n | (n << 16)) & 0x030000FF
-        n = (n | (n << 8)) & 0x0300F00F
-        n = (n | (n << 4)) & 0x030C30C3
-        n = (n | (n << 2)) & 0x09249249
-        return n
-
-    # Calculate Morton codes
-    morton_codes = (
-        interleave_bits(scaled[:, 0])
-        | (interleave_bits(scaled[:, 1]) << 1)
-        | (interleave_bits(scaled[:, 2]) << 2)
-    )
-
-    # Return the indices that sort the codes
-    return np.argsort(morton_codes)
-
-
-def get_lexicographical_order(centroids):
-    # centroids shape: (3, N_tets)
-    # Using np.lexsort: sorts by last key first (Z, then Y, then X)
-    # This results in a primary sort on X, secondary on Y, tertiary on Z
-    x, y, z = centroids[0, :], centroids[1, :], centroids[2, :]
-    return np.lexsort((z, y, x))
-
-
 ############################################################
 #                    THE ASSEMBLER CLASS                   #
 ############################################################
@@ -405,7 +333,7 @@ class Assembler:
         logger.trace(f".boundary face has {len(tri_ids)} triangles.")
 
         boundary_surface = mesh.boundary_surface(port.tags)
-        nedlegfield = NedelecLegrange2(boundary_surface, port.cs)
+        nedlegfield = NedelecLegrange2(boundary_surface, port.cs, DoF_SAVAGE)
 
         ermesh = er[:, :, tri_ids]
         urmesh = ur[:, :, tri_ids]
@@ -488,7 +416,7 @@ class Assembler:
         from ....mth.pairing import pair_coordinates
         from .periodicbc import gen_periodic_matrix
         from .robin_abc_order2 import abc_order_2_matrix
-        from .wpbc import assemble_wpbc
+        #from .wpbc import assemble_wpbc
         # PREDEFINE CONSTANTS
         W0 = 2 * np.pi * frequency
         K0 = W0 / C0

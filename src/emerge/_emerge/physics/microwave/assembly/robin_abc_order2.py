@@ -21,16 +21,8 @@ import numpy as np
 from ....elements import Nedelec2
 from ....mth.optimized import local_mapping
 from numba import c16, types, f8, i8, njit, prange
-from ....compiled.volakis import (
-    SCALE_LENGTH,
-    _ne1_curl_tri,
-    _ne2_curl_tri,
-    _nf1_curl_tri,
-    _nf2_curl_tri,
-    _ne1_div_tri,
-    _ne2_div_tri,
-    _nf1_div_tri,
-    _nf2_div_tri,
+from ....compiled.ccbf import (
+    _eval_curl_f_2d, _eval_div_f_2d, parse_dofcode
 )
 
 #
@@ -148,16 +140,16 @@ DPTS = np.array([
 ############################################################
 
 
-@njit(c16[:, :](f8[:, :], c16), cache=True, nogil=True)
-def _abc_order_2_terms(tri_vertices, cf):
+@njit(c16[:, :](f8[:, :], c16, i8[:]), cache=True, nogil=True)
+def _abc_order_2_terms(tri_vertices, cf, dofcodes):
     """ABC order 2 tangent gradient term"""
+    typearry, indexarry, idofarry = parse_dofcode(dofcodes)
+    ndof = dofcodes.shape[0]
 
     basis, local_vertices = construct_local_vertices(tri_vertices)
 
     xpts = local_vertices[0, :]
     ypts = local_vertices[1, :]
-
-    Ds = compute_distances(xpts, ypts)
 
     aas, bbs, ccs, Area = tri_coefficients(xpts, ypts)
     Area = np.abs(Area)
@@ -174,65 +166,52 @@ def _abc_order_2_terms(tri_vertices, cf):
     coords[0, :] = xs
     coords[1, :] = ys
 
-    ivec = np.array([0, 1, 0, 0, 0, 1, 0, 0])
-    jvec = np.array([1, 2, 2, 1, 1, 2, 2, 1])
-    kvec = np.array([0, 0, 0, 2, 0, 0, 0, 2])
+    ivec = np.array([0, 1, 0])
+    jvec = np.array([1, 2, 2])
+    kvec = np.array([0, 0, 0])
 
-    Ls = np.ones((8, 8), dtype=np.float64)
-    for idof in range(8):
-        Le = (
-            Ds[ivec[idof], jvec[idof]]
-            if idof < 3 or (4 <= idof < 7)
-            else Ds[jvec[idof], kvec[idof]]
-        )
-        Ls[idof, :] *= Le
-        Ls[:, idof] *= Le
+    CurlMatrix = np.zeros((ndof, ndof), dtype=np.complex128)
+    DivMatrix = np.zeros((ndof, ndof), dtype=np.complex128)
 
-    CurlMatrix = np.zeros((8, 8), dtype=np.complex128)
-    DivMatrix = np.zeros((8, 8), dtype=np.complex128)
+    for idof1 in range(ndof):
+        i_type = typearry[idof1]
+        i_index = indexarry[idof1]
+        i_dof = idofarry[idof1]
 
-    for idof1 in range(8):
-        i1 = ivec[idof1]
-        j1 = jvec[idof1]
-        k1 = kvec[idof1]
+        i1 = ivec[i_index]
+        j1 = jvec[i_index]
+        k1 = kvec[i_index]
 
-        if idof1 < 3:
-            FC1 = _ne1_curl_tri(bary_coeff, coords, i1, j1, k1)
-            FD1 = _ne1_div_tri(bary_coeff, coords, i1, j1, k1)
-        elif idof1 == 3:
-            FC1 = _nf1_curl_tri(bary_coeff, coords, i1, j1, k1)
-            FD1 = _nf1_div_tri(bary_coeff, coords, i1, j1, k1)
-        elif idof1 < 7:
-            FC1 = _ne2_curl_tri(bary_coeff, coords, i1, j1, k1)
-            FD1 = _ne2_div_tri(bary_coeff, coords, i1, j1, k1)
+        if i_type==0:
+            # Edge mode
+            FC1 = _eval_curl_f_2d(bary_coeff, coords, i1, j1, k1, dofcodes[idof1])
+            FD1 = _eval_div_f_2d(bary_coeff, coords, i1, j1, k1, dofcodes[idof1])
         else:
-            FC1 = _nf2_curl_tri(bary_coeff, coords, i1, j1, k1)
-            FD1 = _nf2_div_tri(bary_coeff, coords, i1, j1, k1)
+            FC1 = _eval_curl_f_2d(bary_coeff, coords, 0, 1, 2, dofcodes[idof1])
+            FD1 = _eval_div_f_2d(bary_coeff, coords, 0, 1, 2, dofcodes[idof1])
 
-        for idof2 in range(8):
-            i2 = ivec[idof2]
-            j2 = jvec[idof2]
-            k2 = kvec[idof2]
+        for idof2 in range(ndof):
+            i_type = typearry[idof2]
+            i_index2 = indexarry[idof2]
+            i_dof = idofarry[idof2]
 
-            if idof2 < 3:
-                FC2 = _ne1_curl_tri(bary_coeff, coords, i2, j2, k2)
-                FD2 = _ne1_div_tri(bary_coeff, coords, i2, j2, k2)
-            elif idof2 == 3:
-                FC2 = _nf1_curl_tri(bary_coeff, coords, i2, j2, k2)
-                FD2 = _nf1_div_tri(bary_coeff, coords, i2, j2, k2)
-            elif idof2 < 7:
-                FC2 = _ne2_curl_tri(bary_coeff, coords, i2, j2, k2)
-                FD2 = _ne2_div_tri(bary_coeff, coords, i2, j2, k2)
+            i2 = ivec[i_index2]
+            j2 = jvec[i_index2]
+            k2 = kvec[i_index2]
+
+            if i_type==0:
+                # Edge mode
+                FC2 = _eval_curl_f_2d(bary_coeff, coords, i2, j2, k2, dofcodes[idof2])
+                FD2 = _eval_div_f_2d(bary_coeff, coords, i2, j2, k2, dofcodes[idof2])
             else:
-                FC2 = _nf2_curl_tri(bary_coeff, coords, i2, j2, k2)
-                FD2 = _nf2_div_tri(bary_coeff, coords, i2, j2, k2)
+                FC2 = _eval_curl_f_2d(bary_coeff, coords, 0, 1, 2, dofcodes[idof2])
+                FD2 = _eval_div_f_2d(bary_coeff, coords, 0, 1, 2, dofcodes[idof2])
 
             CurlMatrix[idof1, idof2] = np.sum(FC1 * FC2 * WEIGHTS)
             DivMatrix[idof1, idof2] = np.sum(FD1 * FD2 * WEIGHTS)
 
     out = cf * (CurlMatrix - DivMatrix) * Area
-    if SCALE_LENGTH == True:
-        out = out * Ls
+
     return out
 
 
@@ -242,28 +221,30 @@ def _abc_order_2_terms(tri_vertices, cf):
 
 
 @njit(
-    (c16[:])(f8[:, :], i8[:, :], i8[:, :], i8[:, :], i8[:], c16),
+    (c16[:])(f8[:, :], i8[:, :], i8[:, :], i8[:, :], i8[:], c16, i8[:]),
     cache=True,
     nogil=True,
     parallel=True,
 )
-def _matrix_builder(nodes, tris, edges, tri_to_field, tri_ids, coeff):
+def _matrix_builder(nodes, tris, edges, tri_to_field, tri_ids, coeff, dofcodes):
     """Numba optimized loop over each face triangle."""
     ntritot = tris.shape[1]
-    nnz = ntritot * 64
+    n = dofcodes.shape[0]
+    nsq = (n**2)
+    nnz = ntritot * nsq
 
     Mat = np.zeros(nnz, dtype=np.complex128)
 
     Ntris = tri_ids.shape[0]
     for itri_sub in prange(Ntris):  # type: ignore
         itri = tri_ids[itri_sub]
-        p = itri * 64
+        p = itri * nsq
 
         # Construct the local edge map
         tri_nodes = nodes[:, tris[:, itri]]
-        subMat = _abc_order_2_terms(tri_nodes, coeff)
+        subMat = _abc_order_2_terms(tri_nodes, coeff, dofcodes)
 
-        Mat[p : p + 64] += subMat.ravel()
+        Mat[p : p + nsq] += subMat.ravel()
 
     return Mat
 
@@ -293,5 +274,6 @@ def abc_order_2_matrix(
         field.tri_to_field,
         surf_triangle_indices,
         coeff,
+        field.dofcodes2d
     )
     return Mat

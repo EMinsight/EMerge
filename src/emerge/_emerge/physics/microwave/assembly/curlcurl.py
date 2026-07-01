@@ -19,54 +19,44 @@
 from __future__ import annotations
 import numpy as np
 from ....elements import Nedelec2
-from ....mth.optimized import local_mapping, matinv, compute_distances
+from ....mth.optimized import local_mapping, matinv
 from ....mth.csc_cast import CSCMapping
 from ....mth.csr_cast import CSRMapping
-from ....compiled.volakis import (
-    SCALE_LENGTH,
-    _ne1,
-    _ne2,
-    _ne1_curl,
-    _ne2_curl,
-    _nf1,
-    _nf2,
-    _nf1_curl,
-    _nf2_curl,
+from ....compiled.ccbf import (
+    _eval_f_3d, _eval_curl_f_3d, parse_dofcode
 )
 from numba import c16, types, f8, i8, njit, prange, void
 
+# Toggle this to True when you want to use standard Python breakpoints
+DEBUG_MODE = False
 #
 import functools
 
-# Toggle this to True when you want to use standard Python breakpoints
-DEBUG_MODE = False
+def njit(*args, **kwargs):
+    """
+    Drop-in replacement for numba.njit.
+    If DEBUG_MODE is True, it turns into a transparent 'do-nothing' wrapper.
+    If DEBUG_MODE is False, it forwards everything to the real Numba compiler.
+    """
+    if DEBUG_MODE:
+        # Case A: Used without parentheses -> @njit
+        if len(args) == 1 and callable(args[0]):
+            return args[0]
 
+        # Case B: Used with signatures/kwargs -> @njit(cache=True)
+        def decorator(func):
+            @functools.wraps(func)
+            def wrapper(*func_args, **func_kwargs):
+                return func(*func_args, **func_kwargs)
 
-# def njit(*args, **kwargs):
-#     """
-#     Drop-in replacement for numba.njit.
-#     If DEBUG_MODE is True, it turns into a transparent 'do-nothing' wrapper.
-#     If DEBUG_MODE is False, it forwards everything to the real Numba compiler.
-#     """
-#     if DEBUG_MODE:
-#         # Case A: Used without parentheses -> @njit
-#         if len(args) == 1 and callable(args[0]):
-#             return args[0]
+            return wrapper
 
-#         # Case B: Used with signatures/kwargs -> @njit(cache=True)
-#         def decorator(func):
-#             @functools.wraps(func)
-#             def wrapper(*func_args, **func_kwargs):
-#                 return func(*func_args, **func_kwargs)
+        return decorator
+    else:
+        # Import Numba lazily only when debugging is turned off
+        import numba
 
-#             return wrapper
-
-#         return decorator
-#     else:
-#         # Import Numba lazily only when debugging is turned off
-#         import numba
-
-#         return numba.njit(*args, **kwargs)
+        return numba.njit(*args, **kwargs)
 
 
 ############################################################
@@ -263,6 +253,7 @@ def tet_mass_stiffness_matrices(
         ur,
         er,
         tet_assy,
+        field.dofcodes3d,
     )
 
     if cscmap is None:
@@ -277,33 +268,38 @@ def tet_mass_stiffness_matrices(
 
 @njit(
     types.Tuple((c16[:, :], c16[:, :]))(
-        f8[:, :], i8[:, :], i8[:, :], c16[:, :], c16[:, :]
+        f8[:, :], i8[:, :], i8[:, :], c16[:, :], c16[:, :], i8[:],
     ),
     nogil=True,
     cache=True,
     parallel=False,
     fastmath=True,
 )
-def ned2_tet_stiff_mass(tet_vertices, local_edge_map, local_tri_map, Ms, Mm):
+def ned2_tet_stiff_mass(tet_vertices, local_edge_map, local_tri_map, Ms, Mm, dofcodes):
     """Nedelec 2 tetrahedral stiffness and mass matrix submatrix Calculation"""
 
     # fmt: off
     DPTS = np.array([
-        [-0.07893333333333, 0.04573333333333, 0.04573333333333, 0.04573333333333, 0.04573333333333, 0.14933333333333, 0.14933333333333, 0.14933333333333, 0.14933333333333, 0.14933333333333, 0.14933333333333],  # weights
-        [0.25000000000000, 0.78571428571429, 0.07142857142857, 0.07142857142857, 0.07142857142857, 0.10059642383320, 0.39940357616680, 0.39940357616680, 0.39940357616680, 0.10059642383320, 0.10059642383320],  # L1
-        [0.25000000000000, 0.07142857142857, 0.07142857142857, 0.07142857142857, 0.78571428571429, 0.39940357616680, 0.10059642383320, 0.39940357616680, 0.10059642383320, 0.39940357616680, 0.10059642383320],  # L2
-        [0.25000000000000, 0.07142857142857, 0.07142857142857, 0.78571428571429, 0.07142857142857, 0.39940357616680, 0.39940357616680, 0.10059642383320, 0.10059642383320, 0.10059642383320, 0.39940357616680],  # L3
-        [0.25000000000000, 0.07142857142857, 0.78571428571429, 0.07142857142857, 0.07142857142857, 0.10059642383320, 0.10059642383320, 0.10059642383320, 0.39940357616680, 0.39940357616680, 0.39940357616680],  # L4
+        [0.18170206858253509785, 0.03616071428571430296, 0.03616071428571430296, 0.03616071428571430296, 0.03616071428571430296, 0.06987149451617380436, 0.06987149451617380436, 0.06987149451617380436, 0.06987149451617380436, 0.06569484936831869459, 0.06569484936831869459, 0.06569484936831869459, 0.06569484936831869459, 0.06569484936831869459, 0.06569484936831869459],  # weights
+        [0.25000000000000000000, 0.00000000000000000000, 0.33333333333333331483, 0.33333333333333331483, 0.33333333333333331483, 0.72727272727272729291, 0.09090909090909089774, 0.09090909090909089774, 0.09090909090909089774, 0.43344984642633571648, 0.06655015357366429740, 0.06655015357366429740, 0.06655015357366429740, 0.43344984642633571648, 0.43344984642633571648],  # L1
+        [0.25000000000000000000, 0.33333333333333331483, 0.33333333333333331483, 0.33333333333333331483, 0.00000000000000000000, 0.09090909090909089774, 0.09090909090909089774, 0.09090909090909089774, 0.72727272727272729291, 0.06655015357366429740, 0.43344984642633571648, 0.06655015357366429740, 0.43344984642633571648, 0.06655015357366429740, 0.43344984642633571648],  # L2
+        [0.25000000000000000000, 0.33333333333333331483, 0.33333333333333331483, 0.00000000000000000000, 0.33333333333333331483, 0.09090909090909089774, 0.09090909090909089774, 0.72727272727272729291, 0.09090909090909089774, 0.06655015357366429740, 0.06655015357366429740, 0.43344984642633571648, 0.43344984642633571648, 0.43344984642633571648, 0.06655015357366429740],  # L3
+        [0.25000000000000000000, 0.33333333333333342585, 0.00000000000000011102, 0.33333333333333342585, 0.33333333333333342585, 0.09090909090909092549, 0.72727272727272718189, 0.09090909090909082835, 0.09090909090909086998, 0.43344984642633571648, 0.43344984642633566096, 0.43344984642633560545, 0.06655015357366422801, 0.06655015357366428352, 0.06655015357366432516],  # L4
     ], dtype=np.float64)
 
-    MatStiff = np.empty((20, 20), dtype=np.complex128)
-    MatMass = np.empty((20, 20), dtype=np.complex128)
+    typearry, indexarry, idofarry = parse_dofcode(dofcodes)
+    #print(typearry, indexarry, idofarry)
+    ndof = dofcodes.shape[0]
+
+    MatStiff = np.empty((ndof,ndof), dtype=np.complex128)
+    MatMass = np.empty((ndof,ndof), dtype=np.complex128)
 
     txs = tet_vertices[0,:]
     tys = tet_vertices[1,:]
     tzs = tet_vertices[2,:]
 
-    Ds = compute_distances(txs, tys, tzs)
+    
+
     aas, bbs, ccs, dds, V = tet_coefficients(txs, tys, tzs)
     coeff = np.empty((4, 4), dtype=np.float64)
     coeff[0, :] = aas / (6 * V)
@@ -329,57 +325,44 @@ def ned2_tet_stiff_mass(tet_vertices, local_edge_map, local_tri_map, Ms, Mm):
     lem = local_edge_map
     ltm = local_tri_map
 
-    ivec = np.array([lem[0,0], lem[0,1], lem[0,2], lem[0,3], lem[0,4], lem[0,5], 
-                     ltm[0,0], ltm[0,1], ltm[0,2], ltm[0,3],
-                     lem[0,0], lem[0,1], lem[0,2], lem[0,3], lem[0,4], lem[0,5], 
-                     ltm[0,0], ltm[0,1], ltm[0,2], ltm[0,3]])
+    ivec_edge = np.array([lem[0,0], lem[0,1], lem[0,2], lem[0,3], lem[0,4], lem[0,5]])
+    jvec_edge = np.array([lem[1,0], lem[1,1], lem[1,2], lem[1,3], lem[1,4], lem[1,5]])
+    kvec_edge = np.array([0,0,0,0,0,0])
 
-    jvec = np.array([lem[1,0], lem[1,1], lem[1,2], lem[1,3], lem[1,4], lem[1,5], 
-                     ltm[1,0], ltm[1,1], ltm[1,2], ltm[1,3],
-                     lem[1,0], lem[1,1], lem[1,2], lem[1,3], lem[1,4], lem[1,5], 
-                     ltm[1,0], ltm[1,1], ltm[1,2], ltm[1,3]])
-
-    kvec = np.array([0,0,0,0,0,0, 
-                     ltm[2,0], ltm[2,1], ltm[2,2],ltm[2,3], 
-                     0,0,0,0,0,0, 
-                     ltm[2,0], ltm[2,1], ltm[2,2], ltm[2,3]])
-
-    # Length scaling matrix
-    Ls = np.ones((20,20), dtype=np.float64)
-    for idof in range(20):
-        Le = Ds[ivec[idof], jvec[idof]] if idof < 6 or (10 <= idof < 16) else Ds[jvec[idof], kvec[idof]]
-        Ls[idof, :] *= Le
-        Ls[:, idof] *= Le
-
+    ivec_face = np.array([ltm[0,0], ltm[0,1], ltm[0,2], ltm[0,3]])
+    jvec_face = np.array([ltm[1,0], ltm[1,1], ltm[1,2], ltm[1,3]])
+    kvec_face = np.array([ltm[2,0], ltm[2,1], ltm[2,2], ltm[2,3]])
+    
 
     #Pre-allocate storage for all 20 DOF evaluations
-    all_fdof = np.empty((20, 3, coords.shape[1]), dtype=np.complex128)
-    all_fdof_curl = np.empty((20, 3, coords.shape[1]), dtype=np.complex128)
+    all_fdof = np.empty((ndof, 3, coords.shape[1]), dtype=np.complex128)
+    all_fdof_curl = np.empty((ndof, 3, coords.shape[1]), dtype=np.complex128)
 
-    for idof in range(20):
-        i1, j1, k1 = ivec[idof], jvec[idof], kvec[idof]
-        if idof < 6:
-            all_fdof[idof] = _ne1(coeff, coords, i1, j1, k1)
-            all_fdof_curl[idof] = _ne1_curl(coeff, coords, i1, j1, k1)
-        elif idof < 10:
-            all_fdof[idof] = _nf1(coeff, coords, i1, j1, k1)
-            all_fdof_curl[idof] = _nf1_curl(coeff, coords, i1, j1, k1)
-        elif idof < 16:
-            all_fdof[idof] = _ne2(coeff, coords, i1, j1, k1)
-            all_fdof_curl[idof] = _ne2_curl(coeff, coords, i1, j1, k1)
+    for idof in range(ndof):
+        i_type = typearry[idof]
+        i_index = indexarry[idof]
+        if i_type==0: 
+            # edge mode
+            i1 = ivec_edge[i_index]
+            j1 = jvec_edge[i_index]
+            k1 = 0
         else:
-            all_fdof[idof] = _nf2(coeff, coords, i1, j1, k1)
-            all_fdof_curl[idof] = _nf2_curl(coeff, coords, i1, j1, k1)
-
-    all_Ms_fdof_curl = np.empty((20, 3, coords.shape[1]), dtype=np.complex128)
-    all_Mm_fdof = np.empty((20, 3, coords.shape[1]), dtype=np.complex128)
-
-    for idof in range(20):
-        all_Ms_fdof_curl[idof] = matmul(Ms, all_fdof_curl[idof])
-        all_Mm_fdof[idof] = matmul(Mm, all_fdof[idof])
+            i1 = ivec_face[i_index]
+            j1 = jvec_face[i_index]
+            k1 = kvec_face[i_index]
         
-    for idof1 in range(20):
-        for idof2 in range(idof1,20):
+        all_fdof[idof,:,:] = _eval_f_3d(coeff, coords, i1, j1, k1, dofcodes[idof])
+        all_fdof_curl[idof,:,:] = _eval_curl_f_3d(coeff, coords, i1, j1, k1, dofcodes[idof])
+
+    all_Ms_fdof_curl = np.empty((ndof, 3, coords.shape[1]), dtype=np.complex128)
+    all_Mm_fdof = np.empty((ndof, 3, coords.shape[1]), dtype=np.complex128)
+
+    for idof in range(ndof):
+        all_Ms_fdof_curl[idof,:,:] = matmul(Ms, all_fdof_curl[idof,:,:])
+        all_Mm_fdof[idof,:,:] = matmul(Mm, all_fdof[idof,:,:])
+        
+    for idof1 in range(ndof):
+        for idof2 in range(idof1,ndof):
             MatStiff[idof1, idof2] = np.sum(dot(all_Ms_fdof_curl[idof1], all_fdof_curl[idof2]) * WEIGHTS)
             MatMass[idof1, idof2] = np.sum(dot(all_Mm_fdof[idof1], all_fdof[idof2]) * WEIGHTS)
             MatStiff[idof2, idof1] = MatStiff[idof1, idof2]
@@ -387,9 +370,7 @@ def ned2_tet_stiff_mass(tet_vertices, local_edge_map, local_tri_map, Ms, Mm):
 
     MatStiff = MatStiff * V
     MatMass = MatMass * V
-    if SCALE_LENGTH == True:
-        MatStiff = MatStiff * Ls
-        MatMass = MatMass * Ls
+    #print(MatStiff, MatMass)
     return MatStiff, MatMass
 
 
@@ -410,6 +391,7 @@ def ned2_tet_stiff_mass(tet_vertices, local_edge_map, local_tri_map, Ms, Mm):
         c16[:, :, :],
         c16[:, :, :],
         i8[:],
+        i8[:],
     ),
     cache=True,
     nogil=True,
@@ -426,10 +408,12 @@ def _matrix_builder(
     ur,
     er,
     tetids,
+    dofcodes,
 ):
+    ndof = dofcodes.shape[0]
     nT = tets.shape[1]
     ntets_assy = tetids.shape[0]
-    nnz = ntets_assy * 400
+    nnz = ntets_assy * dofcodes.shape[0]**2
 
     rows = np.empty(nnz, dtype=np.int64)
     cols = np.empty_like(rows)
@@ -438,7 +422,7 @@ def _matrix_builder(
 
     for iassy in prange(ntets_assy):  # ty: ignore
         itet = tetids[iassy]
-        p = iassy * 400
+        p = iassy * ndof**2
         urt = ur[:, :, itet]
         ert = er[:, :, itet]
 
@@ -453,12 +437,13 @@ def _matrix_builder(
             local_tri_map,
             matinv(urt),
             ert,
+            dofcodes
         )
         indices = tet_to_field[:, itet]
-        for ii in range(20):
-            rows[p + 20 * ii : p + 20 * (ii + 1)] = indices[ii]
-            cols[p + ii : p + 400 + ii : 20] = indices[ii]
+        for ii in range(ndof):
+            rows[p + ndof * ii : p + ndof * (ii + 1)] = indices[ii]
+            cols[p + ii : p + ndof**2 + ii : ndof] = indices[ii]
 
-        dataE[p : p + 400] = Esub.ravel()
-        dataB[p : p + 400] = Bsub.ravel()
+        dataE[p : p + ndof**2] = Esub.ravel()
+        dataB[p : p + ndof**2] = Bsub.ravel()
     return dataE, dataB, rows, cols

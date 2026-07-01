@@ -23,6 +23,7 @@ from .femdata import FEMBasis
 from emsutil import Saveable
 from loguru import logger
 from ..compiled import MATHLIB
+from .dofsets import DoFSet, DoF_SAVAGE
 
 ############### Nedelec2 Class
 USE_NUMBA = False
@@ -33,47 +34,56 @@ class DoFSplitException(Exception):
 
 
 class Nedelec2(FEMBasis, Saveable):
-    def __init__(self, mesh: Mesh3D):
+    def __init__(self, mesh: Mesh3D, dofset: DoFSet):
         super().__init__(mesh)
 
         self.nedges: int = self.mesh.n_edges
         self.ntris: int = self.mesh.n_tris
         self.ntets: int = self.mesh.n_tets
 
-        self.n_field: int = 2 * self.nedges + 2 * self.ntris
+        self.n_field: int = dofset.set3d.n_edge_dofs * self.nedges + dofset.set3d.n_face_dofs * self.ntris
 
         ######## MESH Derived
+        self.dofset: DoFSet = dofset
+        self.dofcodes2d: np.ndaray = np.array(dofset.set2d.codes, dtype=np.int64)
+        self.dofcodes3d: np.ndaray = np.array(dofset.set3d.codes, dtype=np.int64)
+        
+        self.nedof: int = dofset.set3d.n_edge_dofs
+        self.nfdof: int = dofset.set3d.n_face_dofs
+        self.nvdof: int = 0
 
+        self.nedof_tot: int = self.nedof*self.n_edges
+        self.nfdof_tot: int = self.nfdof*self.n_tris
+
+        self.n_tri_dofs: int = 3*self.nedof + self.nfdof
+        self.n_tet_dofs: int = 6*self.nedof + 4*self.nfdof
+        
+        ndof = dofset.set3d.n_dof_tot
         nedges = self.mesh.n_edges
         ntris = self.mesh.n_tris
 
         self.tet_to_field: np.ndarray = np.zeros(
-            (20, self.mesh.tets.shape[1]), dtype=int
+            (ndof, mesh.n_tets), dtype=int
         )
-        self.tet_to_field[:6, :] = self.mesh.tet_to_edge
-        self.tet_to_field[6:10, :] = self.mesh.tet_to_tri + nedges
-        self.tet_to_field[10:16, :] = self.mesh.tet_to_edge + (ntris + nedges)
-        self.tet_to_field[16:20, :] = self.mesh.tet_to_tri + (ntris + 2 * nedges)
+        self.edge_to_field: np.ndarray = np.zeros((self.nedof, nedges), dtype=int)
+        self.tri_to_field: np.ndarray = np.zeros((self.nedof*3 + self.nfdof, ntris), dtype=int)
+        
+        for i in range(self.nedof):
+            self.tet_to_field[6*i:6*(i+1), :] = self.mesh.tet_to_edge + i*nedges
+            self.edge_to_field[i,:] = np.arange(nedges) + i*nedges
+            self.tri_to_field[3*i:3*(i+1), :] = self.mesh.tri_to_edge + i*nedges 
+            
+        ned = self.nedof*6
+        for i in range(dofset.set3d.n_face_dofs):
+            self.tet_to_field[ned+4*i:ned+4*(i+1), :] = self.mesh.tet_to_tri + i*ntris + self.nedof_tot
+            self.tri_to_field[self.nedof*3 + i,:] = np.arange(ntris) + i*ntris + self.nedof_tot
 
-        self.edge_to_field: np.ndarray = np.zeros((2, nedges), dtype=int)
-
-        self.edge_to_field[0, :] = np.arange(nedges)
-        self.edge_to_field[1, :] = np.arange(nedges) + ntris + nedges
-
-        self.tri_to_field: np.ndarray = np.zeros((8, ntris), dtype=int)
-
-        self.tri_to_field[:3, :] = self.mesh.tri_to_edge
-        self.tri_to_field[3, :] = np.arange(ntris) + nedges
-        self.tri_to_field[4:7, :] = self.mesh.tri_to_edge + nedges + ntris
-        self.tri_to_field[7, :] = np.arange(ntris) + 2 * nedges + ntris
 
         self.tri_to_field_os: np.ndarray | None = None
         self.edge_to_field_os: np.ndarray | None = None
 
         ##
         self._field: np.ndarray | None = None
-        self.n_tet_dofs = 20
-        self.n_tri_dofs = 8
         self._all_tet_ids = np.arange(self.ntets)
 
         ##
@@ -88,6 +98,7 @@ class Nedelec2(FEMBasis, Saveable):
         rows, cols = self.empty_tri_rowcol()
         self._rows = rows
         self._cols = cols
+        
 
     def diagnose(self):
         visited_field = np.zeros((self.n_field,), dtype=np.bool)
@@ -130,27 +141,17 @@ class Nedelec2(FEMBasis, Saveable):
         split_tris = sorted(list(set(split_tris)))
 
         NF = self.n_field
-        NEDOF = len(split_edges)
-        NTDOF = len(split_tris)
+        NE_SPLIT = len(split_edges)
+        NF_SPLIT = len(split_tris)
 
-        self._dof_mapping.update({split_edges[i]: NF + i for i in range(NEDOF)})
-        self._dof_mapping.update(
-            {split_tris[i] + self.nedges: NF + i + NEDOF for i in range(NTDOF)}
-        )
-        self._dof_mapping.update(
-            {
-                split_edges[i] + self.nedges + self.ntris: NF + i + NEDOF + NTDOF
-                for i in range(NEDOF)
-            }
-        )
-        self._dof_mapping.update(
-            {
-                split_tris[i] + 2 * self.nedges + self.ntris: NF + i + 2 * NEDOF + NTDOF
-                for i in range(NTDOF)
-            }
-        )
+        dofset = self.dofset.set3d
 
-        self.n_field = self.n_field + 2 * (NEDOF + NTDOF)
+        for iedof in range(self.nedof):
+            self._dof_mapping.update({split_edges[i] + (iedof)*self.nedges: NF + i + iedof*NE_SPLIT for i in range(NE_SPLIT)})
+        for ifdof in range(self.nfdof):
+            self._dof_mapping.update({split_tris[i] + self.nedof_tot + ifdof*self.ntris: NF + i + self.nedof * NE_SPLIT + NF_SPLIT*ifdof for i in range(NF_SPLIT)})
+
+        self.n_field = self.n_field + self.nedof * NE_SPLIT + dofset.n_face_dofs*NF_SPLIT
 
         for tet in split_tets:
             for i, idof in enumerate(self.tet_to_field[:, tet]):
@@ -161,9 +162,11 @@ class Nedelec2(FEMBasis, Saveable):
                 self.tri_to_field_os[i, itri] = self._dof_mapping.get(idof, idof)
 
         for iedge in split_edges:
-            idof1, idof2 = self.edge_to_field[:, iedge]
-            self.edge_to_field_os[0, iedge] = self._dof_mapping.get(idof1, idof1)
-            self.edge_to_field_os[1, iedge] = self._dof_mapping.get(idof2, idof2)
+            
+            for i in range(self.nedof):
+                idof = self.edge_to_field[i, iedge]
+                self.edge_to_field_os[i, iedge] = self._dof_mapping.get(idof,idof)
+
 
         self._partitioned = True
 
@@ -269,6 +272,7 @@ class Nedelec2(FEMBasis, Saveable):
             self.mesh.tet_to_tri,
             tetids,
             tet_mapping,
+            self.dofcodes3d
         )
         n_zeros = np.isnan(vals).sum()
         if not usenan and n_zeros > 0:
@@ -304,6 +308,7 @@ class Nedelec2(FEMBasis, Saveable):
             c,
             tetids,
             tet_mapping,
+            self.dofcodes3d
         )
         n_zeros = np.isnan(vals).sum()
         if not usenan and n_zeros > 0:

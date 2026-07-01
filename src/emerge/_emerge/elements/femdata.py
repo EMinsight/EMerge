@@ -172,6 +172,7 @@ class FEMBasis(Saveable):
         tet_mapping: np.ndarray,
         tetids: np.ndarray | None = None,
         usenan: bool = True,
+        dofcodes: np.ndarray = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         raise NotImplementedError()
 
@@ -184,6 +185,7 @@ class FEMBasis(Saveable):
         tet_mapping: np.ndarray,
         tetids: np.ndarray | None = None,
         usenan: bool = True,
+        dofcodes: np.ndarray = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         raise NotImplementedError()
 
@@ -197,6 +199,7 @@ class FEMBasis(Saveable):
         tet_mapping: np.ndarray,
         tetids: np.ndarray | None = None,
         usenan: bool = True,
+        dofcodes: np.ndarray = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Interpolates the curl of the field at the given points.
@@ -212,6 +215,7 @@ class FEMBasis(Saveable):
         tet_mapping: np.ndarray,
         tetids: np.ndarray | None = None,
         cs: tuple[float, float] = (1.0, 1.0),
+        dofcodes: np.ndarray = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         raise NotImplementedError()
 

@@ -28,8 +28,8 @@ pcbmat = em.Material(er=er, color="#217627", opacity=0.2)
 
 # We start by creating our simulation object.
 
-model = em.Simulation("SteppedImpedanceFilter")
-
+model = em.Simulation("SteppedImpedanceFilter", loglevel='DEBUG')
+model.mw.order = 2
 model.check_version("2.7.5")  # Checks version compatibility.
 
 # To accomodate PCB routing we make use of the PCBLayouter class. To use it we need to
@@ -100,7 +100,6 @@ port1 = model.mw.bc.ModalPort(p1, 1, modetype="TEM")
 port2 = model.mw.bc.ModalPort(p2, 2, modetype="TEM")
 
 # Finally we execute the frequency domain sweep and compute the Scattering Parameters.
-
 sol = model.mw.run_sweep(parallel=True, n_workers=4, frequency_groups=8)
 
 # Our "sol" variable is of type MWData (Microwave Data). This contains a set of scalar data
@@ -135,11 +134,11 @@ smith(S11, labels="S11", f=f)
 
 plot_sp(f, [S11, S21], labels=["S11", "S21"], dblim=[-40, 6], logx=True)
 
-field = sol.field.find(freq=5.8e9)
+field = sol.field.find(freq=0.6e9)
 model.display.add_object(pcb, opacity=0.1)
 model.display.add_object(polies, opacity=0.5)
 model.display.animate().add_field(
-    field.cutplane(0.5 * mm, z=-0.75 * th * mil).scalar("Ez", "complex").smooth(),
+    field.cutplane(0.5 * mm, z=-0.75 * th * mil).scalar("Ez", "complex"),
     symmetrize=True,
 )
 model.display.add_portmode(port1, k0=field.k0)

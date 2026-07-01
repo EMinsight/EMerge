@@ -22,15 +22,8 @@ from scipy.sparse import csr_matrix
 from ....mth.optimized import local_mapping, matinv
 from numba import c16, types, f8, i8, njit, prange
 from ....compiled.legrange import _ne_grad_tri, _ne_tri, _nv_tri, _nv_grad_tri
-from ....compiled.savage import (
-    _ne1_curl_tri,
-    _ne2_curl_tri,
-    _nf1_curl_tri,
-    _nf2_curl_tri,
-    _ne1_tri,
-    _ne2_tri,
-    _nf1_tri,
-    _nf2_tri,
+from ....compiled.ccbf import (
+    _eval_f_2d, _eval_curl_f_2d, parse_dofcode, _eval_div_f_2d
 )
 
 ############################################################
@@ -56,18 +49,17 @@ def generelized_eigenvalue_matrix(
     inward_normal: np.ndarray,
     k0: float,
 ) -> tuple[csr_matrix, csr_matrix]:
-
+    dofcodes = field.dofcodes
     tris = field.mesh.tris
     edges = field.mesh.edges
-    nodes = field.mesh.nodes
 
     nT = tris.shape[1]
     tri_to_field = field.tri_to_field
 
     nodes = field.local_nodes
-
+    tri_to_edge = field.mesh.tri_to_edge
     dataE, dataB, rows, cols = _matrix_builder(
-        nodes, tris, edges, tri_to_field, ur, er, k0
+        nodes, tris, edges, tri_to_edge, tri_to_field, ur, er, k0, dofcodes,
     )
 
     nfield = field.n_field
@@ -124,43 +116,12 @@ def tri_coefficients(vxs, vys):
 ############################################################
 
 
-DPTS = np.array(
-    [
-        [
-            0.10995174365532,
-            0.10995174365532,
-            0.10995174365532,
-            0.22338158967801,
-            0.22338158967801,
-            0.22338158967801,
-        ],  # weights
-        [
-            0.81684757298046,
-            0.09157621350977,
-            0.09157621350977,
-            0.10810301816807,
-            0.44594849091597,
-            0.44594849091597,
-        ],  # L1
-        [
-            0.09157621350977,
-            0.81684757298046,
-            0.09157621350977,
-            0.44594849091597,
-            0.10810301816807,
-            0.44594849091597,
-        ],  # L2
-        [
-            0.09157621350977,
-            0.09157621350977,
-            0.81684757298046,
-            0.44594849091597,
-            0.44594849091597,
-            0.10810301816807,
-        ],  # L3
-    ],
-    dtype=np.float64,
-)
+DPTS = np.array([
+    [0.22500000000000001, 0.12593918054482717, 0.12593918054482717, 0.12593918054482717, 0.13239415278850616, 0.13239415278850616, 0.13239415278850616],  # weights
+    [0.33333333333333331, 0.79742698535308720, 0.10128650732345633, 0.10128650732345633, 0.05971587178976981, 0.47014206410511505, 0.47014206410511505],  # L1
+    [0.33333333333333331, 0.10128650732345633, 0.79742698535308720, 0.10128650732345633, 0.47014206410511505, 0.05971587178976981, 0.47014206410511505],  # L2
+    [0.33333333333333343, 0.10128650732345647, 0.10128650732345645, 0.79742698535308731, 0.47014206410511516, 0.47014206410511516, 0.05971587178976989],  # L3
+], dtype=np.float64)
 
 ############################################################
 #                 NUMBA OPTIMIZED ASSEMBLER                #
@@ -186,24 +147,33 @@ def _gqi2(v1, v2, W):
 
 
 @njit(
-    types.Tuple((c16[:, :], c16[:, :]))(f8[:, :], i8[:, :], c16[:, :], c16[:, :], f8),
+    types.Tuple((c16[:, :], c16[:, :]))(f8[:, :], i8[:, :], c16[:, :], c16[:, :], f8, i8[:]),
     cache=True,
     nogil=True,
 )
-def generalized_matrix_GQ(tri_vertices, local_edge_map, urinv, er, k0):
+def generalized_matrix_GQ(tri_vertices, local_edge_map, urinv, er, k0, dofcodes):
     """Nedelec-2 Triangle stiffness and mass submatrix"""
-    Att_stiff = np.zeros((8, 8), dtype=np.complex128)
-    Att_mass = np.zeros((8, 8), dtype=np.complex128)
 
-    Btt = np.zeros((8, 8), dtype=np.complex128)
-    Bzt = np.zeros((6, 8), dtype=np.complex128)
+    typearry, indexarry, idofarry = parse_dofcode(dofcodes)
+    ndof = dofcodes.shape[0]
+
+    n = ndof + 6
+    Att_stiff = np.zeros((ndof, ndof), dtype=np.complex128)
+    Att_mass = np.zeros((ndof, ndof), dtype=np.complex128)
+    
+    # Ptt = np.zeros((ndof, ndof), dtype=np.complex128)
+    # Ptz = np.zeros((ndof, 6), dtype=np.complex128)
+    # Pzz = np.zeros((6, 6), dtype=np.complex128)
+
+    Btt = np.zeros((ndof, ndof), dtype=np.complex128)
+    Btz = np.zeros((ndof, 6), dtype=np.complex128)
 
     Bzz_stiff = np.zeros((6, 6), dtype=np.complex128)
     Bzz_mass = np.zeros((6, 6), dtype=np.complex128)
 
-    ivec = np.array([0, 1, 0, 0, 0, 1, 0, 0])
-    jvec = np.array([1, 2, 2, 1, 1, 2, 2, 1])
-    kvec = np.array([0, 0, 0, 2, 0, 0, 0, 2])
+    ivec = np.array([0, 1, 0])
+    jvec = np.array([1, 2, 2])
+    kvec = np.array([0, 0, 0])
 
     WEIGHTS = DPTS[0, :]
     DPTS1 = DPTS[1, :]
@@ -232,188 +202,84 @@ def generalized_matrix_GQ(tri_vertices, local_edge_map, urinv, er, k0):
     urinv = urinv[:2, :2]
     er = er[:2, :2]
 
-    nf1 = _nf1_tri(coeff, cs, 0, 1, 2)
-    nf2 = _nf2_tri(coeff, cs, 0, 1, 2)
+    all_fdof = np.empty((ndof, 2, cs.shape[1]), dtype=np.complex128)
+    all_fdof_curl = np.empty((ndof, cs.shape[1]), dtype=np.complex128)
+    #all_fdof_div = np.empty((ndof, cs.shape[1]), dtype=np.complex128)
+    all_fdof_grad = np.empty((6, 2, cs.shape[1]), dtype=np.complex128)
+    all_fdof_z = np.empty((6, cs.shape[1]), dtype=np.complex128)
 
-    nf1_curl = _nf1_curl_tri(coeff, cs, 0, 1, 2)
-    nf2_curl = _nf2_curl_tri(coeff, cs, 0, 1, 2)
 
-    for iv1 in range(3):
-        i1 = ivec[iv1]
-        j1 = jvec[iv1]
-        k1 = kvec[iv1]
+    for idof in range(ndof):
+        i_type = typearry[idof]
+        i_index = indexarry[idof]
+        if i_type==0: 
+            # edge mode
+            i1 = ivec[i_index]
+            j1 = jvec[i_index]
+            k1 = 0
+        else:
+            i1 = 0
+            j1 = 1
+            k1 = 2
+        
+        all_fdof[idof,:,:] = _eval_f_2d(coeff, cs, i1, j1, k1, dofcodes[idof])
+        all_fdof_curl[idof,:] = _eval_curl_f_2d(coeff, cs, i1, j1, k1, dofcodes[idof])
+        #all_fdof_div[idof,:] = _eval_div_f_2d(coeff, cs, i1, j1, k1, dofcodes[idof])
 
-        ne1curl = _ne1_curl_tri(coeff, cs, i1, j1, 0)
-        ne2curl = _ne2_curl_tri(coeff, cs, i1, j1, 0)
-        ne1 = _ne1_tri(coeff, cs, i1, j1, 0)
-        ne2 = _ne2_tri(coeff, cs, i1, j1, 0)
-        er_ne1 = matmul(er, ne1)
-        er_ne2 = matmul(er, ne2)
-        urinv_nvgrad = matmul(urinv, _nv_grad_tri(coeff, cs, iv1, 0, 0))
-        urinv_negrad = matmul(urinv, _ne_grad_tri(coeff, cs, i1, j1, 0))
+    for idof in range(6):
 
-        for iv2 in range(3):
-            i2 = ivec[iv2]
-            j2 = jvec[iv2]
-            k2 = kvec[iv2]
+        if idof < 3:
+            all_fdof_grad[idof,:,:] = _nv_grad_tri(coeff, cs, idof, 0, 0)
+            all_fdof_z[idof,:] = _nv_tri(coeff, cs, idof, 0, 0)
+        else:
+            i1 = ivec[idof-3]
+            j1 = jvec[idof-3]
+            k1 = 0
+            all_fdof_grad[idof,:,:] = _ne_grad_tri(coeff, cs, i1, j1, k1)
+            all_fdof_z[idof,:] = _ne_tri(coeff, cs, i1, j1, k1)
+    
+    # TT block
+    for idof1 in range(ndof):
+        f1 = all_fdof[idof1,:,:]
+        fcurl1 = all_fdof_curl[idof1,:]
+        #fdiv1 = all_fdof_div[idof1, :]
+        for idof2 in range(ndof):
+            f2 = all_fdof[idof2,:,:]
+            fcurl2 = all_fdof_curl[idof2,:]
+            #fdiv2 = all_fdof_div[idof2, :]
 
-            ne1_j = _ne1_tri(coeff, cs, i2, j2, 0)
-            ne2_j = _ne2_tri(coeff, cs, i2, j2, 0)
+            Att_stiff[idof1, idof2] = _gqi(urinv_z*fcurl1, fcurl2, WEIGHTS)
+            Att_mass[idof1, idof2] = _gqi2(matmul(er, f1), f2, WEIGHTS)
+            #Ptt[idof1, idof2] = alpha*_gqi(fdiv1, fdiv2, WEIGHTS)
 
-            Att_stiff[iv1, iv2] = _gqi(
-                urinv_z * ne1curl, _ne1_curl_tri(coeff, cs, i2, j2, 0), WEIGHTS
-            )
-            Att_stiff[iv1 + 4, iv2] = _gqi(
-                urinv_z * ne2curl, _ne1_curl_tri(coeff, cs, i2, j2, 0), WEIGHTS
-            )
-            Att_stiff[iv1, iv2 + 4] = _gqi(
-                urinv_z * ne1curl, _ne2_curl_tri(coeff, cs, i2, j2, 0), WEIGHTS
-            )
-            Att_stiff[iv1 + 4, iv2 + 4] = _gqi(
-                urinv_z * ne2curl, _ne2_curl_tri(coeff, cs, i2, j2, 0), WEIGHTS
-            )
+            Btt[idof1, idof2] = _gqi2(matmul(urinv, f1), f2, WEIGHTS)
 
-            Att_mass[iv1, iv2] = _gqi2(er_ne1, ne1_j, WEIGHTS)
-            Att_mass[iv1 + 4, iv2] = _gqi2(er_ne2, ne1_j, WEIGHTS)
-            Att_mass[iv1, iv2 + 4] = _gqi2(er_ne1, ne2_j, WEIGHTS)
-            Att_mass[iv1 + 4, iv2 + 4] = _gqi2(er_ne2, ne2_j, WEIGHTS)
+        for idof2 in range(6):
+            f2 = all_fdof_grad[idof2,:,:]
+            Btz[idof1, idof2] = _gqi2(matmul(urinv, f1), f2, WEIGHTS)
+            #Ptz[idof1, idof2] = alpha*_gqi(fdiv1, all_fdof_z[idof2,:], WEIGHTS)
 
-            urinv_ne1 = matmul(urinv, ne1)
-            urinv_ne2 = matmul(urinv, ne2)
+    for idof1 in range(6):
+        f1 = all_fdof_grad[idof1, :,:]
+        f1z = all_fdof_z[idof1, :]
+        for idof2 in range(6):
+            f2 = all_fdof_grad[idof2,:,:]
+            f2z = all_fdof_z[idof2,:]
+            Bzz_stiff[idof1, idof2] = _gqi2(matmul(urinv, f1), f2, WEIGHTS)
+            Bzz_mass[idof1, idof2] = _gqi(er_z*f1z, f2z, WEIGHTS)
+            #Pzz[idof1, idof2] = alpha*_gqi(f1z, f2z, WEIGHTS)
+    A = np.zeros((n,n), dtype=np.complex128)
+    B = np.zeros((n,n), dtype=np.complex128)
 
-            Btt[iv1, iv2] = _gqi2(urinv_ne1, ne1_j, WEIGHTS)
-            Btt[iv1 + 4, iv2] = _gqi2(urinv_ne2, ne1_j, WEIGHTS)
-            Btt[iv1, iv2 + 4] = _gqi2(urinv_ne1, ne2_j, WEIGHTS)
-            Btt[iv1 + 4, iv2 + 4] = _gqi2(urinv_ne2, ne2_j, WEIGHTS)
+    A[:ndof, :ndof] = Att_stiff - k0**2 * Att_mass #+ Ptt
+    # A[ndof:, :ndof] = Ptz.T
+    # A[:ndof, ndof:] = Ptz
+    # A[ndof:, ndof:] = Pzz
 
-            Bzt[iv1, iv2] = _gqi2(urinv_nvgrad, ne1_j, WEIGHTS)
-            Bzt[iv1 + 3, iv2] = _gqi2(urinv_negrad, ne1_j, WEIGHTS)
-            Bzt[iv1, iv2 + 4] = _gqi2(urinv_nvgrad, ne2_j, WEIGHTS)
-            Bzt[iv1 + 3, iv2 + 4] = _gqi2(urinv_negrad, ne2_j, WEIGHTS)
-
-            Bzz_stiff[iv1, iv2] = _gqi2(
-                urinv_nvgrad,
-                _nv_grad_tri(coeff, cs, iv2, 0, 0),
-                WEIGHTS,
-            )
-            Bzz_stiff[iv1, iv2 + 3] = _gqi2(
-                urinv_nvgrad,
-                _ne_grad_tri(coeff, cs, i2, j2, 0),
-                WEIGHTS,
-            )
-            Bzz_stiff[iv1 + 3, iv2] = _gqi2(
-                urinv_negrad,
-                _nv_grad_tri(coeff, cs, iv2, 0, 0),
-                WEIGHTS,
-            )
-            Bzz_stiff[iv1 + 3, iv2 + 3] = _gqi2(
-                urinv_negrad,
-                _ne_grad_tri(coeff, cs, i2, j2, 0),
-                WEIGHTS,
-            )
-
-            Bzz_mass[iv1, iv2] = _gqi(
-                er_z * _nv_tri(coeff, cs, iv1, 0, 0),
-                _nv_tri(coeff, cs, iv2, 0, 0),
-                WEIGHTS,
-            )
-            Bzz_mass[iv1, iv2 + 3] = _gqi(
-                er_z * _nv_tri(coeff, cs, iv1, 0, 0),
-                _ne_tri(coeff, cs, i2, j2, 0),
-                WEIGHTS,
-            )
-            Bzz_mass[iv1 + 3, iv2] = _gqi(
-                er_z * _ne_tri(coeff, cs, i1, j1, 0),
-                _nv_tri(coeff, cs, iv2, 0, 0),
-                WEIGHTS,
-            )
-            Bzz_mass[iv1 + 3, iv2 + 3] = _gqi(
-                er_z * _ne_tri(coeff, cs, i1, j1, 0),
-                _ne_tri(coeff, cs, i2, j2, 0),
-                WEIGHTS,
-            )
-
-        Att_stiff[iv1, 3] = _gqi(urinv_z * ne1curl, nf1_curl, WEIGHTS)
-        Att_stiff[iv1 + 4, 3] = _gqi(
-            urinv_z * ne2curl,
-            nf1_curl,
-            WEIGHTS,
-        )
-        Att_stiff[iv1, 7] = _gqi(urinv_z * ne1curl, nf2_curl, WEIGHTS)
-        Att_stiff[iv1 + 4, 7] = _gqi(
-            urinv_z * ne2curl,
-            nf2_curl,
-            WEIGHTS,
-        )
-
-        Att_stiff[3, iv1] = Att_stiff[iv1, 3]
-        Att_stiff[7, iv1] = Att_stiff[iv1, 7]
-        Att_stiff[3, iv1 + 4] = Att_stiff[iv1 + 4, 3]
-        Att_stiff[7, iv1 + 4] = Att_stiff[iv1 + 4, 7]
-
-        Att_mass[iv1, 3] = _gqi2(er_ne1, nf1, WEIGHTS)
-        Att_mass[iv1 + 4, 3] = _gqi2(er_ne2, nf1, WEIGHTS)
-        Att_mass[iv1, 7] = _gqi2(er_ne1, nf2, WEIGHTS)
-        Att_mass[iv1 + 4, 7] = _gqi2(er_ne2, nf2, WEIGHTS)
-
-        Att_mass[3, iv1] = Att_mass[iv1, 3]
-        Att_mass[7, iv1] = Att_mass[iv1, 7]
-        Att_mass[3, iv1 + 4] = Att_mass[iv1 + 4, 3]
-        Att_mass[7, iv1 + 4] = Att_mass[iv1 + 4, 7]
-
-        Btt[iv1, 3] = _gqi2(urinv_ne1, nf1, WEIGHTS)
-        Btt[iv1 + 4, 3] = _gqi2(urinv_ne2, nf1, WEIGHTS)
-        Btt[iv1, 7] = _gqi2(urinv_ne1, nf2, WEIGHTS)
-        Btt[iv1 + 4, 7] = _gqi2(urinv_ne2, nf2, WEIGHTS)
-
-        Btt[3, iv1] = Btt[iv1, 3]
-        Btt[7, iv1] = Btt[iv1, 7]
-        Btt[3, iv1 + 4] = Btt[iv1 + 4, 3]
-        Btt[7, iv1 + 4] = Btt[iv1 + 4, 7]
-
-        Bzt[iv1, 3] = _gqi2(urinv_nvgrad, nf1, WEIGHTS)
-        Bzt[iv1, 7] = _gqi2(urinv_nvgrad, nf2, WEIGHTS)
-        Bzt[iv1 + 3, 3] = _gqi2(urinv_negrad, nf1, WEIGHTS)
-        Bzt[iv1 + 3, 7] = _gqi2(urinv_negrad, nf2, WEIGHTS)
-
-    Att_stiff[3, 3] = _gqi(
-        urinv_z * nf1_curl,
-        nf1_curl,
-        WEIGHTS,
-    )
-    Att_stiff[7, 3] = _gqi(
-        urinv_z * nf2_curl,
-        nf1_curl,
-        WEIGHTS,
-    )
-    Att_stiff[3, 7] = _gqi(
-        urinv_z * nf1_curl,
-        nf2_curl,
-        WEIGHTS,
-    )
-    Att_stiff[7, 7] = _gqi(
-        urinv_z * nf2_curl,
-        nf2_curl,
-        WEIGHTS,
-    )
-
-    er_f1 = matmul(er, nf1)
-    er_f2 = matmul(er, nf2)
-
-    Att_mass[3, 3] = _gqi2(er_f1, nf1, WEIGHTS)
-    Att_mass[7, 3] = _gqi2(er_f2, nf1, WEIGHTS)
-    Att_mass[3, 7] = _gqi2(er_f1, nf2, WEIGHTS)
-    Att_mass[7, 7] = _gqi2(er_f2, nf2, WEIGHTS)
-
-    A = np.zeros((14, 14), dtype=np.complex128)
-    B = np.zeros((14, 14), dtype=np.complex128)
-
-    A[:8, :8] = Att_stiff - k0**2 * Att_mass
-
-    B[:8, :8] = Btt
-    B[8:, :8] = Bzt
-    B[:8, 8:] = Bzt.T
-    B[8:, 8:] = Bzz_stiff - k0**2 * Bzz_mass
+    B[:ndof, :ndof] = Btt
+    B[ndof:, :ndof] = Btz.T
+    B[:ndof, ndof:] = Btz
+    B[ndof:, ndof:] = Bzz_stiff - k0**2 * Bzz_mass
 
     B = B * np.abs(Area)
     A = A * np.abs(Area)
@@ -426,28 +292,32 @@ def generalized_matrix_GQ(tri_vertices, local_edge_map, urinv, er, k0):
         i8[:, :],
         i8[:, :],
         i8[:, :],
+        i8[:, :],
         c16[:, :, :],
         c16[:, :, :],
         f8,
+        i8[:],
     ),
     cache=True,
     nogil=True,
     parallel=True,
 )
-def _matrix_builder(nodes, tris, edges, tri_to_field, ur, er, k0):
+def _matrix_builder(nodes, tris, edges, tri_to_edge, tri_to_field, ur, er, k0, dofcodes):
+    typearry, indexarry, idofarry = parse_dofcode(dofcodes)
+    ndof = dofcodes.shape[0]
 
     ntritot = tris.shape[1]
-    nnz = ntritot * 196
+    n = (ndof + 6)
+    nsq = n**2
+    nnz = ntritot * nsq
 
     rows = np.zeros(nnz, dtype=np.int64)
     cols = np.zeros(nnz, dtype=np.int64)
     dataE = np.zeros_like(rows, dtype=np.complex128)
     dataB = np.zeros_like(rows, dtype=np.complex128)
 
-    tri_to_edge = tri_to_field[:3, :]
-
     for itri in prange(ntritot):  # type: ignore
-        p = itri * 196
+        p = itri * nsq
         urt = ur[:, :, itri]
         ert = er[:, :, itri]
 
@@ -457,14 +327,14 @@ def _matrix_builder(nodes, tris, edges, tri_to_field, ur, er, k0):
         # Construct the local edge map
         tri_nodes = nodes[:, tris[:, itri]]
         Esub, Bsub = generalized_matrix_GQ(
-            tri_nodes, local_edge_map, matinv(urt), ert, k0
+            tri_nodes, local_edge_map, matinv(urt), ert, k0, dofcodes
         )
 
         indices = tri_to_field[:, itri]
-        for ii in range(14):
-            rows[p + 14 * ii : p + 14 * (ii + 1)] = indices[ii]
-            cols[p + ii : p + ii + 196 : 14] = indices[ii]
+        for ii in range(n):
+            rows[p + n * ii : p + n * (ii + 1)] = indices[ii]
+            cols[p + ii : p + ii + nsq : n] = indices[ii]
 
-        dataE[p : p + 196] = Esub.ravel()
-        dataB[p : p + 196] = Bsub.ravel()
+        dataE[p : p + nsq] = Esub.ravel()
+        dataB[p : p + nsq] = Bsub.ravel()
     return dataE, dataB, rows, cols
