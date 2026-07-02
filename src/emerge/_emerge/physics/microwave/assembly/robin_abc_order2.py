@@ -143,7 +143,7 @@ DPTS = np.array([
 @njit(c16[:, :](f8[:, :], c16, i8[:]), cache=True, nogil=True)
 def _abc_order_2_terms(tri_vertices, cf, dofcodes):
     """ABC order 2 tangent gradient term"""
-    typearry, indexarry, idofarry = parse_dofcode(dofcodes)
+    typearry, indexarry = parse_dofcode(dofcodes)
     ndof = dofcodes.shape[0]
 
     basis, local_vertices = construct_local_vertices(tri_vertices)
@@ -176,7 +176,6 @@ def _abc_order_2_terms(tri_vertices, cf, dofcodes):
     for idof1 in range(ndof):
         i_type = typearry[idof1]
         i_index = indexarry[idof1]
-        i_dof = idofarry[idof1]
 
         i1 = ivec[i_index]
         j1 = jvec[i_index]
@@ -193,7 +192,6 @@ def _abc_order_2_terms(tri_vertices, cf, dofcodes):
         for idof2 in range(ndof):
             i_type = typearry[idof2]
             i_index2 = indexarry[idof2]
-            i_dof = idofarry[idof2]
 
             i2 = ivec[i_index2]
             j2 = jvec[i_index2]

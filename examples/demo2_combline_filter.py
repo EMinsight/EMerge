@@ -138,8 +138,8 @@ field = data.field.find(freq=7.25e9)
 # We can add the objects we want and fields using the shown methods.
 model.display.add_objects(*model.all_geos())
 model.display.add_object(feed1out, opacity=0.1)
-model.display.add_portmode(port1, 21)
-model.display.add_portmode(port2, 21)
+model.display.add_portmode(port1)
+model.display.add_portmode(port2)
 outside = box.boundary()
 model.display.add_field(field.boundary(outside).scalar("normE"), opacity=0.4)
 model.display.animate().add_field(

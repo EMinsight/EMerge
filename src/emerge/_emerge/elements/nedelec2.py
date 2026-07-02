@@ -23,7 +23,7 @@ from .femdata import FEMBasis
 from emsutil import Saveable
 from loguru import logger
 from ..compiled import MATHLIB
-from .dofsets import DoFSet, DoF_SAVAGE
+from .dofsets import DoFSet
 
 ############### Nedelec2 Class
 USE_NUMBA = False

@@ -2,6 +2,7 @@ import emerge as em
 from emerge.plot import plot_sp
 import numpy as np
 
+
 """ COUPLED LINE FILTER DEMO
 
 In this demo we construct a coupled-line bandpass filter using the
@@ -98,7 +99,7 @@ port1 = model.mw.bc.ModalPort(p1, 1, modetype="TEM")
 port2 = model.mw.bc.ModalPort(p2, 2, modetype="TEM")
 
 # --- Run frequency-domain solver ----------------------------------------
-data = model.mw.run_sweep()
+data = model.mw.run_sweep(frequency_groups=2)
 
 # --- Extract and plot S-parameters ---------------------------------------
 f = data.scalar.grid.freq  # frequency axis

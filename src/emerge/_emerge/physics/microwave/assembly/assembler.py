@@ -31,7 +31,7 @@ from ..bcs import (
 from ....periodic import Periodic
 from ....elements.nedelec2 import Nedelec2
 from ....elements.nedleg2 import NedelecLegrange2
-from ....elements.dofsets import DoF_SAVAGE, DoF_COMPLETE, DoFSet, DoF_WEBB
+from ....elements.dofsets import DoFSet
 from ....mth.csc_cast import CSCMapping
 from emsutil import Material
 from ....settings import Settings
@@ -309,6 +309,8 @@ class Assembler:
         k0: float,
         port: PortBC,
         bc_set: MWBoundaryConditionSet,
+        dofset: DoFSet
+
     ) -> tuple[csc_matrix, csc_matrix, np.ndarray, NedelecLegrange2]:
         """Computes the boundary mode analysis matrices
 
@@ -333,7 +335,7 @@ class Assembler:
         logger.trace(f".boundary face has {len(tri_ids)} triangles.")
 
         boundary_surface = mesh.boundary_surface(port.tags)
-        nedlegfield = NedelecLegrange2(boundary_surface, port.cs, DoF_SAVAGE)
+        nedlegfield = NedelecLegrange2(boundary_surface, port.cs, dofset)
 
         ermesh = er[:, :, tri_ids]
         urmesh = ur[:, :, tri_ids]

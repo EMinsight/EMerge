@@ -318,7 +318,7 @@ def ned2_tet_interp(
     offsets = np.searchsorted(assigned_sorted, tetids)
     offsets_end = np.searchsorted(assigned_sorted, tetids, side="right")
 
-    typearry, indexarry, idofarry = parse_dofcode(dofcodes)
+    typearry, indexarry = parse_dofcode(dofcodes)
     nidof = dofcodes.shape[0]
 
     for i_iter in prange(nTetIds):
@@ -360,7 +360,6 @@ def ned2_tet_interp(
         for idof in range(nidof):
             i_type = typearry[idof]
             i_index = indexarry[idof]
-            i_dof = idofarry[idof]
             
             if i_type==0:
                 i1 = l_edge_ids[0, i_index]
@@ -444,7 +443,7 @@ def ned2_tet_interp_curl(
     offsets = np.searchsorted(assigned_sorted, tetids)
     offsets_end = np.searchsorted(assigned_sorted, tetids, side="right")
 
-    typearry, indexarry, idofarry = parse_dofcode(dofcodes)
+    typearry, indexarry = parse_dofcode(dofcodes)
     nidof = dofcodes.shape[0]
 
     for i_iter in prange(nTetIds):
@@ -487,7 +486,6 @@ def ned2_tet_interp_curl(
         for idof in range(nidof):
             i_type = typearry[idof]
             i_index = indexarry[idof]
-            i_dof = idofarry[idof]
             
             if i_type==0:
                 i1 = l_edge_ids[0, i_index]
@@ -857,7 +855,7 @@ def ned2_tri_interp_full(
 
     nodes = nodes[:2, :]
 
-    typearry, indexarry, idofarry = parse_dofcode(dofcodes)
+    typearry, indexarry = parse_dofcode(dofcodes)
     nidof = dofcodes.shape[0]
 
     for itri in range(tris.shape[1]):
@@ -928,7 +926,6 @@ def ned2_tri_interp_full(
                 # Nedelec type
                 i_type = typearry[idof]
                 i_index = indexarry[idof]
-                i_dof = idofarry[idof]
 
                 if i_type == 0:
                     i = ivec[i_index]
@@ -990,7 +987,7 @@ def ned2_tri_interp_grad(
 
     nodes = nodes[:2, :]
     
-    typearry, indexarry, idofarry = parse_dofcode(dofcodes)
+    typearry, indexarry = parse_dofcode(dofcodes)
     nidof = dofcodes.shape[0]
 
     for itri in range(tris.shape[1]):
@@ -1096,7 +1093,7 @@ def ned2_tri_interp_curl(
     nodes = nodes[:2, :]
     jB = -1j * beta
 
-    typearry, indexarry, idofarry = parse_dofcode(dofcodes)
+    typearry, indexarry = parse_dofcode(dofcodes)
     nidof = dofcodes.shape[0]
 
     for itri in range(tris.shape[1]):
@@ -1169,7 +1166,6 @@ def ned2_tri_interp_curl(
                 # Nedelec type
                 i_type = typearry[idof]
                 i_index = indexarry[idof]
-                i_dof = idofarry[idof]
 
                 if i_type == 0:
                     i = ivec[i_index]

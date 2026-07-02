@@ -220,7 +220,7 @@ def tri_coefficients(vxs, vys):
 @njit(c16[:](f8[:, :], c16[:, :], i8[:]), cache=True, nogil=True, parallel=False)
 def ned2_tri_force(glob_vertices, glob_Uinc, dofcodes):
     """Nedelec-2 Triangle forcing vector (For Boundary Condition of the Third Kind)"""
-    typearry, indexarry, idofarry = parse_dofcode(dofcodes)
+    typearry, indexarry = parse_dofcode(dofcodes)
     ndof = dofcodes.shape[0]
     bvec = np.zeros((ndof,), dtype=np.complex128)
 
@@ -315,7 +315,7 @@ def compute_force_entries(
 @njit(c16[:, :](f8[:, :], c16, i8[:]), cache=True, nogil=True, parallel=False)
 def ned2_tri_stiff(glob_vertices, gamma, dofcodes):
     """Nedelec-2 Triangle Stiffness matrix and forcing vector (For Boundary Condition of the Third Kind)"""
-    typearry, indexarry, idofarry = parse_dofcode(dofcodes)
+    typearry, indexarry = parse_dofcode(dofcodes)
     ndof = dofcodes.shape[0]
     
     Bmat = np.zeros((ndof, ndof), dtype=np.complex128)
@@ -456,7 +456,7 @@ def assemble_robin_bc(
 )
 def ned2_tri_force_scat(glob_vertices, glob_Uinc, glob_Uinc_curl, nhat, dofcodes):
     """Nedelec-2 Triangle forcing vector (scattered field, Robin BC)"""
-    typearry, indexarry, idofarry = parse_dofcode(dofcodes)
+    typearry, indexarry = parse_dofcode(dofcodes)
     ndof = dofcodes.shape[0]
     bvec = np.zeros((ndof,), dtype=np.complex128)
 
@@ -493,7 +493,7 @@ def ned2_tri_force_scat(glob_vertices, glob_Uinc, glob_Uinc_curl, nhat, dofcodes
     for idof in range(ndof):
         i_type = typearry[idof]
         i_index = indexarry[idof]
-        i_dof = idofarry[idof]
+        
         if i_type==0:
             i1 = ivec[i_index]
             j1 = jvec[i_index]

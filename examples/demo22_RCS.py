@@ -18,7 +18,6 @@ import numpy as np
 import emerge as em
 from emerge.plot import plot
 
-
 # The paper discusses three objects, a 0.5mm radius PEC sphere, 0.5m radius Dielectric sphere and Dielectric cylinder
 OBJECT = "PEC SPHERE"
 # OBJECT = 'DIEL SPHERE'

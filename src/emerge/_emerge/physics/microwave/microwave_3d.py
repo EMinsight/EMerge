@@ -23,7 +23,7 @@ from ...coord import Line
 from ...geometry import GeoSurface, GeoVolume
 from ...elements.femdata import FEMBasis
 from ...elements.nedelec2 import Nedelec2
-from ...elements.dofsets import DoF_SAVAGE, DoF_VOLAKIS, DoF_FIRST, DoF_COMPLETE
+from ...elements.dofsets import DoFSet, ElementSpace
 from ...solver import DEFAULT_ROUTINE, SolveRoutine
 from ...system import _called_from_main_function
 from ...selection import FaceSelection
@@ -337,7 +337,10 @@ class Microwave3D:
 
         self.frequencies: list[float] = []
         self.current_frequency = 0
-        self.order: int = order  # Discretization order. Is always 2 (legacy)
+        
+        self.dofset: DoFSet = ElementSpace.SECOND_MIXED_VOLAKIS.get_set()
+        self.dofset_em: DoFSet = ElementSpace.SECOND_MIXED_SAVAGE.get_set()
+        
         self.resolution: float = (
             0.33  # Resolution of the mesh as the fraction of the wavelength
         )
@@ -425,6 +428,36 @@ class Microwave3D:
     #                            SETTERS                       #
     ############################################################
 
+    def set_order(self, element_order: Literal[1,2] = 2, complete: bool = False, elementspace: ElementSpace | None = None) -> None:
+        """Define the finite element basis order or element space.
+        
+        Choices for order that are supported are:
+         1 - First order
+         2 - Second order (Anders and Volakis by default)
+        
+        Complete:
+         False - Use Mixed Order basis functions. 20 total. Best for most applications
+         True - Use a Complete Order basis functions. 30 total. Slower but better for models with strong
+                gradient fields usually associated with fringe fields of capacitors. Examples of models
+                that benefit are Patch antennas and Capacitive waveguide irises.
+
+        Args:
+            element_order (Literal[1,2]): The order of basis functions
+            complete (bool, optional): If complete over mixed set of basis function is to be used. Defaults to False.
+            elementspace (ElementSpace | None, optional): Manually specify the ElementSpace. Defaults to None.
+        """
+        if elementspace is not None:
+            self.dofset = elementspace.get_set()
+            return
+        
+        if element_order == 1:
+            self.dofset = ElementSpace.FIRST_ORDER.get_set()
+        elif element_order == 2:
+            if complete:
+                self.dofset = ElementSpace.SECOND_COMPlETE_VOLAKIS.get_set()
+            else:
+                self.dofset = ElementSpace.SECOND_MIXED_VOLAKIS.get_set()
+        
     def set_frequency(self, frequency: float | list[float] | np.ndarray) -> None:
         """Define the frequencies for the frequency sweep
 
@@ -499,12 +532,8 @@ class Microwave3D:
         from ...elements.nedelec2 import Nedelec2
         if self.basis is not None:
             return
-        if self.order == 1:
-            self.basis = Nedelec2(self.mesh, DoF_FIRST)
-        elif self.order == 2:
-            self.basis = Nedelec2(self.mesh, DoF_VOLAKIS)
-        elif self.order == 2.5:
-            self.basis = Nedelec2(self.mesh, DoF_COMPLETE)
+        logger.info(f'Using {self.dofset} basis functions.')
+        self.basis = Nedelec2(self.mesh, self.dofset)
 
     ############################################################
     #                        PRIVATE METHODS                   #
@@ -980,7 +1009,7 @@ class Microwave3D:
 
         # Assemble matrix A and B for the generalized eigenvalue problem: Ax = λBx
         Amatrix, Bmatrix, solve_ids, nlf = self.assembler.assemble_bma_matrices(
-            self.basis, er, ur, cond, k0, port, self.bc
+            self.basis, er, ur, cond, k0, port, self.bc, self.dofset_em
         )
 
         logger.debug(f"Total of {Amatrix.shape[0]} Degrees of freedom.")

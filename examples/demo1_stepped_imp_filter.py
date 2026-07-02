@@ -29,7 +29,7 @@ pcbmat = em.Material(er=er, color="#217627", opacity=0.2)
 # We start by creating our simulation object.
 
 model = em.Simulation("SteppedImpedanceFilter", loglevel='DEBUG')
-model.mw.order = 2
+#model.mw.set_order(elementspace=em.ElementSpace.SECOND_COMPLETE_WEBB)
 model.check_version("2.7.5")  # Checks version compatibility.
 
 # To accomodate PCB routing we make use of the PCBLayouter class. To use it we need to
@@ -86,8 +86,8 @@ model.mw.set_frequency_range(0.2e9, 8e9, 41)
 # The growth_rate setting allows us to change how fast the mesh size will recover to the original size.
 
 model.mesher.set_boundary_size(polies, 1.2 * mm)
-model.mesher.set_face_size(p1, 5 * mm)
-model.mesher.set_face_size(p2, 5 * mm)
+model.mesher.set_face_size(p1, 1 * mm)
+model.mesher.set_face_size(p2, 1 * mm)
 
 # Finally we generate our mesh and view it
 
@@ -100,7 +100,7 @@ port1 = model.mw.bc.ModalPort(p1, 1, modetype="TEM")
 port2 = model.mw.bc.ModalPort(p2, 2, modetype="TEM")
 
 # Finally we execute the frequency domain sweep and compute the Scattering Parameters.
-sol = model.mw.run_sweep(parallel=True, n_workers=4, frequency_groups=8)
+sol = model.mw.run_sweep(parallel=False, n_workers=4, frequency_groups=8)
 
 # Our "sol" variable is of type MWData (Microwave Data). This contains a set of scalar data
 # like S-parameters and field data like the E/H field. The scalar data is in sol.scalar and the
@@ -134,7 +134,18 @@ smith(S11, labels="S11", f=f)
 
 plot_sp(f, [S11, S21], labels=["S11", "S21"], dblim=[-40, 6], logx=True)
 
-field = sol.field.find(freq=0.6e9)
+import numpy as np
+
+fieldlow = sol.field.find(freq=0.9e9)
+Power = fieldlow.int_surf(p1, lambda ehf: ehf.Smx, gqo=6)
+print(f'1: Power = {Power}W, S21 = {10*np.log10(np.abs(Power))}')
+
+Power = fieldlow.int_surf(p2, lambda ehf: ehf.Smx, gqo=6)
+print(f'2: Power = {Power}W, S21 = {10*np.log10(np.abs(Power))}')
+
+
+
+field = sol.field.find(freq=5.5e9)
 model.display.add_object(pcb, opacity=0.1)
 model.display.add_object(polies, opacity=0.5)
 model.display.animate().add_field(

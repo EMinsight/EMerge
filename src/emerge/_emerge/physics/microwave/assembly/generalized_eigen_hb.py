@@ -154,7 +154,7 @@ def _gqi2(v1, v2, W):
 def generalized_matrix_GQ(tri_vertices, local_edge_map, urinv, er, k0, dofcodes):
     """Nedelec-2 Triangle stiffness and mass submatrix"""
 
-    typearry, indexarry, idofarry = parse_dofcode(dofcodes)
+    typearry, indexarry = parse_dofcode(dofcodes)
     ndof = dofcodes.shape[0]
 
     n = ndof + 6
@@ -303,7 +303,7 @@ def generalized_matrix_GQ(tri_vertices, local_edge_map, urinv, er, k0, dofcodes)
     parallel=True,
 )
 def _matrix_builder(nodes, tris, edges, tri_to_edge, tri_to_field, ur, er, k0, dofcodes):
-    typearry, indexarry, idofarry = parse_dofcode(dofcodes)
+    typearry, indexarry = parse_dofcode(dofcodes)
     ndof = dofcodes.shape[0]
 
     ntritot = tris.shape[1]

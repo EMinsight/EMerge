@@ -20,7 +20,7 @@
 
 from numba import njit, c16, f8, i8, types
 import numpy as np
-from numba.typed import List 
+
 # This will be an overview of the complete order basis functions
 # A binary number will be used to represent each basis function. There wil be 4 codes(bits) for the type
 # 000xxxxx = Nodal basis function
@@ -37,11 +37,18 @@ VOLU_TYPE = 0b11000000
 MASK_TYPE = 0b11000000
 MASK_INDEX = 0b00111111
 
-@njit(types.Tuple((i8[:], i8[:], i8[:]))(i8[:]), cache=True)
-def parse_dofcode(dofcodes: np.ndarray) -> tuple[int, int, np.ndarray, np.ndarray]:
+@njit(types.Tuple((i8[:], i8[:]))(i8[:]), cache=True)
+def parse_dofcode(dofcodes: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Returns three arrays that contain information regarding the type of basis function and edge indices.
+
+    Args:
+        dofcodes (np.ndarray): The list of all DoF codes sorted
+
+    Returns:
+        tuple[int, int, np.ndarray, np.ndarray]: The type array (0=edge, 1=face), index array(0-6 etc.), 
+    """
     typearray = np.empty_like(dofcodes, dtype=np.int64)
     indexarray = np.empty_like(dofcodes, dtype=np.int64)
-    idofarray = np.empty_like(dofcodes, dtype=np.int64)
     i = 0
     ne = np.zeros((2**6,), dtype=np.int64)
     nf = np.zeros((2**6,), dtype=np.int64)
@@ -55,9 +62,8 @@ def parse_dofcode(dofcodes: np.ndarray) -> tuple[int, int, np.ndarray, np.ndarra
             typearray[i] = 1
             indexarray[i] = nf[idofcode]
             nf[idofcode] += 1
-        idofarray[i] = idofcode
         i += 1
-    return typearray, indexarray, idofarray
+    return typearray, indexarray
         
 
 @njit(cache=True)
