@@ -62,24 +62,35 @@ class DoFSet(Saveable):
         return self.name
 
 class ElementSpace(Enum):
-    FIRST_ORDER = 0
-    SECOND_MIXED_SAVAGE = 1
-    SECOND_MIXED_VOLAKIS = 2
-    SECOND_MIXED_WEBB = 3
-    SECOND_COMPLETE_WEBB = 4
-    SECOND_COMPLETE_VOLAKIS = 5
-    
+    FIRST_ORDER_MIXED = 0
+    FIRST_ORDER_COMPLETE = 1
+    SECOND_MIXED_SAVAGE = 2
+    SECOND_MIXED_VOLAKIS = 3
+    SECOND_MIXED_WEBB = 4
+    SECOND_COMPLETE_WEBB = 5
+    SECOND_COMPLETE_VOLAKIS = 6
+    SECOND_MIXED_TEST = -1
+    SECOND_COMPLETE_TEST = -2
+
     def get_set(self) -> DoFSet:
-        match self.value:
-            case 0:
-                return DoFSet([0,],[], '1st Order')
-            case 1:
-                return DoFSet([0,1],[0,1], '2nd Order Mixed (Savage)')
-            case 2:
-                return DoFSet([0,2],[0,1], '2nd Order Mixed (Volakis)')
-            case 3:
-                return DoFSet([0,1],[2,3], '2nd Order Mixed (Webb)')
-            case 4:
-                return DoFSet([0,1,3],[2,3,4], '2nd Order Complete (Webb)')
-            case 5:
-                return DoFSet([0,2,3],[0,1,4], '2nd Order Complete (Volakis)')
+        match self:
+            case ElementSpace.FIRST_ORDER_MIXED:
+                return DoFSet([0], [], '1st Order Mixed')
+            case ElementSpace.FIRST_ORDER_COMPLETE:
+                return DoFSet([0, 1], [], '1st Order Complete')
+            case ElementSpace.SECOND_MIXED_SAVAGE:
+                return DoFSet([0, 1], [0, 1], '2nd Order Mixed (Savage)')
+            case ElementSpace.SECOND_MIXED_VOLAKIS:
+                return DoFSet([0, 2], [0, 1], '2nd Order Mixed (Volakis)')
+            case ElementSpace.SECOND_MIXED_WEBB:
+                return DoFSet([0, 1], [2, 3], '2nd Order Mixed (Webb)')
+            case ElementSpace.SECOND_COMPLETE_WEBB:
+                return DoFSet([0, 1, 3], [2, 3, 4], '2nd Order Complete (Webb)')
+            case ElementSpace.SECOND_COMPLETE_VOLAKIS:
+                return DoFSet([0, 2, 3], [0, 1, 4], '2nd Order Complete (Volakis)')
+            case ElementSpace.SECOND_MIXED_TEST:
+                return DoFSet([0, 1, 3], [2, 3, 4], '2nd Order Mixed (TEST)')
+            case ElementSpace.SECOND_COMPLETE_TEST:
+                return DoFSet([0, 1, 3], [5, 6, 4], '2nd Order Complete (TEST)')
+            case _:
+                raise ValueError(f'No DoFSet defined for {self!r}')

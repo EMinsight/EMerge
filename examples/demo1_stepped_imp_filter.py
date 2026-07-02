@@ -28,8 +28,8 @@ pcbmat = em.Material(er=er, color="#217627", opacity=0.2)
 
 # We start by creating our simulation object.
 
-model = em.Simulation("SteppedImpedanceFilter", loglevel='DEBUG')
-#model.mw.set_order(elementspace=em.ElementSpace.SECOND_COMPLETE_WEBB)
+model = em.Simulation("SteppedImpedanceFilter", loglevel='INFO')
+model.mw.set_order(elementspace=em.ElementSpace.SECOND_COMPLETE_WEBB)
 model.check_version("2.7.5")  # Checks version compatibility.
 
 # To accomodate PCB routing we make use of the PCBLayouter class. To use it we need to
@@ -92,7 +92,7 @@ model.mesher.set_face_size(p2, 1 * mm)
 # Finally we generate our mesh and view it
 
 model.generate_mesh()
-model.view()
+#model.view()
 
 
 # We can now define the modal ports for the in and outputs and set the conductor to PEC.
@@ -100,7 +100,7 @@ port1 = model.mw.bc.ModalPort(p1, 1, modetype="TEM")
 port2 = model.mw.bc.ModalPort(p2, 2, modetype="TEM")
 
 # Finally we execute the frequency domain sweep and compute the Scattering Parameters.
-sol = model.mw.run_sweep(parallel=False, n_workers=4, frequency_groups=8)
+sol = model.mw.run_sweep(parallel=True, n_workers=4, frequency_groups=8)
 
 # Our "sol" variable is of type MWData (Microwave Data). This contains a set of scalar data
 # like S-parameters and field data like the E/H field. The scalar data is in sol.scalar and the

@@ -40,7 +40,7 @@ from loguru import logger
 from ..simjob import SimJob
 from ....const import EPS0, C0
 import math
-
+import time
 _PBC_DSMAX = 1e-15
 
 ############################################################
@@ -480,10 +480,13 @@ class Assembler:
         else:
             # OTHERWISE, COMPUTE
             logger.debug("Assembling matrices")
+            t0 = time.time()
             # Store the E and B values in COO matrix format and the compressed-column object cscmap.
             Evec, Bvec, cscmap = tet_mass_stiffness_matrices(
                 field, er, ur, conductor_tets, self.cached_cscmap
             )
+            t1 = time.time()
+            logger.info(f'   Assembly speed: {(field.ntets -len(conductor_tets))/(t1-t0):.1f} tets/s')
             self.cached_cscmap = cscmap
             self.cached_matrices = (Evec, Bvec)
 
