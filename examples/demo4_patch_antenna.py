@@ -1,6 +1,8 @@
 import emerge as em
 import numpy as np
 from emerge.plot import plot_sp, smith, plot_ff_polar, plot_ff
+from emerge_config import config
+config.set_acc_threads(6)
 
 """ PATCH ANTENNA DEMO
 
@@ -10,7 +12,7 @@ In this demo we build and simulate a rectangular patch antenna on a dielectric
 substrate with airbox and lumped port excitation, then visualize S-parameters
 and far-field radiation patterns. 
 
-This simulation is quite heavy and might take a while to fully compute with SuperLU on ARM Mac's (UMFPACK Advised)
+This simulation is quite heavy and might take a while to fully compute with SuperLU on ARM Mac's (Accelerate Advised)
 
 Due to the relatively coarse mesh, the resonance frequency is lower than in reality (expected around 1.59GHz)
 """
@@ -30,13 +32,13 @@ th = 1.524 * mm  # substrate thickness
 Rair = 100 * mm  # air sphere radius
 
 # Refined frequency range for antenna resonance around 1.54–1.6 GHz
-f1 = 1.55e9  # start frequency
-f2 = 1.60e9  # stop frequency
+f1 = 1.545e9  # start frequency
+f2 = 1.605e9  # stop frequency
 
 # --- Create simulation object -------------------------------------------
 model = em.Simulation("PatchAntenna")
 model.check_version("2.7.5")  # Checks version compatibility.
-model.mw.set_order(elementspace=em.ElementSpace.SECOND_COMPLETE_TEST)
+model.mw.set_order(elementspace=em.ElementSpace.FIRST_ORDER_COMPLETE)
 # --- Define geometry primitives -----------------------------------------
 # Substrate block centered at origin in XY, thickness in Z (negative down)
 dielectric = em.geo.Box(wsub, hsub, th, position=(-wsub / 2, -hsub / 2, -th))
@@ -76,7 +78,7 @@ rpatch.set_material(em.lib.PEC)
 dielectric.set_material(em.Material(3.38, color="EMERGE-DIEL", opacity=0.9))
 
 # Mesh resolution: fraction of wavelength
-model.mw.set_resolution(0.2)
+model.mw.set_resolution(0.15)
 
 # Frequency sweep across the resonance
 model.mw.set_frequency_range(f1, f2, 7)
@@ -86,7 +88,7 @@ model.commit_geometry()
 
 # --- Mesh refinement settings --------------------------------------------
 # Finer boundary mesh on patch edges for accuracy
-model.mesher.set_boundary_size(rpatch, 2 * mm)
+model.mesher.set_boundary_size(rpatch, 1 * mm)
 # Refined mesh on port face for excitation accuracy
 model.mesher.set_face_size(port, 1 * mm)
 

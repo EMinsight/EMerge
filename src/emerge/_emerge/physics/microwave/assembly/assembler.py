@@ -486,7 +486,7 @@ class Assembler:
                 field, er, ur, conductor_tets, self.cached_cscmap
             )
             t1 = time.time()
-            logger.info(f'   Assembly speed: {(field.ntets -len(conductor_tets))/(t1-t0):.1f} tets/s')
+            logger.debug(f' - Assembly speed: {(field.ntets -len(conductor_tets))/(t1-t0):.1f} tets/s')
             self.cached_cscmap = cscmap
             self.cached_matrices = (Evec, Bvec)
 

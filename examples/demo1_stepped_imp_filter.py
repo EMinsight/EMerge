@@ -29,9 +29,8 @@ pcbmat = em.Material(er=er, color="#217627", opacity=0.2)
 # We start by creating our simulation object.
 
 model = em.Simulation("SteppedImpedanceFilter", loglevel='INFO')
-model.mw.set_order(elementspace=em.ElementSpace.SECOND_COMPLETE_WEBB)
 model.check_version("2.7.5")  # Checks version compatibility.
-
+model.mw.set_order(2,True)
 # To accomodate PCB routing we make use of the PCBLayouter class. To use it we need to
 # supply it with a thickness, the desired air-box height, the units at which we supply
 # the dimensions and the PCB material.
@@ -85,14 +84,14 @@ model.mw.set_frequency_range(0.2e9, 8e9, 41)
 # This is adviced for small stripline structures.
 # The growth_rate setting allows us to change how fast the mesh size will recover to the original size.
 
-model.mesher.set_boundary_size(polies, 1.2 * mm)
+model.mesher.set_boundary_size(polies, 1.5 * mm)
 model.mesher.set_face_size(p1, 1 * mm)
 model.mesher.set_face_size(p2, 1 * mm)
 
 # Finally we generate our mesh and view it
 
 model.generate_mesh()
-#model.view()
+model.view()
 
 
 # We can now define the modal ports for the in and outputs and set the conductor to PEC.
@@ -133,17 +132,6 @@ S21 = gritted_data.model_S(2, 1)
 smith(S11, labels="S11", f=f)
 
 plot_sp(f, [S11, S21], labels=["S11", "S21"], dblim=[-40, 6], logx=True)
-
-import numpy as np
-
-fieldlow = sol.field.find(freq=0.9e9)
-Power = fieldlow.int_surf(p1, lambda ehf: ehf.Smx, gqo=6)
-print(f'1: Power = {Power}W, S21 = {10*np.log10(np.abs(Power))}')
-
-Power = fieldlow.int_surf(p2, lambda ehf: ehf.Smx, gqo=6)
-print(f'2: Power = {Power}W, S21 = {10*np.log10(np.abs(Power))}')
-
-
 
 field = sol.field.find(freq=5.5e9)
 model.display.add_object(pcb, opacity=0.1)

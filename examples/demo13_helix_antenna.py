@@ -26,7 +26,7 @@ porth = 2 * mm  # vertical height of the feed extrusion
 # --- Simulation object -------------------------------------------------------
 model = em.Simulation("HelixAntennas")
 model.check_version("2.7.5")  # Checks version compatibility.
-
+model.mw.set_order(2,False)
 dfeed = 3 * mm  # straight feed length before the helix starts
 
 # --- Geometry: helix curve and metal pipe -----------------------------------

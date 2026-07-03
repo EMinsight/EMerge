@@ -41,7 +41,7 @@ extra = 100  # extra margin (mil)
 # --- Simulation setup ----------------------------------------------------
 model = em.Simulation("CoupledLineFilter")
 model.check_version("2.7.5")  # Checks version compatibility.
-
+model.mw.set_order(2,False)
 # --- Material and layouter -----------------------------------------------
 mat = em.Material(er=3.55, color="#488343", opacity=0.4)
 

@@ -297,9 +297,7 @@ def ned2_tet_stiff_mass(tet_vertices, local_edge_map, local_tri_map, Ms, Mm, dof
     txs = tet_vertices[0,:]
     tys = tet_vertices[1,:]
     tzs = tet_vertices[2,:]
-
     
-
     aas, bbs, ccs, dds, V = tet_coefficients(txs, tys, tzs)
     coeff = np.empty((4, 4), dtype=np.float64)
     coeff[0, :] = aas / (6 * V)
@@ -321,19 +319,7 @@ def ned2_tet_stiff_mass(tet_vertices, local_edge_map, local_tri_map, Ms, Mm, dof
     coords[0,:] = xs
     coords[1,:] = ys
     coords[2,:] = zs
-
-    lem = local_edge_map
-    ltm = local_tri_map
-
-    ivec_edge = np.array([lem[0,0], lem[0,1], lem[0,2], lem[0,3], lem[0,4], lem[0,5]])
-    jvec_edge = np.array([lem[1,0], lem[1,1], lem[1,2], lem[1,3], lem[1,4], lem[1,5]])
-    kvec_edge = np.array([0,0,0,0,0,0])
-
-    ivec_face = np.array([ltm[0,0], ltm[0,1], ltm[0,2], ltm[0,3]])
-    jvec_face = np.array([ltm[1,0], ltm[1,1], ltm[1,2], ltm[1,3]])
-    kvec_face = np.array([ltm[2,0], ltm[2,1], ltm[2,2], ltm[2,3]])
     
-
     #Pre-allocate storage for all 20 DOF evaluations
     all_fdof = np.empty((ndof, 3, coords.shape[1]), dtype=np.complex128)
     all_fdof_curl = np.empty((ndof, 3, coords.shape[1]), dtype=np.complex128)
@@ -343,13 +329,13 @@ def ned2_tet_stiff_mass(tet_vertices, local_edge_map, local_tri_map, Ms, Mm, dof
         i_index = indexarry[idof]
         if i_type==0: 
             # edge mode
-            i1 = ivec_edge[i_index]
-            j1 = jvec_edge[i_index]
+            i1 = local_edge_map[0, i_index]
+            j1 = local_edge_map[1, i_index]
             k1 = 0
         else:
-            i1 = ivec_face[i_index]
-            j1 = jvec_face[i_index]
-            k1 = kvec_face[i_index]
+            i1 = local_tri_map[0, i_index]
+            j1 = local_tri_map[1, i_index]
+            k1 = local_tri_map[2, i_index]
         
         all_fdof[idof,:,:] = _eval_f_3d(coeff, coords, i1, j1, k1, dofcodes[idof])
         all_fdof_curl[idof,:,:] = _eval_curl_f_3d(coeff, coords, i1, j1, k1, dofcodes[idof])

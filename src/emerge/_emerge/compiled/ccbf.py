@@ -1072,7 +1072,7 @@ def _div_nf6_3d(coeff, coords, i, j, k):
     out = _t0*bi*bj + _t0*ci*cj + _t0*di*dj + _t1*bj*bk + _t1*cj*ck + _t1*dj*dk - _t2*bi*bk - _t2*ci*ck - _t2*di*dk
     return out.astype(np.complex128)
 
-@njit(cache=True)
+@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8, i8), cache=True, nogil=True)
 def _eval_f_2d(coeff, coords, i, j, k, code):
     bftype, index = get_type_index(code)
 
@@ -1103,7 +1103,7 @@ def _eval_f_2d(coeff, coords, i, j, k, code):
     raise ValueError('Unrecognized basis function type.')
     return np.zeros_like(coords, dtype=np.complex128)
 
-@njit(cache=True)
+@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8, i8), cache=True, nogil=True)
 def _eval_f_3d(coeff, coords, i, j, k, code):
     bftype, index = get_type_index(code)
 
@@ -1134,7 +1134,7 @@ def _eval_f_3d(coeff, coords, i, j, k, code):
     raise ValueError('Unrecognized basis function type.')
     return np.zeros_like(coords, dtype=np.complex128)
 
-@njit(cache=True)
+@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8, i8), cache=True, nogil=True)
 def _eval_curl_f_2d(coeff, coords, i, j, k, code):
     bftype, index = get_type_index(code)
 
@@ -1165,7 +1165,7 @@ def _eval_curl_f_2d(coeff, coords, i, j, k, code):
     raise ValueError('Unrecognized basis function type.')
     return np.zeros_like(coords[0,:], dtype=np.complex128)
 
-@njit(cache=True)
+@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8, i8), cache=True, nogil=True)
 def _eval_curl_f_3d(coeff, coords, i, j, k, code):
     bftype, index = get_type_index(code)
 
@@ -1196,7 +1196,7 @@ def _eval_curl_f_3d(coeff, coords, i, j, k, code):
     raise ValueError('Unrecognized basis function type.')
     return np.zeros_like(coords, dtype=np.complex128)
 
-@njit(cache=True)
+@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8, i8), cache=True, nogil=True)
 def _eval_div_f_2d(coeff, coords, i, j, k, code):
     bftype, index = get_type_index(code)
 
@@ -1227,7 +1227,7 @@ def _eval_div_f_2d(coeff, coords, i, j, k, code):
     raise ValueError('Unrecognized basis function type.')
     return np.zeros_like(coords[0,:], dtype=np.complex128)
 
-@njit(cache=True)
+@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8, i8), cache=True, nogil=True)
 def _eval_div_f_3d(coeff, coords, i, j, k, code):
     bftype, index = get_type_index(code)
 

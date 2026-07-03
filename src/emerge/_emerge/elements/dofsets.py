@@ -89,7 +89,7 @@ class ElementSpace(Enum):
             case ElementSpace.SECOND_COMPLETE_VOLAKIS:
                 return DoFSet([0, 2, 3], [0, 1, 4], '2nd Order Complete (Volakis)')
             case ElementSpace.SECOND_MIXED_TEST:
-                return DoFSet([0, 1, 3], [2, 3, 4], '2nd Order Mixed (TEST)')
+                return DoFSet([0, 1, 2, 3], [0,1,2,3,4], '2nd Order Mixed (TEST)')
             case ElementSpace.SECOND_COMPLETE_TEST:
                 return DoFSet([0, 1, 3], [5, 6, 4], '2nd Order Complete (TEST)')
             case _:

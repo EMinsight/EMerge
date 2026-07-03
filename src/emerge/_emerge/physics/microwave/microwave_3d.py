@@ -451,10 +451,13 @@ class Microwave3D:
             return
         
         if element_order == 1:
-            self.dofset = ElementSpace.FIRST_ORDER.get_set()
+            if complete:
+                self.dofset = ElementSpace.FIRST_ORDER_COMPLETE.get_set()
+            else:
+                self.dofset = ElementSpace.FIRST_ORDER_MIXED.get_set()
         elif element_order == 2:
             if complete:
-                self.dofset = ElementSpace.SECOND_COMPlETE_VOLAKIS.get_set()
+                self.dofset = ElementSpace.SECOND_COMPLETE_VOLAKIS.get_set()
             else:
                 self.dofset = ElementSpace.SECOND_MIXED_VOLAKIS.get_set()
         
