@@ -33,7 +33,7 @@ pack = "0603"  # package footprint for lumped components
 # Create simulation and PCB layouter with substrate thickness and material
 model = em.Simulation("LumpedFilter")
 model.check_version("2.8.0")  # Checks version compatibility.
-
+model.mw.set_basis_space
 th = 0.5  # substrate thickness (meters)
 Hair = 2.0
 pcb = em.geo.PCBNew(th, unit=mm, cs=em.GCS, material=em.lib.DIEL_RO4003C, layers=2)
