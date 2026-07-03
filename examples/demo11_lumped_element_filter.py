@@ -80,11 +80,11 @@ model.commit_geometry()
 
 # --- Solver and mesh settings -------------------------------------------
 model.mw.set_frequency_range(0.05e9, 0.3e9, 31)  # 50–300 MHz sweep
-model.mesher.set_boundary_size(traces, 0.5 * mm)
+model.mesher.set_boundary_size(traces, 1 * mm)
 
 # Refine mesh around lumped component faces
 for le in LEs:
-    model.mesher.set_face_size(le, 0.1 * mm)
+    model.mesher.set_face_size(le, 0.25 * mm)
 # Domain mesh refinement
 model.mesher.set_domain_size(diel, 1 * mm)
 model.mesher.set_domain_size(air, 3 * mm)

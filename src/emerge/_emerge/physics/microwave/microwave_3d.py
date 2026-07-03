@@ -34,7 +34,7 @@ from ...const import C0
 
 from .bcs.boundary_condition_set import MWBoundaryConditionSet
 from .bcs.boundary_conditions import PEC, ThinConductor, ScatteredField
-from .bcs.port_bcs import ModalPort, LumpedPort, PortBC, WavePortIH
+from .bcs.port_bcs import ModalPort, LumpedPort, PortBC, WavePortIH, UserDefinedPort
 
 from .microwave_data import MWData
 from .assembly.assembler import Assembler
@@ -428,7 +428,11 @@ class Microwave3D:
     #                            SETTERS                       #
     ############################################################
 
-    def set_order(self, element_order: Literal[1,2] = 2, complete: bool = False, elementspace: ElementSpace | None = None) -> None:
+    def set_basis_space(self, 
+                    element_order: Literal[1,2] = 2, 
+                    complete: bool = False, 
+                    elementspace: ElementSpace | None = None,
+                    dof_set: DoFSet | None = None) -> None:
         """Define the finite element basis order or element space.
         
         Choices for order that are supported are:
@@ -445,7 +449,11 @@ class Microwave3D:
             element_order (Literal[1,2]): The order of basis functions
             complete (bool, optional): If complete over mixed set of basis function is to be used. Defaults to False.
             elementspace (ElementSpace | None, optional): Manually specify the ElementSpace. Defaults to None.
+            dof_set (DoFSet | None, optional): A user defined DoF set. 
         """
+        if dof_set is not None:
+            self.dofset = dof_set
+            return
         if elementspace is not None:
             self.dofset = elementspace.get_set()
             return
@@ -2214,9 +2222,10 @@ class Microwave3D:
 
         p_constants = dict()
         for active_port, smat_index, mode_nr in self.bc.iter_port_modes():
-            if isinstance(active_port, LumpedPort):
+            if isinstance(active_port, (LumpedPort,UserDefinedPort) ):
                 p_constants[smat_index] = 1.0
                 continue
+            
 
             inward_normal = self.mesh.inward_normal(active_port.tags)
 
@@ -2236,6 +2245,7 @@ class Microwave3D:
             power = compute_port_power_flux(
                 self.mesh.nodes, self.mesh.tris[:, tris], portfE, portfH, inward_normal
             )
+
             p_constants[smat_index] = 1 / (abs(power)) ** 0.5
             logger.debug(f"Port {active_port} power = {power:.4f} [W]")
         return p_constants

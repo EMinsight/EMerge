@@ -171,7 +171,7 @@ model.generate_mesh()
 model.view(plot_mesh=True, volume_mesh=False)
 
 # Before we run we call our adaptive mesh refinement at 7GHz. You can change the frequency yourself.
-model.adaptive_mesh_refinement(frequency=6e9)
+model.adaptive_mesh_refinement(frequency=7e9)
 model.view(plot_mesh=True, volume_mesh=False)  # and view the resultant mesh
 
 # Finally we start our sweep

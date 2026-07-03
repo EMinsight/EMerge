@@ -83,7 +83,7 @@ import emsutil.plot as plot
 from emsutil import EMergeTheme
 from emsutil import themes
 from emsutil.lib import C0, MU0, EPS0, Z0
-from ._emerge.elements.dofsets import ElementSpace
+from ._emerge.elements.dofsets import ElementSpace, DoFSet
 
 howto = _HowtoClass()
 

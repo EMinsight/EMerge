@@ -525,7 +525,7 @@ dev = [
 requires-dist = [
     { name = "cupy-cuda12x", marker = "extra == 'cudss'" },
     { name = "cupy-cuda12x", marker = "extra == 'cudss12'" },
-    { name = "emsutil", specifier = ">=0.8.1,<0.9.0" },
+    { name = "emsutil", specifier = ">=0.8.3,<0.9.0" },
     { name = "ezdxf", marker = "extra == 'dxf'" },
     { name = "gmsh", specifier = ">=4.13.0,<4.15" },
     { name = "joblib", specifier = ">=1.5.1" },
@@ -568,7 +568,7 @@ dependencies = [
 
 [[package]]
 name = "emsutil"
-version = "0.8.1"
+version = "0.8.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "loguru" },
@@ -580,9 +580,9 @@ dependencies = [
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/36/cf/83f9cfad769de1de83018d206bebde97032bf8f388ab26d6ce976d1f9515/emsutil-0.8.1.tar.gz", hash = "sha256:f22a56bc923b4149b286f0b76e0af43e3946b0e57844df879b2f50eee5fca71d", size = 7839609, upload-time = "2026-06-15T15:10:29.872Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8c/57/acff33e205ac9644e2dcb6371d8410752887f142397091aab93b7d8d881c/emsutil-0.8.3.tar.gz", hash = "sha256:48f0f1033eb761748ba51718948170090b4c19c9e55556a5881b10b6afecee1b", size = 7839613, upload-time = "2026-06-30T10:57:57.115Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3f/d4/6915d46ab72da156577dc4386bb6a3e3d32f592de822ea5895ac7b9fe754/emsutil-0.8.1-py3-none-any.whl", hash = "sha256:191ef1694fc99c420a5bd8f53ab6ab5fddcb0ed588666d1752f823780fe58a76", size = 7748248, upload-time = "2026-06-15T15:10:27.769Z" },
+    { url = "https://files.pythonhosted.org/packages/22/7d/243faa0758d262888b029743cb07145c21e236581ef411ed4ba81a4d04a4/emsutil-0.8.3-py3-none-any.whl", hash = "sha256:cfaafb9650f8f49a0c4d0351eb7a92577d72015e5e0ad230005ba7e4d0e6a4af", size = 7748255, upload-time = "2026-06-30T10:57:55.276Z" },
 ]
 
 [[package]]

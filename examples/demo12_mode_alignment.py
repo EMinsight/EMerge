@@ -72,13 +72,7 @@ for i in range(1, 3):
     for j in range(1, 3):
         model.display.add_object(wg)
         model.display.add_portmode(p1, k0=data.field[0].k0, mode_number=i)
-        model.display.add_portmode(
-            p1, 30, k0=data.field[0].k0, field="Ez", mode_number=i
-        )
         model.display.add_portmode(p2, k0=data.field[0].k0, mode_number=j)
-        model.display.add_portmode(
-            p2, 30, k0=data.field[0].k0, field="Ez", mode_number=j
-        )
         model.display.show()
 
 # We extract the gritted data if we want and verify that the coupling between the modes is low.

@@ -94,7 +94,7 @@ plot_sp(freq, [S11, S21], labels=["S11", "S21"])
 model.display.add_object(diel, opacity=0.2)
 model.display.add_object(trace)
 model.display.add_object(vias)
-model.display.add_portmode(p1, data.field[3].k0)
+model.display.add_portmode(p1, k0=data.field[3].k0)
 
 # You can use the cutplane method of the BaseDataset class
 # This is equivalent to the interpolate method except it automatically generates
