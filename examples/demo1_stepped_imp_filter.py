@@ -84,8 +84,7 @@ model.mw.set_frequency_range(0.2e9, 8e9, 41)
 # This is adviced for small stripline structures.
 # The growth_rate setting allows us to change how fast the mesh size will recover to the original size.
 
-#model.mesher.set_boundary_size(polies, 1.5 * mm)
-model.mesher.set_trace_refinement(polies, edge_size=1.5*mm)
+model.mesher.set_boundary_size(polies, 1.5 * mm)
 model.mesher.set_face_size(p1, 1 * mm)
 model.mesher.set_face_size(p2, 1 * mm)
 
@@ -100,7 +99,7 @@ port1 = model.mw.bc.ModalPort(p1, 1, modetype="TEM")
 port2 = model.mw.bc.ModalPort(p2, 2, modetype="TEM")
 
 # Finally we execute the frequency domain sweep and compute the Scattering Parameters.
-sol = model.mw.run_sweep(parallel=False, n_workers=4, frequency_groups=8)
+sol = model.mw.run_sweep(parallel=True, n_workers=4, frequency_groups=8)
 
 # Our "sol" variable is of type MWData (Microwave Data). This contains a set of scalar data
 # like S-parameters and field data like the E/H field. The scalar data is in sol.scalar and the
