@@ -26,6 +26,9 @@ from ....compiled.ccbf import (
     _eval_f_3d, _eval_curl_f_3d, parse_dofcode
 )
 from numba import c16, types, f8, i8, njit, prange, void
+from time import time
+from loguru import logger
+import time
 
 # Toggle this to True when you want to use standard Python breakpoints
 # DEBUG_MODE = False
@@ -104,12 +107,16 @@ def dot(MatA, MatB):
     return MatA[0, :] * MatB[0, :] + MatA[1, :] * MatB[1, :] + MatA[2, :] * MatB[2, :]
 
 
-@njit(void(c16[:, :], c16[:], c16[:]), cache=True, nogil=True)
+@njit(void(c16[:, :], c16[:, :], c16[:, :]), cache=True, nogil=True, fastmath=True)
 def matmul_inplace(Mat, Vec, Vout):
-    v0, v1, v2 = Vec[0], Vec[1], Vec[2]
-    Vout[0] = Mat[0, 0] * v0 + Mat[0, 1] * v1 + Mat[0, 2] * v2
-    Vout[1] = Mat[1, 0] * v0 + Mat[1, 1] * v1 + Mat[1, 2] * v2
-    Vout[2] = Mat[2, 0] * v0 + Mat[2, 1] * v1 + Mat[2, 2] * v2
+    m00, m01, m02 = Mat[0, 0], Mat[0, 1], Mat[0, 2]
+    m10, m11, m12 = Mat[1, 0], Mat[1, 1], Mat[1, 2]
+    m20, m21, m22 = Mat[2, 0], Mat[2, 1], Mat[2, 2]
+    for n in range(Vec.shape[1]):
+        v0, v1, v2 = Vec[0, n], Vec[1, n], Vec[2, n]
+        Vout[0, n] = m00 * v0 + m01 * v1 + m02 * v2
+        Vout[1, n] = m10 * v0 + m11 * v1 + m12 * v2
+        Vout[2, n] = m20 * v0 + m21 * v1 + m22 * v2
 
 
 ############################################################
@@ -241,7 +248,7 @@ def tet_mass_stiffness_matrices(
     tet_assy = np.arange(tets.shape[1])
     if conductor_tets.shape[0] > 0:
         tet_assy = np.delete(tet_assy, conductor_tets)
-
+    #t0 = time.time()
     dataE, dataB, rows, cols = _matrix_builder(
         nodes,
         tets,
@@ -255,6 +262,8 @@ def tet_mass_stiffness_matrices(
         tet_assy,
         field.dofcodes3d,
     )
+    t1 = time.time()
+    #logger.debug(f' - Assembly speed: {(field.ntets -len(conductor_tets))/(t1-t0):.1f} tets/s')
 
     if cscmap is None:
         cscmap = CSCMapping.from_rowcol(rows, cols, field.n_field)
@@ -265,39 +274,35 @@ def tet_mass_stiffness_matrices(
 #           NUMBA ACCELLERATE SUB-MATRIX ASSEMBLY          #
 ############################################################
 
+_DPTS = np.array([
+    [-0.07893333333333329982, 0.04573333333333329948, 0.04573333333333329948, 0.04573333333333329948, 0.04573333333333329948, 0.14933333333333329018, 0.14933333333333329018, 0.14933333333333329018, 0.14933333333333329018, 0.14933333333333329018, 0.14933333333333329018],
+    [0.25000000000000000000, 0.78571428571428569843, 0.07142857142857139685, 0.07142857142857139685, 0.07142857142857139685, 0.10059642383320080428, 0.39940357616679922348, 0.39940357616679922348, 0.39940357616679922348, 0.10059642383320080428, 0.10059642383320080428],
+    [0.25000000000000000000, 0.07142857142857139685, 0.07142857142857139685, 0.07142857142857139685, 0.78571428571428569843, 0.39940357616679922348, 0.10059642383320080428, 0.39940357616679922348, 0.10059642383320080428, 0.39940357616679922348, 0.10059642383320080428],
+    [0.25000000000000000000, 0.07142857142857139685, 0.07142857142857139685, 0.78571428571428569843, 0.07142857142857139685, 0.39940357616679922348, 0.39940357616679922348, 0.10059642383320080428, 0.10059642383320080428, 0.10059642383320080428, 0.39940357616679922348],
+    [0.25000000000000000000, 0.07142857142857150787, 0.78571428571428580945, 0.07142857142857150787, 0.07142857142857150787, 0.10059642383320077652, 0.10059642383320077652, 0.10059642383320074877, 0.39940357616679922348, 0.39940357616679922348, 0.39940357616679922348],
+], dtype=np.float64)
 
 @njit(
     types.Tuple((c16[:, :], c16[:, :]))(
-        f8[:, :], i8[:, :], i8[:, :], c16[:, :], c16[:, :], i8[:],
+        f8[:, :], i8[:, :], i8[:, :], c16[:, :], c16[:, :], i8[:], i8[:], i8[:]
     ),
     nogil=True,
     cache=True,
     parallel=False,
     fastmath=True,
 )
-def ned2_tet_stiff_mass(tet_vertices, local_edge_map, local_tri_map, Ms, Mm, dofcodes):
-    """Nedelec 2 tetrahedral stiffness and mass matrix submatrix Calculation"""
-
-    # fmt: off
-    DPTS = np.array([
-        [0.01904761904761900076, 0.01904761904761900076, 0.01904761904761900076, 0.01904761904761900076, 0.01904761904761900076, 0.01904761904761900076, 0.08858982474298070231, 0.08858982474298070231, 0.08858982474298070231, 0.08858982474298070231, 0.13283874668559070287, 0.13283874668559070287, 0.13283874668559070287, 0.13283874668559070287],  # weights
-        [0.00000000000000000000, 0.50000000000000000000, 0.50000000000000000000, 0.50000000000000000000, 0.00000000000000000000, 0.00000000000000000000, 0.69841970432438660321, 0.10052676522520449798, 0.10052676522520449798, 0.10052676522520449798, 0.05688137952042340156, 0.31437287349319220642, 0.31437287349319220642, 0.31437287349319220642],  # L1
-        [0.50000000000000000000, 0.00000000000000000000, 0.50000000000000000000, 0.00000000000000000000, 0.50000000000000000000, 0.00000000000000000000, 0.10052676522520449798, 0.10052676522520449798, 0.10052676522520449798, 0.69841970432438660321, 0.31437287349319220642, 0.31437287349319220642, 0.31437287349319220642, 0.05688137952042340156],  # L2
-        [0.50000000000000000000, 0.50000000000000000000, 0.00000000000000000000, 0.00000000000000000000, 0.00000000000000000000, 0.50000000000000000000, 0.10052676522520449798, 0.10052676522520449798, 0.69841970432438660321, 0.10052676522520449798, 0.31437287349319220642, 0.31437287349319220642, 0.05688137952042340156, 0.31437287349319220642],  # L3
-        [0.00000000000000000000, 0.00000000000000000000, 0.00000000000000000000, 0.50000000000000000000, 0.50000000000000000000, 0.50000000000000000000, 0.10052676522520441471, 0.69841970432438638117, 0.10052676522520431757, 0.10052676522520435920, 0.31437287349319220642, 0.05688137952042338075, 0.31437287349319220642, 0.31437287349319220642],  # L4
-    ], dtype=np.float64)
-
-    typearry, indexarry = parse_dofcode(dofcodes)
-    #print(typearry, indexarry, idofarry)
+def ned2_tet_stiff_mass(tet_vertices, local_edge_map, local_tri_map, Ms, Mm, dofcodes, typearry, indexarry):
+    DPTS = _DPTS
+    
     ndof = dofcodes.shape[0]
 
-    MatStiff = np.empty((ndof,ndof), dtype=np.complex128)
-    MatMass = np.empty((ndof,ndof), dtype=np.complex128)
+    MatStiff = np.empty((ndof, ndof), dtype=np.complex128)
+    MatMass = np.empty((ndof, ndof), dtype=np.complex128)
 
-    txs = tet_vertices[0,:]
-    tys = tet_vertices[1,:]
-    tzs = tet_vertices[2,:]
-    
+    txs = tet_vertices[0, :]
+    tys = tet_vertices[1, :]
+    tzs = tet_vertices[2, :]
+
     aas, bbs, ccs, dds, V = tet_coefficients(txs, tys, tzs)
     coeff = np.empty((4, 4), dtype=np.float64)
     coeff[0, :] = aas / (6 * V)
@@ -305,30 +310,32 @@ def ned2_tet_stiff_mass(tet_vertices, local_edge_map, local_tri_map, Ms, Mm, dof
     coeff[2, :] = ccs / (6 * V)
     coeff[3, :] = dds / (6 * V)
 
-    WEIGHTS = DPTS[0,:]
-    DPTS1 = DPTS[1,:]
-    DPTS2 = DPTS[2,:]
-    DPTS3 = DPTS[3,:]
-    DPTS4 = DPTS[4,:]
+    WEIGHTS = DPTS[0, :]
+    DPTS1 = DPTS[1, :]
+    DPTS2 = DPTS[2, :]
+    DPTS3 = DPTS[3, :]
+    DPTS4 = DPTS[4, :]
 
     xs = txs[0] * DPTS1 + txs[1] * DPTS2 + txs[2] * DPTS3 + txs[3] * DPTS4
     ys = tys[0] * DPTS1 + tys[1] * DPTS2 + tys[2] * DPTS3 + tys[3] * DPTS4
     zs = tzs[0] * DPTS1 + tzs[1] * DPTS2 + tzs[2] * DPTS3 + tzs[3] * DPTS4
 
     coords = np.empty((3, xs.shape[0]), dtype=np.float64)
-    coords[0,:] = xs
-    coords[1,:] = ys
-    coords[2,:] = zs
-    
-    #Pre-allocate storage for all 20 DOF evaluations
-    all_fdof = np.empty((ndof, 3, coords.shape[1]), dtype=np.complex128)
-    all_fdof_curl = np.empty((ndof, 3, coords.shape[1]), dtype=np.complex128)
+    coords[0, :] = xs
+    coords[1, :] = ys
+    coords[2, :] = zs
+
+    N = coords.shape[1]
+
+    all_fdof = np.empty((ndof, 3, N), dtype=np.complex128)
+    all_fdof_curl = np.empty((ndof, 3, N), dtype=np.complex128)
+    all_Ms_fdof_curl_w = np.empty((ndof, 3, N), dtype=np.complex128)
+    all_Mm_fdof_w = np.empty((ndof, 3, N), dtype=np.complex128)
 
     for idof in range(ndof):
         i_type = typearry[idof]
         i_index = indexarry[idof]
-        if i_type==0: 
-            # edge mode
+        if i_type == 0:
             i1 = local_edge_map[0, i_index]
             j1 = local_edge_map[1, i_index]
             k1 = 0
@@ -336,29 +343,41 @@ def ned2_tet_stiff_mass(tet_vertices, local_edge_map, local_tri_map, Ms, Mm, dof
             i1 = local_tri_map[0, i_index]
             j1 = local_tri_map[1, i_index]
             k1 = local_tri_map[2, i_index]
-        
-        all_fdof[idof,:,:] = _eval_f_3d(coeff, coords, i1, j1, k1, dofcodes[idof])
-        all_fdof_curl[idof,:,:] = _eval_curl_f_3d(coeff, coords, i1, j1, k1, dofcodes[idof])
 
-    all_Ms_fdof_curl = np.empty((ndof, 3, coords.shape[1]), dtype=np.complex128)
-    all_Mm_fdof = np.empty((ndof, 3, coords.shape[1]), dtype=np.complex128)
+        _eval_f_3d(coeff, coords, i1, j1, k1, dofcodes[idof], all_fdof[idof, :, :])
+        _eval_curl_f_3d(coeff, coords, i1, j1, k1, dofcodes[idof], all_fdof_curl[idof, :, :])
 
-    for idof in range(ndof):
-        all_Ms_fdof_curl[idof,:,:] = matmul(Ms, all_fdof_curl[idof,:,:])
-        all_Mm_fdof[idof,:,:] = matmul(Mm, all_fdof[idof,:,:])
-        
+        matmul_inplace(Ms, all_fdof_curl[idof, :, :], all_Ms_fdof_curl_w[idof, :, :])
+        matmul_inplace(Mm, all_fdof[idof, :, :], all_Mm_fdof_w[idof, :, :])
+
+        for c in range(3):
+            for n in range(N):
+                all_Ms_fdof_curl_w[idof, c, n] *= WEIGHTS[n]
+                all_Mm_fdof_w[idof, c, n] *= WEIGHTS[n]
+
     for idof1 in range(ndof):
-        for idof2 in range(idof1,ndof):
-            MatStiff[idof1, idof2] = np.sum(dot(all_Ms_fdof_curl[idof1], all_fdof_curl[idof2]) * WEIGHTS)
-            MatMass[idof1, idof2] = np.sum(dot(all_Mm_fdof[idof1], all_fdof[idof2]) * WEIGHTS)
-            MatStiff[idof2, idof1] = MatStiff[idof1, idof2]
-            MatMass[idof2, idof1] = MatMass[idof1, idof2]
+        for idof2 in range(idof1, ndof):
+            accS = 0.0 + 0.0j
+            accM = 0.0 + 0.0j
+            for n in range(N):
+                accS += (
+                    all_Ms_fdof_curl_w[idof1, 0, n] * all_fdof_curl[idof2, 0, n]
+                    + all_Ms_fdof_curl_w[idof1, 1, n] * all_fdof_curl[idof2, 1, n]
+                    + all_Ms_fdof_curl_w[idof1, 2, n] * all_fdof_curl[idof2, 2, n]
+                )
+                accM += (
+                    all_Mm_fdof_w[idof1, 0, n] * all_fdof[idof2, 0, n]
+                    + all_Mm_fdof_w[idof1, 1, n] * all_fdof[idof2, 1, n]
+                    + all_Mm_fdof_w[idof1, 2, n] * all_fdof[idof2, 2, n]
+                )
+            MatStiff[idof1, idof2] = accS
+            MatMass[idof1, idof2] = accM
+            MatStiff[idof2, idof1] = accS
+            MatMass[idof2, idof1] = accM
 
     MatStiff = MatStiff * V
     MatMass = MatMass * V
-    #print(MatStiff, MatMass)
     return MatStiff, MatMass
-
 
 ############################################################
 #             NUMBA ACCELLERATED MATRIX BUILDER            #
@@ -405,7 +424,7 @@ def _matrix_builder(
     cols = np.empty_like(rows)
     dataE = np.empty_like(rows, dtype=np.complex128)
     dataB = np.empty_like(rows, dtype=np.complex128)
-
+    typearry, indexarry = parse_dofcode(dofcodes)
     for iassy in prange(ntets_assy):  # ty: ignore
         itet = tetids[iassy]
         p = iassy * ndof**2
@@ -423,7 +442,9 @@ def _matrix_builder(
             local_tri_map,
             matinv(urt),
             ert,
-            dofcodes
+            dofcodes,
+            typearry, 
+            indexarry
         )
         indices = tet_to_field[:, itet]
         for ii in range(ndof):

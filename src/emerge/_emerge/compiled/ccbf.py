@@ -77,9 +77,8 @@ def get_type_index(number: int):
 ############################################################
 #                      FUNCTIONS HERE                     #
 ############################################################
-
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _ne0_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _ne0_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     xs = coords[0,:]
@@ -88,13 +87,11 @@ def _ne0_2d(coeff, coords, i, j, k):
     _t1 = ai + bi*xs + ci*ys
     bx = -_t0*bi + _t1*bj
     by = -_t0*ci + _t1*cj
-    out = np.empty((2, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _ne1_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _ne1_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     xs = coords[0,:]
@@ -103,13 +100,11 @@ def _ne1_2d(coeff, coords, i, j, k):
     _t1 = ai + bi*xs + ci*ys
     bx = _t0*bi + _t1*bj
     by = _t0*ci + _t1*cj
-    out = np.empty((2, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _ne2_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _ne2_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     xs = coords[0,:]
@@ -121,13 +116,11 @@ def _ne2_2d(coeff, coords, i, j, k):
     _t4 = _t0 + _t1 + aj
     bx = -_t3*(-_t2*bj + _t4*bi)
     by = -_t3*(-_t2*cj + _t4*ci)
-    out = np.empty((2, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _ne3_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _ne3_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     xs = coords[0,:]
@@ -142,13 +135,11 @@ def _ne3_2d(coeff, coords, i, j, k):
     _t7 = _t3*_t5
     bx = _t4*(bi - bj) + _t6*bi + _t7*bj
     by = _t4*(ci - cj) + _t6*ci + _t7*cj
-    out = np.empty((2, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _ne4_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _ne4_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     xs = coords[0,:]
@@ -157,13 +148,11 @@ def _ne4_2d(coeff, coords, i, j, k):
     _t1 = aj + bj*xs + cj*ys
     bx = -_t0*(-_t0*bj + _t1*bi)
     by = -_t0*(-_t0*cj + _t1*ci)
-    out = np.empty((2, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _ne5_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _ne5_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     xs = coords[0,:]
@@ -172,25 +161,21 @@ def _ne5_2d(coeff, coords, i, j, k):
     _t1 = ai + bi*xs + ci*ys
     bx = -_t0*(_t0*bi - _t1*bj)
     by = -_t0*(_t0*ci - _t1*cj)
-    out = np.empty((2, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
-    return out
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _curl_ne0_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _curl_ne0_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
-    out = 2*bi*cj - 2*bj*ci*np.ones_like(coords[0,:])
-    return out.astype(np.complex128)
+    out[:] = 2*bi*cj - 2*bj*ci*np.ones_like(coords[0,:])
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _curl_ne1_2d(coeff, coords, i, j, k):
-    out = np.zeros((coords.shape[1],), dtype=np.complex128)
-    return out
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _curl_ne1_2d(coeff, coords, i, j, k, out):
+    out[:] = 0.0
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _curl_ne2_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _curl_ne2_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     xs = coords[0,:]
@@ -199,61 +184,54 @@ def _curl_ne2_2d(coeff, coords, i, j, k):
     _t1 = cj*ys
     _t2 = _t0 + _t1 + aj
     _t3 = ai + bi*xs + ci*ys
-    out = -(bi - bj)*(_t2*ci - _t3*cj) + (ci - cj)*(_t2*bi - _t3*bj) + 2*(bi*cj - bj*ci)*(-_t0 - _t1 + _t3 - aj)
-    return out.astype(np.complex128)
+    out[:] = -(bi - bj)*(_t2*ci - _t3*cj) + (ci - cj)*(_t2*bi - _t3*bj) + 2*(bi*cj - bj*ci)*(-_t0 - _t1 + _t3 - aj)
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _curl_ne3_2d(coeff, coords, i, j, k):
-    out = np.zeros((coords.shape[1],), dtype=np.complex128)
-    return out
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _curl_ne3_2d(coeff, coords, i, j, k, out):
+    out[:] = 0.0
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _curl_ne4_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _curl_ne4_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     xs = coords[0,:]
     ys = coords[1,:]
     _t0 = ai + bi*xs + ci*ys
     _t1 = aj + bj*xs + cj*ys
-    out = 2*_t0*(bi*cj - bj*ci) - bi*(-_t0*cj + _t1*ci) + ci*(-_t0*bj + _t1*bi)
-    return out.astype(np.complex128)
+    out[:] = 2*_t0*(bi*cj - bj*ci) - bi*(-_t0*cj + _t1*ci) + ci*(-_t0*bj + _t1*bi)
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _curl_ne5_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _curl_ne5_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     xs = coords[0,:]
     ys = coords[1,:]
     _t0 = aj + bj*xs + cj*ys
     _t1 = ai + bi*xs + ci*ys
-    out = 2*_t0*(bi*cj - bj*ci) - bj*(_t0*ci - _t1*cj) + cj*(_t0*bi - _t1*bj)
-    return out.astype(np.complex128)
+    out[:] = 2*_t0*(bi*cj - bj*ci) - bj*(_t0*ci - _t1*cj) + cj*(_t0*bi - _t1*bj)
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _div_ne0_2d(coeff, coords, i, j, k):
-    out = np.zeros((coords.shape[1],), dtype=np.complex128)
-    return out
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _div_ne0_2d(coeff, coords, i, j, k, out):
+    out[:] = 0.0
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _div_ne1_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _div_ne1_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
-    out = 2*bi*bj + 2*ci*cj*np.ones_like(coords[0,:])
-    return out.astype(np.complex128)
+    out[:] = 2*bi*bj + 2*ci*cj*np.ones_like(coords[0,:])
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _div_ne2_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _div_ne2_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     xs = coords[0,:]
     ys = coords[1,:]
     _t0 = aj + bj*xs + cj*ys
     _t1 = ai + bi*xs + ci*ys
-    out = -(bi - bj)*(_t0*bi - _t1*bj) - (ci - cj)*(_t0*ci - _t1*cj)
-    return out.astype(np.complex128)
+    out[:] = -(bi - bj)*(_t0*bi - _t1*bj) - (ci - cj)*(_t0*ci - _t1*cj)
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _div_ne3_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _div_ne3_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     xs = coords[0,:]
@@ -265,33 +243,30 @@ def _div_ne3_2d(coeff, coords, i, j, k):
     _t4 = ai + bi*xs + ci*ys
     _t5 = ci - cj
     _t6 = -_t1 - _t2 + _t4 - aj
-    out = 2*_t0*_t3*bi + 2*_t0*_t4*bj + 2*_t3*_t5*ci + 2*_t4*_t5*cj + 2*_t6*bi*bj + 2*_t6*ci*cj
-    return out.astype(np.complex128)
+    out[:] = 2*_t0*_t3*bi + 2*_t0*_t4*bj + 2*_t3*_t5*ci + 2*_t4*_t5*cj + 2*_t6*bi*bj + 2*_t6*ci*cj
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _div_ne4_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _div_ne4_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     xs = coords[0,:]
     ys = coords[1,:]
     _t0 = aj + bj*xs + cj*ys
     _t1 = ai + bi*xs + ci*ys
-    out = -bi*(_t0*bi - _t1*bj) - ci*(_t0*ci - _t1*cj)
-    return out.astype(np.complex128)
+    out[:] = -bi*(_t0*bi - _t1*bj) - ci*(_t0*ci - _t1*cj)
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _div_ne5_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _div_ne5_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     xs = coords[0,:]
     ys = coords[1,:]
     _t0 = aj + bj*xs + cj*ys
     _t1 = ai + bi*xs + ci*ys
-    out = -bj*(_t0*bi - _t1*bj) - cj*(_t0*ci - _t1*cj)
-    return out.astype(np.complex128)
+    out[:] = -bj*(_t0*bi - _t1*bj) - cj*(_t0*ci - _t1*cj)
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _nf0_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _nf0_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     ak, bk, ck = coeff[:,k]
@@ -302,13 +277,11 @@ def _nf0_2d(coeff, coords, i, j, k):
     _t2 = aj + bj*xs + cj*ys
     bx = -_t0*(_t1*bj - _t2*bk)
     by = -_t0*(_t1*cj - _t2*ck)
-    out = np.empty((2, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _nf1_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _nf1_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     ak, bk, ck = coeff[:,k]
@@ -319,13 +292,11 @@ def _nf1_2d(coeff, coords, i, j, k):
     _t2 = ai + bi*xs + ci*ys
     bx = -_t0*(_t1*bi - _t2*bk)
     by = -_t0*(_t1*ci - _t2*ck)
-    out = np.empty((2, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _nf2_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _nf2_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     ak, bk, ck = coeff[:,k]
@@ -336,13 +307,11 @@ def _nf2_2d(coeff, coords, i, j, k):
     _t2 = ai + bi*xs + ci*ys
     bx = _t0*(_t1*bi - _t2*bj)
     by = _t0*(_t1*ci - _t2*cj)
-    out = np.empty((2, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _nf3_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _nf3_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     ak, bk, ck = coeff[:,k]
@@ -356,13 +325,11 @@ def _nf3_2d(coeff, coords, i, j, k):
     _t5 = 2*_t0*_t3
     bx = _t2*bi + _t4*bj - _t5*bk
     by = _t2*ci + _t4*cj - _t5*ck
-    out = np.empty((2, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _nf4_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _nf4_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     ak, bk, ck = coeff[:,k]
@@ -376,13 +343,11 @@ def _nf4_2d(coeff, coords, i, j, k):
     _t5 = 2*_t1*_t3
     bx = _t2*bj + _t4*bk - _t5*bi
     by = _t2*cj + _t4*ck - _t5*ci
-    out = np.empty((2, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _nf5_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _nf5_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     ak, bk, ck = coeff[:,k]
@@ -396,13 +361,11 @@ def _nf5_2d(coeff, coords, i, j, k):
     _t5 = 2*_t1*_t3
     bx = _t2*bi + _t4*bk - _t5*bj
     by = _t2*ci + _t4*ck - _t5*cj
-    out = np.empty((2, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _nf6_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _nf6_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     ak, bk, ck = coeff[:,k]
@@ -416,13 +379,11 @@ def _nf6_2d(coeff, coords, i, j, k):
     _t5 = _t0*_t3
     bx = _t2*bi + _t4*bj + _t5*bk
     by = _t2*ci + _t4*cj + _t5*ck
-    out = np.empty((2, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
-    return out
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _curl_nf0_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _curl_nf0_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     ak, bk, ck = coeff[:,k]
@@ -430,11 +391,10 @@ def _curl_nf0_2d(coeff, coords, i, j, k):
     ys = coords[1,:]
     _t0 = ak + bk*xs + ck*ys
     _t1 = aj + bj*xs + cj*ys
-    out = -bi*(_t0*cj - _t1*ck) + ci*(_t0*bj - _t1*bk) + 2*(bj*ck - bk*cj)*(ai + bi*xs + ci*ys)
-    return out.astype(np.complex128)
+    out[:] = -bi*(_t0*cj - _t1*ck) + ci*(_t0*bj - _t1*bk) + 2*(bj*ck - bk*cj)*(ai + bi*xs + ci*ys)
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _curl_nf1_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _curl_nf1_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     ak, bk, ck = coeff[:,k]
@@ -442,11 +402,10 @@ def _curl_nf1_2d(coeff, coords, i, j, k):
     ys = coords[1,:]
     _t0 = ak + bk*xs + ck*ys
     _t1 = ai + bi*xs + ci*ys
-    out = -bj*(_t0*ci - _t1*ck) + cj*(_t0*bi - _t1*bk) + 2*(bi*ck - bk*ci)*(aj + bj*xs + cj*ys)
-    return out.astype(np.complex128)
+    out[:] = -bj*(_t0*ci - _t1*ck) + cj*(_t0*bi - _t1*bk) + 2*(bi*ck - bk*ci)*(aj + bj*xs + cj*ys)
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _curl_nf2_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _curl_nf2_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     ak, bk, ck = coeff[:,k]
@@ -454,11 +413,10 @@ def _curl_nf2_2d(coeff, coords, i, j, k):
     ys = coords[1,:]
     _t0 = aj + bj*xs + cj*ys
     _t1 = ai + bi*xs + ci*ys
-    out = bk*(_t0*ci - _t1*cj) - ck*(_t0*bi - _t1*bj) - 2*(bi*cj - bj*ci)*(ak + bk*xs + ck*ys)
-    return out.astype(np.complex128)
+    out[:] = bk*(_t0*ci - _t1*cj) - ck*(_t0*bi - _t1*bj) - 2*(bi*cj - bj*ci)*(ak + bk*xs + ck*ys)
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _curl_nf3_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _curl_nf3_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     ak, bk, ck = coeff[:,k]
@@ -466,11 +424,10 @@ def _curl_nf3_2d(coeff, coords, i, j, k):
     ys = coords[1,:]
     _t0 = aj + bj*xs + cj*ys
     _t1 = ai + bi*xs + ci*ys
-    out = -3*_t0*bi*ck + 3*_t0*bk*ci - 3*_t1*bj*ck + 3*_t1*bk*cj
-    return out.astype(np.complex128)
+    out[:] = -3*_t0*bi*ck + 3*_t0*bk*ci - 3*_t1*bj*ck + 3*_t1*bk*cj
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _curl_nf4_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _curl_nf4_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     ak, bk, ck = coeff[:,k]
@@ -478,11 +435,10 @@ def _curl_nf4_2d(coeff, coords, i, j, k):
     ys = coords[1,:]
     _t0 = ak + bk*xs + ck*ys
     _t1 = aj + bj*xs + cj*ys
-    out = 3*_t0*bi*cj - 3*_t0*bj*ci + 3*_t1*bi*ck - 3*_t1*bk*ci
-    return out.astype(np.complex128)
+    out[:] = 3*_t0*bi*cj - 3*_t0*bj*ci + 3*_t1*bi*ck - 3*_t1*bk*ci
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _curl_nf5_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _curl_nf5_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     ak, bk, ck = coeff[:,k]
@@ -490,16 +446,14 @@ def _curl_nf5_2d(coeff, coords, i, j, k):
     ys = coords[1,:]
     _t0 = ak + bk*xs + ck*ys
     _t1 = ai + bi*xs + ci*ys
-    out = -3*_t0*bi*cj + 3*_t0*bj*ci + 3*_t1*bj*ck - 3*_t1*bk*cj
-    return out.astype(np.complex128)
+    out[:] = -3*_t0*bi*cj + 3*_t0*bj*ci + 3*_t1*bj*ck - 3*_t1*bk*cj
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _curl_nf6_2d(coeff, coords, i, j, k):
-    out = np.zeros((coords.shape[1],), dtype=np.complex128)
-    return out
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _curl_nf6_2d(coeff, coords, i, j, k, out):
+    out[:] = 0.0
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _div_nf0_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _div_nf0_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     ak, bk, ck = coeff[:,k]
@@ -507,11 +461,10 @@ def _div_nf0_2d(coeff, coords, i, j, k):
     ys = coords[1,:]
     _t0 = ak + bk*xs + ck*ys
     _t1 = aj + bj*xs + cj*ys
-    out = -bi*(_t0*bj - _t1*bk) - ci*(_t0*cj - _t1*ck)
-    return out.astype(np.complex128)
+    out[:] = -bi*(_t0*bj - _t1*bk) - ci*(_t0*cj - _t1*ck)
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _div_nf1_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _div_nf1_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     ak, bk, ck = coeff[:,k]
@@ -519,11 +472,10 @@ def _div_nf1_2d(coeff, coords, i, j, k):
     ys = coords[1,:]
     _t0 = ak + bk*xs + ck*ys
     _t1 = ai + bi*xs + ci*ys
-    out = -bj*(_t0*bi - _t1*bk) - cj*(_t0*ci - _t1*ck)
-    return out.astype(np.complex128)
+    out[:] = -bj*(_t0*bi - _t1*bk) - cj*(_t0*ci - _t1*ck)
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _div_nf2_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _div_nf2_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     ak, bk, ck = coeff[:,k]
@@ -531,11 +483,10 @@ def _div_nf2_2d(coeff, coords, i, j, k):
     ys = coords[1,:]
     _t0 = aj + bj*xs + cj*ys
     _t1 = ai + bi*xs + ci*ys
-    out = bk*(_t0*bi - _t1*bj) + ck*(_t0*ci - _t1*cj)
-    return out.astype(np.complex128)
+    out[:] = bk*(_t0*bi - _t1*bj) + ck*(_t0*ci - _t1*cj)
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _div_nf3_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _div_nf3_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     ak, bk, ck = coeff[:,k]
@@ -544,11 +495,10 @@ def _div_nf3_2d(coeff, coords, i, j, k):
     _t0 = aj + bj*xs + cj*ys
     _t1 = ai + bi*xs + ci*ys
     _t2 = ak + bk*xs + ck*ys
-    out = -_t0*bi*bk - _t0*ci*ck - _t1*bj*bk - _t1*cj*ck + 2*_t2*bi*bj + 2*_t2*ci*cj
-    return out.astype(np.complex128)
+    out[:] = -_t0*bi*bk - _t0*ci*ck - _t1*bj*bk - _t1*cj*ck + 2*_t2*bi*bj + 2*_t2*ci*cj
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _div_nf4_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _div_nf4_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     ak, bk, ck = coeff[:,k]
@@ -557,11 +507,10 @@ def _div_nf4_2d(coeff, coords, i, j, k):
     _t0 = ak + bk*xs + ck*ys
     _t1 = aj + bj*xs + cj*ys
     _t2 = ai + bi*xs + ci*ys
-    out = -_t0*bi*bj - _t0*ci*cj - _t1*bi*bk - _t1*ci*ck + 2*_t2*bj*bk + 2*_t2*cj*ck
-    return out.astype(np.complex128)
+    out[:] = -_t0*bi*bj - _t0*ci*cj - _t1*bi*bk - _t1*ci*ck + 2*_t2*bj*bk + 2*_t2*cj*ck
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _div_nf5_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _div_nf5_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     ak, bk, ck = coeff[:,k]
@@ -570,11 +519,10 @@ def _div_nf5_2d(coeff, coords, i, j, k):
     _t0 = ak + bk*xs + ck*ys
     _t1 = ai + bi*xs + ci*ys
     _t2 = aj + bj*xs + cj*ys
-    out = -_t0*bi*bj - _t0*ci*cj - _t1*bj*bk - _t1*cj*ck + 2*_t2*bi*bk + 2*_t2*ci*ck
-    return out.astype(np.complex128)
+    out[:] = -_t0*bi*bj - _t0*ci*cj - _t1*bj*bk - _t1*cj*ck + 2*_t2*bi*bk + 2*_t2*ci*ck
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _div_nf6_2d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _div_nf6_2d(coeff, coords, i, j, k, out):
     ai, bi, ci = coeff[:,i]
     aj, bj, cj = coeff[:,j]
     ak, bk, ck = coeff[:,k]
@@ -583,11 +531,10 @@ def _div_nf6_2d(coeff, coords, i, j, k):
     _t0 = ak + bk*xs + ck*ys
     _t1 = aj + bj*xs + cj*ys
     _t2 = ai + bi*xs + ci*ys
-    out = 2*_t0*bi*bj + 2*_t0*ci*cj + 2*_t1*bi*bk + 2*_t1*ci*ck + 2*_t2*bj*bk + 2*_t2*cj*ck
-    return out.astype(np.complex128)
+    out[:] = 2*_t0*bi*bj + 2*_t0*ci*cj + 2*_t1*bi*bk + 2*_t1*ci*ck + 2*_t2*bj*bk + 2*_t2*cj*ck
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _ne0_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _ne0_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     xs = coords[0,:]
@@ -598,14 +545,12 @@ def _ne0_3d(coeff, coords, i, j, k):
     bx = -_t0*bi + _t1*bj
     by = -_t0*ci + _t1*cj
     bz = -_t0*di + _t1*dj
-    out = np.empty((3, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
     out[2,:] = bz
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _ne1_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _ne1_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     xs = coords[0,:]
@@ -616,14 +561,12 @@ def _ne1_3d(coeff, coords, i, j, k):
     bx = _t0*bi + _t1*bj
     by = _t0*ci + _t1*cj
     bz = _t0*di + _t1*dj
-    out = np.empty((3, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
     out[2,:] = bz
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _ne2_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _ne2_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     xs = coords[0,:]
@@ -638,14 +581,12 @@ def _ne2_3d(coeff, coords, i, j, k):
     bx = -_t4*(-_t3*bj + _t5*bi)
     by = -_t4*(-_t3*cj + _t5*ci)
     bz = -_t4*(-_t3*dj + _t5*di)
-    out = np.empty((3, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
     out[2,:] = bz
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _ne3_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _ne3_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     xs = coords[0,:]
@@ -663,14 +604,12 @@ def _ne3_3d(coeff, coords, i, j, k):
     bx = _t5*(bi - bj) + _t7*bi + _t8*bj
     by = _t5*(ci - cj) + _t7*ci + _t8*cj
     bz = _t5*(di - dj) + _t7*di + _t8*dj
-    out = np.empty((3, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
     out[2,:] = bz
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _ne4_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _ne4_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     xs = coords[0,:]
@@ -681,14 +620,12 @@ def _ne4_3d(coeff, coords, i, j, k):
     bx = -_t0*(-_t0*bj + _t1*bi)
     by = -_t0*(-_t0*cj + _t1*ci)
     bz = -_t0*(-_t0*dj + _t1*di)
-    out = np.empty((3, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
     out[2,:] = bz
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _ne5_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _ne5_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     xs = coords[0,:]
@@ -699,32 +636,27 @@ def _ne5_3d(coeff, coords, i, j, k):
     bx = -_t0*(_t0*bi - _t1*bj)
     by = -_t0*(_t0*ci - _t1*cj)
     bz = -_t0*(_t0*di - _t1*dj)
-    out = np.empty((3, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
     out[2,:] = bz
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _curl_ne0_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _curl_ne0_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     bx = 2*ci*dj - 2*cj*di
     by = -2*bi*dj + 2*bj*di
     bz = 2*bi*cj - 2*bj*ci
-    out = np.empty((3, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
     out[2,:] = bz
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _curl_ne1_3d(coeff, coords, i, j, k):
-    out = np.zeros((3, coords.shape[1]), dtype=np.complex128)
-    return out
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _curl_ne1_3d(coeff, coords, i, j, k, out):
+    out[:,:] = 0.0
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _curl_ne2_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _curl_ne2_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     xs = coords[0,:]
@@ -745,19 +677,16 @@ def _curl_ne2_3d(coeff, coords, i, j, k):
     bx = _t0*_t6 - _t7*_t8 + _t9*(ci*dj - cj*di)
     by = -_t0*_t10 + _t11*_t8 - _t9*(bi*dj - bj*di)
     bz = _t10*_t7 - _t11*_t6 + _t9*(bi*cj - bj*ci)
-    out = np.empty((3, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
     out[2,:] = bz
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _curl_ne3_3d(coeff, coords, i, j, k):
-    out = np.zeros((3, coords.shape[1]), dtype=np.complex128)
-    return out
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _curl_ne3_3d(coeff, coords, i, j, k, out):
+    out[:,:] = 0.0
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _curl_ne4_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _curl_ne4_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     xs = coords[0,:]
@@ -772,14 +701,12 @@ def _curl_ne4_3d(coeff, coords, i, j, k):
     bx = _t1*(ci*dj - cj*di) + _t3*di - _t4*ci
     by = -_t1*(bi*dj - bj*di) + _t4*bi - _t5*di
     bz = _t1*(bi*cj - bj*ci) - _t3*bi + _t5*ci
-    out = np.empty((3, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
     out[2,:] = bz
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _curl_ne5_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _curl_ne5_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     xs = coords[0,:]
@@ -794,26 +721,22 @@ def _curl_ne5_3d(coeff, coords, i, j, k):
     bx = _t1*(ci*dj - cj*di) + _t3*dj - _t4*cj
     by = -_t1*(bi*dj - bj*di) + _t4*bj - _t5*dj
     bz = _t1*(bi*cj - bj*ci) - _t3*bj + _t5*cj
-    out = np.empty((3, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
     out[2,:] = bz
-    return out
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _div_ne0_3d(coeff, coords, i, j, k):
-    out = np.zeros((coords.shape[1],), dtype=np.complex128)
-    return out
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _div_ne0_3d(coeff, coords, i, j, k, out):
+    out[:] = 0.0
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _div_ne1_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _div_ne1_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
-    out = 2*bi*bj + 2*ci*cj + 2*di*dj*np.ones_like(coords[0,:])
-    return out.astype(np.complex128)
+    out[:] = 2*bi*bj + 2*ci*cj + 2*di*dj*np.ones_like(coords[0,:])
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _div_ne2_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _div_ne2_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     xs = coords[0,:]
@@ -821,11 +744,10 @@ def _div_ne2_3d(coeff, coords, i, j, k):
     zs = coords[2,:]
     _t0 = aj + bj*xs + cj*ys + dj*zs
     _t1 = ai + bi*xs + ci*ys + di*zs
-    out = -(bi - bj)*(_t0*bi - _t1*bj) - (ci - cj)*(_t0*ci - _t1*cj) - (di - dj)*(_t0*di - _t1*dj)
-    return out.astype(np.complex128)
+    out[:] = -(bi - bj)*(_t0*bi - _t1*bj) - (ci - cj)*(_t0*ci - _t1*cj) - (di - dj)*(_t0*di - _t1*dj)
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _div_ne3_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _div_ne3_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     xs = coords[0,:]
@@ -840,11 +762,10 @@ def _div_ne3_3d(coeff, coords, i, j, k):
     _t6 = ci - cj
     _t7 = di - dj
     _t8 = -_t1 - _t2 - _t3 + _t5 - aj
-    out = 2*_t0*_t4*bi + 2*_t0*_t5*bj + 2*_t4*_t6*ci + 2*_t4*_t7*di + 2*_t5*_t6*cj + 2*_t5*_t7*dj + 2*_t8*bi*bj + 2*_t8*ci*cj + 2*_t8*di*dj
-    return out.astype(np.complex128)
+    out[:] = 2*_t0*_t4*bi + 2*_t0*_t5*bj + 2*_t4*_t6*ci + 2*_t4*_t7*di + 2*_t5*_t6*cj + 2*_t5*_t7*dj + 2*_t8*bi*bj + 2*_t8*ci*cj + 2*_t8*di*dj
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _div_ne4_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _div_ne4_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     xs = coords[0,:]
@@ -852,11 +773,10 @@ def _div_ne4_3d(coeff, coords, i, j, k):
     zs = coords[2,:]
     _t0 = aj + bj*xs + cj*ys + dj*zs
     _t1 = ai + bi*xs + ci*ys + di*zs
-    out = -bi*(_t0*bi - _t1*bj) - ci*(_t0*ci - _t1*cj) - di*(_t0*di - _t1*dj)
-    return out.astype(np.complex128)
+    out[:] = -bi*(_t0*bi - _t1*bj) - ci*(_t0*ci - _t1*cj) - di*(_t0*di - _t1*dj)
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _div_ne5_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _div_ne5_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     xs = coords[0,:]
@@ -864,11 +784,10 @@ def _div_ne5_3d(coeff, coords, i, j, k):
     zs = coords[2,:]
     _t0 = aj + bj*xs + cj*ys + dj*zs
     _t1 = ai + bi*xs + ci*ys + di*zs
-    out = -bj*(_t0*bi - _t1*bj) - cj*(_t0*ci - _t1*cj) - dj*(_t0*di - _t1*dj)
-    return out.astype(np.complex128)
+    out[:] = -bj*(_t0*bi - _t1*bj) - cj*(_t0*ci - _t1*cj) - dj*(_t0*di - _t1*dj)
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _nf0_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _nf0_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     ak, bk, ck, dk = coeff[:,k]
@@ -881,14 +800,12 @@ def _nf0_3d(coeff, coords, i, j, k):
     bx = -_t0*(_t1*bj - _t2*bk)
     by = -_t0*(_t1*cj - _t2*ck)
     bz = -_t0*(_t1*dj - _t2*dk)
-    out = np.empty((3, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
     out[2,:] = bz
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _nf1_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _nf1_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     ak, bk, ck, dk = coeff[:,k]
@@ -901,14 +818,12 @@ def _nf1_3d(coeff, coords, i, j, k):
     bx = -_t0*(_t1*bi - _t2*bk)
     by = -_t0*(_t1*ci - _t2*ck)
     bz = -_t0*(_t1*di - _t2*dk)
-    out = np.empty((3, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
     out[2,:] = bz
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _nf2_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _nf2_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     ak, bk, ck, dk = coeff[:,k]
@@ -921,14 +836,12 @@ def _nf2_3d(coeff, coords, i, j, k):
     bx = _t0*(_t1*bi - _t2*bj)
     by = _t0*(_t1*ci - _t2*cj)
     bz = _t0*(_t1*di - _t2*dj)
-    out = np.empty((3, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
     out[2,:] = bz
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _nf3_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _nf3_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     ak, bk, ck, dk = coeff[:,k]
@@ -944,14 +857,12 @@ def _nf3_3d(coeff, coords, i, j, k):
     bx = _t2*bi + _t4*bj - _t5*bk
     by = _t2*ci + _t4*cj - _t5*ck
     bz = _t2*di + _t4*dj - _t5*dk
-    out = np.empty((3, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
     out[2,:] = bz
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _nf4_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _nf4_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     ak, bk, ck, dk = coeff[:,k]
@@ -967,14 +878,12 @@ def _nf4_3d(coeff, coords, i, j, k):
     bx = _t2*bj + _t4*bk - _t5*bi
     by = _t2*cj + _t4*ck - _t5*ci
     bz = _t2*dj + _t4*dk - _t5*di
-    out = np.empty((3, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
     out[2,:] = bz
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _nf5_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _nf5_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     ak, bk, ck, dk = coeff[:,k]
@@ -990,14 +899,12 @@ def _nf5_3d(coeff, coords, i, j, k):
     bx = _t2*bi + _t4*bk - _t5*bj
     by = _t2*ci + _t4*ck - _t5*cj
     bz = _t2*di + _t4*dk - _t5*dj
-    out = np.empty((3, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
     out[2,:] = bz
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _nf6_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _nf6_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     ak, bk, ck, dk = coeff[:,k]
@@ -1013,14 +920,12 @@ def _nf6_3d(coeff, coords, i, j, k):
     bx = _t2*bi + _t4*bj + _t5*bk
     by = _t2*ci + _t4*cj + _t5*ck
     bz = _t2*di + _t4*dj + _t5*dk
-    out = np.empty((3, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
     out[2,:] = bz
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _curl_nf0_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _curl_nf0_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     ak, bk, ck, dk = coeff[:,k]
@@ -1036,14 +941,12 @@ def _curl_nf0_3d(coeff, coords, i, j, k):
     bx = _t0*(cj*dk - ck*dj) + _t3*di - _t4*ci
     by = -_t0*(bj*dk - bk*dj) + _t4*bi - _t5*di
     bz = _t0*(bj*ck - bk*cj) - _t3*bi + _t5*ci
-    out = np.empty((3, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
     out[2,:] = bz
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _curl_nf1_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _curl_nf1_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     ak, bk, ck, dk = coeff[:,k]
@@ -1059,14 +962,12 @@ def _curl_nf1_3d(coeff, coords, i, j, k):
     bx = _t0*(ci*dk - ck*di) + _t3*dj - _t4*cj
     by = -_t0*(bi*dk - bk*di) + _t4*bj - _t5*dj
     bz = _t0*(bi*ck - bk*ci) - _t3*bj + _t5*cj
-    out = np.empty((3, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
     out[2,:] = bz
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _curl_nf2_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _curl_nf2_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     ak, bk, ck, dk = coeff[:,k]
@@ -1082,14 +983,12 @@ def _curl_nf2_3d(coeff, coords, i, j, k):
     bx = -_t0*(ci*dj - cj*di) - _t3*dk + _t4*ck
     by = _t0*(bi*dj - bj*di) - _t4*bk + _t5*dk
     bz = -_t0*(bi*cj - bj*ci) + _t3*bk - _t5*ck
-    out = np.empty((3, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
     out[2,:] = bz
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _curl_nf3_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _curl_nf3_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     ak, bk, ck, dk = coeff[:,k]
@@ -1103,14 +1002,12 @@ def _curl_nf3_3d(coeff, coords, i, j, k):
     bx = 3*_t0*ck*di - 3*_t1*ci + 3*_t2*ck*dj - 3*_t3*cj
     by = -3*_t0*bk*di + 3*_t1*bi - 3*_t2*bk*dj + 3*_t3*bj
     bz = -3*_t0*bi*ck + 3*_t0*bk*ci - 3*_t2*bj*ck + 3*_t2*bk*cj
-    out = np.empty((3, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
     out[2,:] = bz
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _curl_nf4_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _curl_nf4_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     ak, bk, ck, dk = coeff[:,k]
@@ -1124,14 +1021,12 @@ def _curl_nf4_3d(coeff, coords, i, j, k):
     bx = -3*_t0*cj*di + 3*_t1*ci - 3*_t2*ck*di + 3*_t3*ci
     by = 3*_t0*bj*di - 3*_t1*bi + 3*_t2*bk*di - 3*_t3*bi
     bz = 3*_t0*bi*cj - 3*_t0*bj*ci + 3*_t2*bi*ck - 3*_t2*bk*ci
-    out = np.empty((3, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
     out[2,:] = bz
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _curl_nf5_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _curl_nf5_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     ak, bk, ck, dk = coeff[:,k]
@@ -1145,19 +1040,16 @@ def _curl_nf5_3d(coeff, coords, i, j, k):
     bx = 3*_t0*cj*di - 3*_t1*ci + 3*_t2*cj*dk - 3*_t3*ck
     by = -3*_t0*bj*di + 3*_t1*bi - 3*_t2*bj*dk + 3*_t3*bk
     bz = -3*_t0*bi*cj + 3*_t0*bj*ci + 3*_t2*bj*ck - 3*_t2*bk*cj
-    out = np.empty((3, coords.shape[1]), dtype=np.complex128)
     out[0,:] = bx
     out[1,:] = by
     out[2,:] = bz
-    return out
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _curl_nf6_3d(coeff, coords, i, j, k):
-    out = np.zeros((3, coords.shape[1]), dtype=np.complex128)
-    return out
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _curl_nf6_3d(coeff, coords, i, j, k, out):
+    out[:,:] = 0.0
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _div_nf0_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _div_nf0_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     ak, bk, ck, dk = coeff[:,k]
@@ -1166,11 +1058,10 @@ def _div_nf0_3d(coeff, coords, i, j, k):
     zs = coords[2,:]
     _t0 = ak + bk*xs + ck*ys + dk*zs
     _t1 = aj + bj*xs + cj*ys + dj*zs
-    out = -bi*(_t0*bj - _t1*bk) - ci*(_t0*cj - _t1*ck) - di*(_t0*dj - _t1*dk)
-    return out.astype(np.complex128)
+    out[:] = -bi*(_t0*bj - _t1*bk) - ci*(_t0*cj - _t1*ck) - di*(_t0*dj - _t1*dk)
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _div_nf1_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _div_nf1_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     ak, bk, ck, dk = coeff[:,k]
@@ -1179,11 +1070,10 @@ def _div_nf1_3d(coeff, coords, i, j, k):
     zs = coords[2,:]
     _t0 = ak + bk*xs + ck*ys + dk*zs
     _t1 = ai + bi*xs + ci*ys + di*zs
-    out = -bj*(_t0*bi - _t1*bk) - cj*(_t0*ci - _t1*ck) - dj*(_t0*di - _t1*dk)
-    return out.astype(np.complex128)
+    out[:] = -bj*(_t0*bi - _t1*bk) - cj*(_t0*ci - _t1*ck) - dj*(_t0*di - _t1*dk)
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _div_nf2_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _div_nf2_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     ak, bk, ck, dk = coeff[:,k]
@@ -1192,11 +1082,10 @@ def _div_nf2_3d(coeff, coords, i, j, k):
     zs = coords[2,:]
     _t0 = aj + bj*xs + cj*ys + dj*zs
     _t1 = ai + bi*xs + ci*ys + di*zs
-    out = bk*(_t0*bi - _t1*bj) + ck*(_t0*ci - _t1*cj) + dk*(_t0*di - _t1*dj)
-    return out.astype(np.complex128)
+    out[:] = bk*(_t0*bi - _t1*bj) + ck*(_t0*ci - _t1*cj) + dk*(_t0*di - _t1*dj)
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _div_nf3_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _div_nf3_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     ak, bk, ck, dk = coeff[:,k]
@@ -1206,11 +1095,10 @@ def _div_nf3_3d(coeff, coords, i, j, k):
     _t0 = aj + bj*xs + cj*ys + dj*zs
     _t1 = ai + bi*xs + ci*ys + di*zs
     _t2 = ak + bk*xs + ck*ys + dk*zs
-    out = -_t0*bi*bk - _t0*ci*ck - _t0*di*dk - _t1*bj*bk - _t1*cj*ck - _t1*dj*dk + 2*_t2*bi*bj + 2*_t2*ci*cj + 2*_t2*di*dj
-    return out.astype(np.complex128)
+    out[:] = -_t0*bi*bk - _t0*ci*ck - _t0*di*dk - _t1*bj*bk - _t1*cj*ck - _t1*dj*dk + 2*_t2*bi*bj + 2*_t2*ci*cj + 2*_t2*di*dj
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _div_nf4_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _div_nf4_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     ak, bk, ck, dk = coeff[:,k]
@@ -1220,11 +1108,10 @@ def _div_nf4_3d(coeff, coords, i, j, k):
     _t0 = ak + bk*xs + ck*ys + dk*zs
     _t1 = aj + bj*xs + cj*ys + dj*zs
     _t2 = ai + bi*xs + ci*ys + di*zs
-    out = -_t0*bi*bj - _t0*ci*cj - _t0*di*dj - _t1*bi*bk - _t1*ci*ck - _t1*di*dk + 2*_t2*bj*bk + 2*_t2*cj*ck + 2*_t2*dj*dk
-    return out.astype(np.complex128)
+    out[:] = -_t0*bi*bj - _t0*ci*cj - _t0*di*dj - _t1*bi*bk - _t1*ci*ck - _t1*di*dk + 2*_t2*bj*bk + 2*_t2*cj*ck + 2*_t2*dj*dk
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _div_nf5_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _div_nf5_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     ak, bk, ck, dk = coeff[:,k]
@@ -1234,11 +1121,10 @@ def _div_nf5_3d(coeff, coords, i, j, k):
     _t0 = ak + bk*xs + ck*ys + dk*zs
     _t1 = ai + bi*xs + ci*ys + di*zs
     _t2 = aj + bj*xs + cj*ys + dj*zs
-    out = -_t0*bi*bj - _t0*ci*cj - _t0*di*dj - _t1*bj*bk - _t1*cj*ck - _t1*dj*dk + 2*_t2*bi*bk + 2*_t2*ci*ck + 2*_t2*di*dk
-    return out.astype(np.complex128)
+    out[:] = -_t0*bi*bj - _t0*ci*cj - _t0*di*dj - _t1*bj*bk - _t1*cj*ck - _t1*dj*dk + 2*_t2*bi*bk + 2*_t2*ci*ck + 2*_t2*di*dk
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8), cache=True, nogil=True)
-def _div_nf6_3d(coeff, coords, i, j, k):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _div_nf6_3d(coeff, coords, i, j, k, out):
     ai, bi, ci, di = coeff[:,i]
     aj, bj, cj, dj = coeff[:,j]
     ak, bk, ck, dk = coeff[:,k]
@@ -1248,215 +1134,214 @@ def _div_nf6_3d(coeff, coords, i, j, k):
     _t0 = ak + bk*xs + ck*ys + dk*zs
     _t1 = aj + bj*xs + cj*ys + dj*zs
     _t2 = ai + bi*xs + ci*ys + di*zs
-    out = 2*_t0*bi*bj + 2*_t0*ci*cj + 2*_t0*di*dj + 2*_t1*bi*bk + 2*_t1*ci*ck + 2*_t1*di*dk + 2*_t2*bj*bk + 2*_t2*cj*ck + 2*_t2*dj*dk
-    return out.astype(np.complex128)
+    out[:] = 2*_t0*bi*bj + 2*_t0*ci*cj + 2*_t0*di*dj + 2*_t1*bi*bk + 2*_t1*ci*ck + 2*_t1*di*dk + 2*_t2*bj*bk + 2*_t2*cj*ck + 2*_t2*dj*dk
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8, i8), cache=True, nogil=True)
-def _eval_f_2d(coeff, coords, i, j, k, code):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _eval_f_2d(coeff, coords, i, j, k, code, out):
     bftype, index = get_type_index(code)
 
     if bftype == 64:
         if index == 0:
-            return _ne0_2d(coeff, coords, i,j,k)
+            _ne0_2d(coeff, coords, i,j,k, out)
         elif index == 1:
-            return _ne1_2d(coeff, coords, i,j,k)
+            _ne1_2d(coeff, coords, i,j,k, out)
         elif index == 2:
-            return _ne2_2d(coeff, coords, i,j,k)
+            _ne2_2d(coeff, coords, i,j,k, out)
         elif index == 3:
-            return _ne3_2d(coeff, coords, i,j,k)
+            _ne3_2d(coeff, coords, i,j,k, out)
         elif index == 4:
-            return _ne4_2d(coeff, coords, i,j,k)
+            _ne4_2d(coeff, coords, i,j,k, out)
         elif index == 5:
-            return _ne5_2d(coeff, coords, i,j,k)
-    if bftype == 128:
+            _ne5_2d(coeff, coords, i,j,k, out)
+    elif bftype == 128:
         if index == 0:
-            return _nf0_2d(coeff, coords, i,j,k)
+            _nf0_2d(coeff, coords, i,j,k, out)
         elif index == 1:
-            return _nf1_2d(coeff, coords, i,j,k)
+            _nf1_2d(coeff, coords, i,j,k, out)
         elif index == 2:
-            return _nf2_2d(coeff, coords, i,j,k)
+            _nf2_2d(coeff, coords, i,j,k, out)
         elif index == 3:
-            return _nf3_2d(coeff, coords, i,j,k)
+            _nf3_2d(coeff, coords, i,j,k, out)
         elif index == 4:
-            return _nf4_2d(coeff, coords, i,j,k)
+            _nf4_2d(coeff, coords, i,j,k, out)
         elif index == 5:
-            return _nf5_2d(coeff, coords, i,j,k)
+            _nf5_2d(coeff, coords, i,j,k, out)
         elif index == 6:
-            return _nf6_2d(coeff, coords, i,j,k)
-    raise ValueError('Unrecognized basis function type.')
-    return np.zeros_like(coords, dtype=np.complex128)
+            _nf6_2d(coeff, coords, i,j,k, out)
+    else:
+        raise ValueError('Unrecognized basis function type.')
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8, i8), cache=True, nogil=True)
-def _eval_f_3d(coeff, coords, i, j, k, code):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _eval_f_3d(coeff, coords, i, j, k, code, out):
     bftype, index = get_type_index(code)
 
     if bftype == 64:
         if index == 0:
-            return _ne0_3d(coeff, coords, i,j,k)
+            _ne0_3d(coeff, coords, i,j,k, out)
         elif index == 1:
-            return _ne1_3d(coeff, coords, i,j,k)
+            _ne1_3d(coeff, coords, i,j,k, out)
         elif index == 2:
-            return _ne2_3d(coeff, coords, i,j,k)
+            _ne2_3d(coeff, coords, i,j,k, out)
         elif index == 3:
-            return _ne3_3d(coeff, coords, i,j,k)
+            _ne3_3d(coeff, coords, i,j,k, out)
         elif index == 4:
-            return _ne4_3d(coeff, coords, i,j,k)
+            _ne4_3d(coeff, coords, i,j,k, out)
         elif index == 5:
-            return _ne5_3d(coeff, coords, i,j,k)
-    if bftype == 128:
+            _ne5_3d(coeff, coords, i,j,k, out)
+    elif bftype == 128:
         if index == 0:
-            return _nf0_3d(coeff, coords, i,j,k)
+            _nf0_3d(coeff, coords, i,j,k, out)
         elif index == 1:
-            return _nf1_3d(coeff, coords, i,j,k)
+            _nf1_3d(coeff, coords, i,j,k, out)
         elif index == 2:
-            return _nf2_3d(coeff, coords, i,j,k)
+            _nf2_3d(coeff, coords, i,j,k, out)
         elif index == 3:
-            return _nf3_3d(coeff, coords, i,j,k)
+            _nf3_3d(coeff, coords, i,j,k, out)
         elif index == 4:
-            return _nf4_3d(coeff, coords, i,j,k)
+            _nf4_3d(coeff, coords, i,j,k, out)
         elif index == 5:
-            return _nf5_3d(coeff, coords, i,j,k)
+            _nf5_3d(coeff, coords, i,j,k, out)
         elif index == 6:
-            return _nf6_3d(coeff, coords, i,j,k)
-    raise ValueError('Unrecognized basis function type.')
-    return np.zeros_like(coords, dtype=np.complex128)
+            _nf6_3d(coeff, coords, i,j,k, out)
+    else:
+        raise ValueError('Unrecognized basis function type.')
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8, i8), cache=True, nogil=True)
-def _eval_curl_f_2d(coeff, coords, i, j, k, code):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _eval_curl_f_2d(coeff, coords, i, j, k, code, out):
     bftype, index = get_type_index(code)
 
     if bftype == 64:
         if index == 0:
-            return _curl_ne0_2d(coeff, coords, i,j,k)
+            _curl_ne0_2d(coeff, coords, i,j,k, out)
         elif index == 1:
-            return _curl_ne1_2d(coeff, coords, i,j,k)
+            _curl_ne1_2d(coeff, coords, i,j,k, out)
         elif index == 2:
-            return _curl_ne2_2d(coeff, coords, i,j,k)
+            _curl_ne2_2d(coeff, coords, i,j,k, out)
         elif index == 3:
-            return _curl_ne3_2d(coeff, coords, i,j,k)
+            _curl_ne3_2d(coeff, coords, i,j,k, out)
         elif index == 4:
-            return _curl_ne4_2d(coeff, coords, i,j,k)
+            _curl_ne4_2d(coeff, coords, i,j,k, out)
         elif index == 5:
-            return _curl_ne5_2d(coeff, coords, i,j,k)
-    if bftype == 128:
+            _curl_ne5_2d(coeff, coords, i,j,k, out)
+    elif bftype == 128:
         if index == 0:
-            return _curl_nf0_2d(coeff, coords, i,j,k)
+            _curl_nf0_2d(coeff, coords, i,j,k, out)
         elif index == 1:
-            return _curl_nf1_2d(coeff, coords, i,j,k)
+            _curl_nf1_2d(coeff, coords, i,j,k, out)
         elif index == 2:
-            return _curl_nf2_2d(coeff, coords, i,j,k)
+            _curl_nf2_2d(coeff, coords, i,j,k, out)
         elif index == 3:
-            return _curl_nf3_2d(coeff, coords, i,j,k)
+            _curl_nf3_2d(coeff, coords, i,j,k, out)
         elif index == 4:
-            return _curl_nf4_2d(coeff, coords, i,j,k)
+            _curl_nf4_2d(coeff, coords, i,j,k, out)
         elif index == 5:
-            return _curl_nf5_2d(coeff, coords, i,j,k)
+            _curl_nf5_2d(coeff, coords, i,j,k, out)
         elif index == 6:
-            return _curl_nf6_2d(coeff, coords, i,j,k)
-    raise ValueError('Unrecognized basis function type.')
-    return np.zeros_like(coords[0,:], dtype=np.complex128)
+            _curl_nf6_2d(coeff, coords, i,j,k, out)
+    else:
+        raise ValueError('Unrecognized basis function type.')
 
-@njit(c16[:,:](f8[:,:], f8[:,:], i8, i8, i8, i8), cache=True, nogil=True)
-def _eval_curl_f_3d(coeff, coords, i, j, k, code):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, i8, c16[:,:]), cache=True, nogil=True)
+def _eval_curl_f_3d(coeff, coords, i, j, k, code, out):
     bftype, index = get_type_index(code)
 
     if bftype == 64:
         if index == 0:
-            return _curl_ne0_3d(coeff, coords, i,j,k)
+            _curl_ne0_3d(coeff, coords, i,j,k, out)
         elif index == 1:
-            return _curl_ne1_3d(coeff, coords, i,j,k)
+            _curl_ne1_3d(coeff, coords, i,j,k, out)
         elif index == 2:
-            return _curl_ne2_3d(coeff, coords, i,j,k)
+            _curl_ne2_3d(coeff, coords, i,j,k, out)
         elif index == 3:
-            return _curl_ne3_3d(coeff, coords, i,j,k)
+            _curl_ne3_3d(coeff, coords, i,j,k, out)
         elif index == 4:
-            return _curl_ne4_3d(coeff, coords, i,j,k)
+            _curl_ne4_3d(coeff, coords, i,j,k, out)
         elif index == 5:
-            return _curl_ne5_3d(coeff, coords, i,j,k)
-    if bftype == 128:
+            _curl_ne5_3d(coeff, coords, i,j,k, out)
+    elif bftype == 128:
         if index == 0:
-            return _curl_nf0_3d(coeff, coords, i,j,k)
+            _curl_nf0_3d(coeff, coords, i,j,k, out)
         elif index == 1:
-            return _curl_nf1_3d(coeff, coords, i,j,k)
+            _curl_nf1_3d(coeff, coords, i,j,k, out)
         elif index == 2:
-            return _curl_nf2_3d(coeff, coords, i,j,k)
+            _curl_nf2_3d(coeff, coords, i,j,k, out)
         elif index == 3:
-            return _curl_nf3_3d(coeff, coords, i,j,k)
+            _curl_nf3_3d(coeff, coords, i,j,k, out)
         elif index == 4:
-            return _curl_nf4_3d(coeff, coords, i,j,k)
+            _curl_nf4_3d(coeff, coords, i,j,k, out)
         elif index == 5:
-            return _curl_nf5_3d(coeff, coords, i,j,k)
+            _curl_nf5_3d(coeff, coords, i,j,k, out)
         elif index == 6:
-            return _curl_nf6_3d(coeff, coords, i,j,k)
-    raise ValueError('Unrecognized basis function type.')
-    return np.zeros_like(coords, dtype=np.complex128)
+            _curl_nf6_3d(coeff, coords, i,j,k, out)
+    else:
+        raise ValueError('Unrecognized basis function type.')
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8, i8), cache=True, nogil=True)
-def _eval_div_f_2d(coeff, coords, i, j, k, code):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _eval_div_f_2d(coeff, coords, i, j, k, code, out):
     bftype, index = get_type_index(code)
 
     if bftype == 64:
         if index == 0:
-            return _div_ne0_2d(coeff, coords, i,j,k)
+            _div_ne0_2d(coeff, coords, i,j,k, out)
         elif index == 1:
-            return _div_ne1_2d(coeff, coords, i,j,k)
+            _div_ne1_2d(coeff, coords, i,j,k, out)
         elif index == 2:
-            return _div_ne2_2d(coeff, coords, i,j,k)
+            _div_ne2_2d(coeff, coords, i,j,k, out)
         elif index == 3:
-            return _div_ne3_2d(coeff, coords, i,j,k)
+            _div_ne3_2d(coeff, coords, i,j,k, out)
         elif index == 4:
-            return _div_ne4_2d(coeff, coords, i,j,k)
+            _div_ne4_2d(coeff, coords, i,j,k, out)
         elif index == 5:
-            return _div_ne5_2d(coeff, coords, i,j,k)
-    if bftype == 128:
+            _div_ne5_2d(coeff, coords, i,j,k, out)
+    elif bftype == 128:
         if index == 0:
-            return _div_nf0_2d(coeff, coords, i,j,k)
+            _div_nf0_2d(coeff, coords, i,j,k, out)
         elif index == 1:
-            return _div_nf1_2d(coeff, coords, i,j,k)
+            _div_nf1_2d(coeff, coords, i,j,k, out)
         elif index == 2:
-            return _div_nf2_2d(coeff, coords, i,j,k)
+            _div_nf2_2d(coeff, coords, i,j,k, out)
         elif index == 3:
-            return _div_nf3_2d(coeff, coords, i,j,k)
+            _div_nf3_2d(coeff, coords, i,j,k, out)
         elif index == 4:
-            return _div_nf4_2d(coeff, coords, i,j,k)
+            _div_nf4_2d(coeff, coords, i,j,k, out)
         elif index == 5:
-            return _div_nf5_2d(coeff, coords, i,j,k)
+            _div_nf5_2d(coeff, coords, i,j,k, out)
         elif index == 6:
-            return _div_nf6_2d(coeff, coords, i,j,k)
-    raise ValueError('Unrecognized basis function type.')
-    return np.zeros_like(coords[0,:], dtype=np.complex128)
+            _div_nf6_2d(coeff, coords, i,j,k, out)
+    else:
+        raise ValueError('Unrecognized basis function type.')
 
-@njit(c16[:](f8[:,:], f8[:,:], i8, i8, i8, i8), cache=True, nogil=True)
-def _eval_div_f_3d(coeff, coords, i, j, k, code):
+@njit(types.void(f8[:,:], f8[:,:], i8, i8, i8, i8, c16[:]), cache=True, nogil=True)
+def _eval_div_f_3d(coeff, coords, i, j, k, code, out):
     bftype, index = get_type_index(code)
 
     if bftype == 64:
         if index == 0:
-            return _div_ne0_3d(coeff, coords, i,j,k)
+            _div_ne0_3d(coeff, coords, i,j,k, out)
         elif index == 1:
-            return _div_ne1_3d(coeff, coords, i,j,k)
+            _div_ne1_3d(coeff, coords, i,j,k, out)
         elif index == 2:
-            return _div_ne2_3d(coeff, coords, i,j,k)
+            _div_ne2_3d(coeff, coords, i,j,k, out)
         elif index == 3:
-            return _div_ne3_3d(coeff, coords, i,j,k)
+            _div_ne3_3d(coeff, coords, i,j,k, out)
         elif index == 4:
-            return _div_ne4_3d(coeff, coords, i,j,k)
+            _div_ne4_3d(coeff, coords, i,j,k, out)
         elif index == 5:
-            return _div_ne5_3d(coeff, coords, i,j,k)
-    if bftype == 128:
+            _div_ne5_3d(coeff, coords, i,j,k, out)
+    elif bftype == 128:
         if index == 0:
-            return _div_nf0_3d(coeff, coords, i,j,k)
+            _div_nf0_3d(coeff, coords, i,j,k, out)
         elif index == 1:
-            return _div_nf1_3d(coeff, coords, i,j,k)
+            _div_nf1_3d(coeff, coords, i,j,k, out)
         elif index == 2:
-            return _div_nf2_3d(coeff, coords, i,j,k)
+            _div_nf2_3d(coeff, coords, i,j,k, out)
         elif index == 3:
-            return _div_nf3_3d(coeff, coords, i,j,k)
+            _div_nf3_3d(coeff, coords, i,j,k, out)
         elif index == 4:
-            return _div_nf4_3d(coeff, coords, i,j,k)
+            _div_nf4_3d(coeff, coords, i,j,k, out)
         elif index == 5:
-            return _div_nf5_3d(coeff, coords, i,j,k)
+            _div_nf5_3d(coeff, coords, i,j,k, out)
         elif index == 6:
-            return _div_nf6_3d(coeff, coords, i,j,k)
-    raise ValueError('Unrecognized basis function type.')
-    return np.zeros_like(coords[0,:], dtype=np.complex128)
+            _div_nf6_3d(coeff, coords, i,j,k, out)
+    else:
+        raise ValueError('Unrecognized basis function type.')

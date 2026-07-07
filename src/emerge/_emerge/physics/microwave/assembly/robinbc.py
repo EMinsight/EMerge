@@ -258,6 +258,7 @@ def ned2_tri_force(glob_vertices, glob_Uinc, dofcodes):
     jvec = np.array([1, 2, 2])
     kvec = np.array([0, 0, 0])
 
+    fdof = np.zeros((2,coords.shape[1]), dtype=np.complex128)
     for idof in range(ndof):
         i_type = typearry[idof]
         i_index = indexarry[idof]
@@ -270,7 +271,7 @@ def ned2_tri_force(glob_vertices, glob_Uinc, dofcodes):
             j1 = 1
             k1 = 2
         
-        fdof = _eval_f_2d(coeff, coords, i1, j1, k1, dofcodes[idof])
+        _eval_f_2d(coeff, coords, i1, j1, k1, dofcodes[idof], fdof)
         
         bvec[idof] = -A * np.sum(WEIGHTS * (fdof[0, :] * Ux + fdof[1, :] * Uy))
     #print(bvec)
@@ -347,6 +348,8 @@ def ned2_tri_stiff(glob_vertices, gamma, dofcodes):
     jvec = np.array([1, 2, 2])
     kvec = np.array([0, 0, 0])
 
+    fdof1 = np.zeros((2, coords.shape[1]), dtype=np.complex128)
+    fdof2 = np.zeros((2, coords.shape[1]), dtype=np.complex128)
     for idof1 in range(ndof):
         i_type1 = typearry[idof1]
         i_index1 = indexarry[idof1]
@@ -359,7 +362,7 @@ def ned2_tri_stiff(glob_vertices, gamma, dofcodes):
             j1 = 1
             k1 = 2
 
-        fdof1 = _eval_f_2d(coeff, coords, i1, j1, k1, dofcodes[idof1])
+        _eval_f_2d(coeff, coords, i1, j1, k1, dofcodes[idof1], fdof1)
 
         for idof2 in range(ndof):
             i_type2 = typearry[idof2]
@@ -373,7 +376,7 @@ def ned2_tri_stiff(glob_vertices, gamma, dofcodes):
                 j2 = 1
                 k2 = 2
 
-            fdof2 = _eval_f_2d(coeff, coords, i2, j2, k2, dofcodes[idof2])
+            _eval_f_2d(coeff, coords, i2, j2, k2, dofcodes[idof2], fdof2)
 
             Bmat[idof1, idof2] = gamma * np.sum(dot(fdof1, fdof2) * WEIGHTS)
     return Bmat * A
@@ -490,6 +493,7 @@ def ned2_tri_force_scat(glob_vertices, glob_Uinc, glob_Uinc_curl, nhat, dofcodes
     jvec = np.array([1, 2, 2])
     kvec = np.array([0, 0, 0])
 
+    fdof = np.zeros((2, coords.shape[1]), dtype=np.complex128)
     for idof in range(ndof):
         i_type = typearry[idof]
         i_index = indexarry[idof]
@@ -503,7 +507,7 @@ def ned2_tri_force_scat(glob_vertices, glob_Uinc, glob_Uinc_curl, nhat, dofcodes
             j1 = 1
             k1 = 2
         
-        fdof = _eval_f_2d(coeff, coords, i1, j1, k1, dofcodes[idof])
+        _eval_f_2d(coeff, coords, i1, j1, k1, dofcodes[idof], fdof)
 
         bvec[idof] = -A * np.sum(WEIGHTS * (fdof[0, :] * Ux + fdof[1, :] * Uy))
 

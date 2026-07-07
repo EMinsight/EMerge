@@ -181,13 +181,17 @@ def _abc_order_2_terms(tri_vertices, cf, dofcodes):
         j1 = jvec[i_index]
         k1 = kvec[i_index]
 
+        FC1 = np.zeros((coords.shape[1],), dtype=np.complex128)
+        FD1 = np.zeros((coords.shape[1],), dtype=np.complex128)
+        FC2 = np.zeros((coords.shape[1],), dtype=np.complex128)
+        FD2 = np.zeros((coords.shape[1],), dtype=np.complex128)
         if i_type==0:
             # Edge mode
-            FC1 = _eval_curl_f_2d(bary_coeff, coords, i1, j1, k1, dofcodes[idof1])
-            FD1 = _eval_div_f_2d(bary_coeff, coords, i1, j1, k1, dofcodes[idof1])
+            _eval_curl_f_2d(bary_coeff, coords, i1, j1, k1, dofcodes[idof1], FC1)
+            _eval_div_f_2d(bary_coeff, coords, i1, j1, k1, dofcodes[idof1], FC2)
         else:
-            FC1 = _eval_curl_f_2d(bary_coeff, coords, 0, 1, 2, dofcodes[idof1])
-            FD1 = _eval_div_f_2d(bary_coeff, coords, 0, 1, 2, dofcodes[idof1])
+            _eval_curl_f_2d(bary_coeff, coords, 0, 1, 2, dofcodes[idof1], FC1)
+            _eval_div_f_2d(bary_coeff, coords, 0, 1, 2, dofcodes[idof1], FD2)
 
         for idof2 in range(ndof):
             i_type = typearry[idof2]
@@ -199,11 +203,11 @@ def _abc_order_2_terms(tri_vertices, cf, dofcodes):
 
             if i_type==0:
                 # Edge mode
-                FC2 = _eval_curl_f_2d(bary_coeff, coords, i2, j2, k2, dofcodes[idof2])
-                FD2 = _eval_div_f_2d(bary_coeff, coords, i2, j2, k2, dofcodes[idof2])
+                _eval_curl_f_2d(bary_coeff, coords, i2, j2, k2, dofcodes[idof2], FC2)
+                _eval_div_f_2d(bary_coeff, coords, i2, j2, k2, dofcodes[idof2], FD2)
             else:
-                FC2 = _eval_curl_f_2d(bary_coeff, coords, 0, 1, 2, dofcodes[idof2])
-                FD2 = _eval_div_f_2d(bary_coeff, coords, 0, 1, 2, dofcodes[idof2])
+                _eval_curl_f_2d(bary_coeff, coords, 0, 1, 2, dofcodes[idof2], FC2)
+                _eval_div_f_2d(bary_coeff, coords, 0, 1, 2, dofcodes[idof2], FD2)
 
             CurlMatrix[idof1, idof2] = np.sum(FC1 * FC2 * WEIGHTS)
             DivMatrix[idof1, idof2] = np.sum(FD1 * FD2 * WEIGHTS)

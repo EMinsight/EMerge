@@ -1015,7 +1015,7 @@ class Mesh3D(Mesh, Saveable):
                     xyz, _ = gmsh.model.get_closest_point(*dt, center)
                     self.ftag_to_point[dt[1]] = np.array(xyz)
 
-        logger.trace("Finalized mesh data generation!")
+        logger.info("Finalized mesh data generation!")
 
     ## Higher order functions
 

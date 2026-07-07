@@ -222,9 +222,9 @@ def generalized_matrix_GQ(tri_vertices, local_edge_map, urinv, er, k0, dofcodes)
             j1 = 1
             k1 = 2
         
-        all_fdof[idof,:,:] = _eval_f_2d(coeff, cs, i1, j1, k1, dofcodes[idof])
-        all_fdof_curl[idof,:] = _eval_curl_f_2d(coeff, cs, i1, j1, k1, dofcodes[idof])
-        #all_fdof_div[idof,:] = _eval_div_f_2d(coeff, cs, i1, j1, k1, dofcodes[idof])
+        _eval_f_2d(coeff, cs, i1, j1, k1, dofcodes[idof], all_fdof[idof,:,:])
+        _eval_curl_f_2d(coeff, cs, i1, j1, k1, dofcodes[idof], all_fdof_curl[idof,:])
+        
 
     for idof in range(6):
 
@@ -271,10 +271,7 @@ def generalized_matrix_GQ(tri_vertices, local_edge_map, urinv, er, k0, dofcodes)
     A = np.zeros((n,n), dtype=np.complex128)
     B = np.zeros((n,n), dtype=np.complex128)
 
-    A[:ndof, :ndof] = Att_stiff - k0**2 * Att_mass #+ Ptt
-    # A[ndof:, :ndof] = Ptz.T
-    # A[:ndof, ndof:] = Ptz
-    # A[ndof:, ndof:] = Pzz
+    A[:ndof, :ndof] = Att_stiff - k0**2 * Att_mass
 
     B[:ndof, :ndof] = Btt
     B[ndof:, :ndof] = Btz.T

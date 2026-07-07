@@ -18,234 +18,177 @@
 # Last Cleanup: 2025-01-01
 
 # This specific function is written by Claude Code and optimized manually for memory reduction.
+# The new version is optimized by Gemini Pro. No copyright on this specific function.
 
 from __future__ import annotations
 import numpy as np
-from numba import njit, prange, c16, i8, types, f8
+from numba import njit, prange, i8, c16, f8, types
 from scipy.sparse import csc_matrix
-from dataclasses import dataclass
-
+from dataclasses import dataclass, field
 
 @dataclass
 class CSCMapping:
     indptr: np.ndarray
     indices: np.ndarray
-    csc_map: np.ndarray
+    target_csc: np.ndarray
+    col_offsets: np.ndarray
+    perm: np.ndarray
     N: int
     nnz: int = 0
+    nnz_coo: int = 0
     
-
+    # Pre-allocated 1D buffers to hold perfectly sorted memory.
+    # Because it is 1D (size of COO), it scales to any number of threads with zero overhead.
+    _gather_buffer_c16: np.ndarray = field(init=False, repr=False)
+    _gather_buffer_f8: np.ndarray = field(init=False, repr=False)
+    
     def __post_init__(self):
         self.nnz = self.indices.shape[0]
+        self.nnz_coo = self.perm.shape[0]
+        self._gather_buffer_c16 = np.empty(self.nnz_coo, dtype=np.complex128)
+        self._gather_buffer_f8 = np.empty(self.nnz_coo, dtype=np.float64)
 
     @staticmethod
     def from_rowcol(rows, cols, N) -> CSCMapping:
-        # For CSC: columns define the outer structure
-        # So we need to sort by COLUMN first, then ROW within each column
         return CSCMapping(*precompute_csc_pattern(rows, cols, N), N)
     
     def to_csc(self, data: np.ndarray) -> csc_matrix:
         if np.iscomplexobj(data):
-            return csc_matrix((scatter_to_csc(data, self.csc_map, self.nnz), self.indices, self.indptr), shape=(self.N,self.N))
+            data_csc = np.zeros(self.nnz, dtype=np.complex128)
+            scatter_to_csc_c16(data, self.perm, self.target_csc, self.col_offsets, self._gather_buffer_c16, data_csc)
         else:
-            return csc_matrix((scatter_to_csc_real(data, self.csc_map, self.nnz), self.indices, self.indptr), shape=(self.N,self.N))
+            data_csc = np.zeros(self.nnz, dtype=np.float64)
+            scatter_to_csc_f8(data, self.perm, self.target_csc, self.col_offsets, self._gather_buffer_f8, data_csc)
+            
+        return csc_matrix((data_csc, self.indices, self.indptr), shape=(self.N, self.N))
 
-@njit(types.Tuple((i8[:], i8[:], i8[:]))(i8[:], i8[:], i8), nogil=True, cache=True, parallel=False)
-def precompute_csc_pattern(rows, cols, N) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """One-time precomputation: builds CSC structure and a mapping
-    from each COO entry to its position in the CSC data array.
-    
-    Args:
-        rows: int64 array of row indices (COO)
-        cols: int64 array of col indices (COO)
-        N: matrix dimension
-        
-    Returns:
-        indptr: CSC column pointer array (length N+1)
-        indices: CSC row index array (length nnz, deduplicated)
-        csc_map: for each COO entry k, csc_map[k] is the index into
-                 the CSC data array where that entry accumulates.
-    """
+@njit(types.Tuple((i8[:], i8[:], i8[:], i8[:], i8[:]))(i8[:], i8[:], i8), nogil=True, cache=True, parallel=True)
+def precompute_csc_pattern(rows, cols, N) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Massively parallel precomputation for CSC assembly."""
     nnz_coo = cols.shape[0]
     
-    # --- Pass 1: count unique (row, col) pairs per column ---
-    # Sort COO entries by (col, row) using radix-style approach:
-    # first, count entries per column
-    col_offsets = np.zeros(N + 1, dtype=np.int64)
+    # --- Phase 1: Sequential Count and Group (Memory bound, very fast) ---
+    col_counts = np.zeros(N, dtype=np.int64)
     for k in range(nnz_coo):
-        col_offsets[cols[k]+1] += 1
-    
-    max_counts = 0
-    # Build column offsets for a column-sorted permutation
-    for i in range(1, N+1):
-        col_offsets[i] = col_offsets[i-1] + col_offsets[i]
-        diff = col_offsets[i]-col_offsets[i-1]
-        if diff > max_counts:
-            max_counts = diff
-    
-    # Scatter into column-sorted order
-    # Perm tells where to place the next entry in the COO matrix
-    perm = np.empty(nnz_coo, dtype=np.int32)
-    cursor = col_offsets.copy()
+        col_counts[cols[k]] += 1
+        
+    col_offsets = np.zeros(N + 1, dtype=np.int64)
+    for i in range(N):
+        col_offsets[i + 1] = col_offsets[i] + col_counts[i]
+        
+    grouped_perm = np.empty(nnz_coo, dtype=np.int64)
+    cursor = col_offsets[:-1].copy()
     for k in range(nnz_coo):
         c = cols[k]
-        perm[cursor[c]] = k
+        grouped_perm[cursor[c]] = k
         cursor[c] += 1
-    
-    # --- Pass 2: for each column, sort rows and find unique entries ---
-    # First, count unique nnz per column to build indptr
-    indptr = np.zeros(N+1, dtype=np.int64)
-    
-    local_rows = np.empty(max_counts, dtype=np.int64)
-    local_perm = np.empty(max_counts, dtype=np.int64)
-    for i in range(N):
-        start = col_offsets[i]
-        end = col_offsets[i + 1]
-        if start == end:
-            continue
-        count = end - start
-        
-        for j in range(count):
-            local_rows[j] = rows[perm[start + j]]
-            local_perm[j] = j
 
-        # Insertion sort on local_rows (and track the permutation)
-        for j in range(1, count):
-            key_row = local_rows[j]
-            key_p = local_perm[j]
-            m = j - 1
-            while m >= 0 and local_rows[m] > key_row:
-                local_rows[m + 1] = local_rows[m]
-                local_perm[m + 1] = local_perm[m]
-                m -= 1
-            local_rows[m + 1] = key_row
-            local_perm[m + 1] = key_p
-        
-        # Count unique rows
-        n_unique = 1
-        for j in range(1, count):
-            if local_rows[j] != local_rows[j - 1]:
-                n_unique += 1
-        indptr[i+1] = n_unique
+    # --- Phase 2: PARALLEL Sort and Count Unique Rows ---
+    unique_counts = np.zeros(N, dtype=np.int64)
+    fully_sorted_perm = np.empty(nnz_coo, dtype=np.int64)
     
-    # Build indptr by cumulative sum
-    for i in range(1,N+1):
-        indptr[i] = indptr[i-1] + indptr[i]
-    
-    total_nnz = indptr[N]
-    indices = np.empty(total_nnz, dtype=np.int64)
-    csc_map = np.empty(nnz_coo, dtype=np.int64)
-    
-    # --- Pass 3: fill indices and csc_map ---
-    for i in range(N):
+    for i in prange(N):
         start = col_offsets[i]
-        end = col_offsets[i + 1]
-        if start == end:
+        count = col_offsets[i + 1] - start
+        
+        if count == 0:
             continue
-        count = end - start
-
+            
+        # Local row extraction
+        local_rows = np.empty(count, dtype=np.int64)
         for j in range(count):
-            local_rows[j] = rows[perm[start + j]]
-            local_perm[j] = j
+            local_rows[j] = rows[grouped_perm[start + j]]
+            
+        # The heaviest operation is now running in parallel
+        sort_idx = np.argsort(local_rows)
         
-        # Same insertion sort
+        uniques = 1
+        first_idx = sort_idx[0]
+        prev_row = local_rows[first_idx]
+        fully_sorted_perm[start] = grouped_perm[start + first_idx]
+        
         for j in range(1, count):
-            key_row = local_rows[j]
-            key_p = local_perm[j]
-            m = j - 1
-            while m >= 0 and local_rows[m] > key_row:
-                local_rows[m + 1] = local_rows[m]
-                local_perm[m + 1] = local_perm[m]
-                m -= 1
-            local_rows[m + 1] = key_row
-            local_perm[m + 1] = key_p
+            curr_idx = sort_idx[j]
+            curr_row = local_rows[curr_idx]
+            
+            if curr_row != prev_row:
+                uniques += 1
+                prev_row = curr_row
+                
+            fully_sorted_perm[start + j] = grouped_perm[start + curr_idx]
+            
+        unique_counts[i] = uniques
+
+    # --- Phase 3: Sequential Memory Boundary Calculation ---
+    indptr = np.zeros(N + 1, dtype=np.int64)
+    for i in range(N):
+        indptr[i + 1] = indptr[i] + unique_counts[i]
         
-        # Walk sorted entries, assign CSC positions
+    nnz_csc = indptr[N]
+    indices = np.empty(nnz_csc, dtype=np.int64)
+    target_csc = np.empty(nnz_coo, dtype=np.int64)
+
+    # --- Phase 4: PARALLEL Populate CSC Arrays ---
+    for i in prange(N):
+        start = col_offsets[i]
+        count = col_offsets[i + 1] - start
+        
+        if count == 0:
+            continue
+            
+        # Each thread starts writing at its perfectly safe memory offset
         csc_pos = indptr[i]
-        indices[csc_pos] = local_rows[0]
-        csc_map[perm[start + local_perm[0]]] = csc_pos
         
+        # Process the first element
+        coo_idx = fully_sorted_perm[start]
+        prev_row = rows[coo_idx]
+        indices[csc_pos] = prev_row
+        target_csc[start] = csc_pos
+        
+        # Process the rest
         for j in range(1, count):
-            if local_rows[j] != local_rows[j - 1]:
+            coo_idx = fully_sorted_perm[start + j]
+            curr_row = rows[coo_idx]
+            
+            if curr_row != prev_row:
                 csc_pos += 1
-                indices[csc_pos] = local_rows[j]
-            csc_map[perm[start + local_perm[j]]] = csc_pos
-    
-    return indptr, indices, csc_map
+                indices[csc_pos] = curr_row
+                prev_row = curr_row
+                
+            target_csc[start + j] = csc_pos
+            
+    return indptr, indices, target_csc, col_offsets, fully_sorted_perm
 
-
-@njit(c16[:](c16[:], i8[:], i8), nogil=True, cache=True, parallel=True)
-def scatter_to_csc(data_coo, csc_map, nnz):
-    """Scatter COO values into CSC data array, summing duplicates.
-    
-    Args:
-        data_coo: complex128 array of COO values
-        csc_map: precomputed mapping from COO index -> CSC data index
-        nnz: number of unique nonzeros (length of CSC data array)
-        
-    Returns:
-        data: CSC data array with duplicates summed
-
-    This function is written by Claude Code and checked by Robert Fennis
-    """
-    data = np.zeros(nnz, dtype=data_coo.dtype)
-    
-    # Parallel chunked scatter — each thread accumulates into a private
-    # array, then we reduce. This avoids write conflicts.
+@njit(nogil=True, cache=True, parallel=True, fastmath=True)
+def scatter_to_csc_c16(data_coo, perm, target_csc, col_offsets, sorted_data, data_csc):
     n = data_coo.shape[0]
-    n_threads = 8  # numba prange will clamp to available cores
-    chunk = (n + n_threads - 1) // n_threads
     
-    # Allocate per-thread buffers
-    thread_data = np.zeros((n_threads, nnz), dtype=data_coo.dtype)
-    
-    for t in prange(n_threads):
-        start = t * chunk
-        end = min(start + chunk, n)
-        for k in range(start, end):
-            thread_data[t, csc_map[k]] += data_coo[k]
-    
-    # Reduce across threads
-    for t in range(n_threads):
-        for j in prange(nnz):
-            data[j] += thread_data[t, j]
-    
-    return data
-
-@njit(f8[:](f8[:], i8[:], i8), nogil=True, cache=True, parallel=True)
-def scatter_to_csc_real(data_coo, csc_map, nnz):
-    """Scatter COO values into CSC data array, summing duplicates.
-    
-    Args:
-        data_coo: complex128 array of COO values
-        csc_map: precomputed mapping from COO index -> CSC data index
-        nnz: number of unique nonzeros (length of CSC data array)
+    # 1. PARALLEL GATHER: Pull random memory into perfectly contiguous order.
+    for k in prange(n):
+        sorted_data[k] = data_coo[perm[k]]
         
-    Returns:
-        data: CSC data array with duplicates summed
-
-    This function is written by Claude Code and checked by Robert Fennis
-    """
-    data = np.zeros(nnz, dtype=data_coo.dtype)
-    
-    # Parallel chunked scatter — each thread accumulates into a private
-    # array, then we reduce. This avoids write conflicts.
-    n = data_coo.shape[0]
-    n_threads = 8  # numba prange will clamp to available cores
-    chunk = (n + n_threads - 1) // n_threads
-    
-    # Allocate per-thread buffers
-    thread_data = np.zeros((n_threads, nnz), dtype=data_coo.dtype)
-    
-    for t in prange(n_threads):
-        start = t * chunk
-        end = min(start + chunk, n)
+    # 2. PARALLEL COMPUTE: Both sorted_data and target_csc are accessed strictly sequentially.
+    # No race conditions because threads are isolated by columns.
+    N = col_offsets.shape[0] - 1
+    for i in prange(N):
+        start = col_offsets[i]
+        end = col_offsets[i + 1]
         for k in range(start, end):
-            thread_data[t, csc_map[k]] += data_coo[k]
+            data_csc[target_csc[k]] += sorted_data[k]
+
+
+@njit(nogil=True, cache=True, parallel=True, fastmath=True)
+def scatter_to_csc_f8(data_coo, perm, target_csc, col_offsets, sorted_data, data_csc):
+    n = data_coo.shape[0]
     
-    # Reduce across threads
-    for t in range(n_threads):
-        for j in prange(nnz):
-            data[j] += thread_data[t, j]
-    
-    return data
+    # 1. PARALLEL GATHER
+    for k in prange(n):
+        sorted_data[k] = data_coo[perm[k]]
+        
+    # 2. PARALLEL COMPUTE
+    N = col_offsets.shape[0] - 1
+    for i in prange(N):
+        start = col_offsets[i]
+        end = col_offsets[i + 1]
+        for k in range(start, end):
+            data_csc[target_csc[k]] += sorted_data[k]
