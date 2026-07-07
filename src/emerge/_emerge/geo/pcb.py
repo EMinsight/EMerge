@@ -21,7 +21,7 @@ from __future__ import annotations
 from ..cs import CoordinateSystem, GCS, Anchor, argparse_xyz, _parse_vector
 from ..geometry import GeoPolygon, GeoVolume, GeoSurface
 from emsutil import Material, AIR, PEC
-from .shapes import Box, Plate, Cylinder, Alignment
+from .shapes import Box, Plate, Cylinder, Alignment, Point
 from .polybased import XYPolygon
 from .operations import change_coordinate_system, unite, remove
 from .pcb_tools.macro import parse_macro
@@ -31,6 +31,7 @@ import numpy as np
 from loguru import logger
 from typing import Literal, Callable, overload, Generator
 from dataclasses import dataclass
+from emsutil import Saveable
 
 import math
 import gmsh
@@ -51,13 +52,19 @@ class RouteException(Exception):
 SIZE_NAMES = Literal[
     "0402", "0603", "1005", "1608", "2012", "3216", "3225", "4532", "5025", "6332"
 ]
+
+def _str_to_size(code: str) -> tuple[float, float]:
+    return (float(code[:2]) * 0.05, float(code[2:]) * 0.1)
+
 _SMD_SIZE_DICT = {
     x: (float(x[:2]) * 0.05, float(x[2:]) * 0.1)
     for x in [
         "0402",
         "0603",
+        "0805",
         "1005",
         "1608",
+        "1210",
         "2012",
         "3216",
         "3225",
@@ -144,7 +151,6 @@ def _rot_mat(angle: float) -> np.ndarray:
 ############################################################
 #                          CLASSES                         #
 ############################################################
-
 
 @dataclass
 class Via:
@@ -857,7 +863,7 @@ class StripPath:
         return paths
 
     def lumped_element(
-        self, impedance_function: Callable, size: SIZE_NAMES | tuple
+        self, impedance_function: Callable, size: SIZE_NAMES | tuple[float, float]
     ) -> StripPath:
         """Adds a lumped element to the PCB.
 
@@ -890,9 +896,13 @@ class StripPath:
             length, width = _SMD_SIZE_DICT[size]
             length = length * 0.001 / self.pcb.unit * 2.54
             width = width * 0.001 / self.pcb.unit * 2.54
+        elif isinstance(size, str):
+            length, width = _str_to_size(size)
+            length = length * 0.001 / self.pcb.unit * 2.54
+            width = width * 0.001 / self.pcb.unit * 2.54
         else:
             length, width = size
-        print(length * 1000, width * 1000)
+        
         dx, dy = self.end.direction
         x, y = self.end.x, self.end.y
         rx, ry = self.end.dirright
@@ -926,6 +936,108 @@ class StripPath:
             x + dx * length, y + dy * length, self.end.width, self.end.direction, self.z
         )
 
+    def lumped_element_from_sp(self, filename: str, size: SIZE_NAMES | tuple[float, float], z_gnd: float | None = None) -> GeoVolume:
+        """Adds a lumped element to the PCB.
+
+        The first argument should be the impedance function as function of frequency. For a capacitor this would be:
+        Z(f) = 1/(j2πfC).
+        The second argument specifies the size of the element (length x width) as a tuple or it can be a string for a
+        package. For example "0402". The size of the lumped component does not inlcude the footprint.
+
+        For example a 0602 pacakge has timensions: length=0.6mm, width=0.3mm. The actual length of the component
+        not overlapping with the solder pad is 0.3mm (always half) so the component size added is 0.3mm x 0.3mm.
+
+        After creation, the trace continues after the lumped component.
+
+        You can add the components to your model as following:
+
+        >>> lumped_elements = pcb.lumped_elments
+        for le in lumped_elements:
+            model.mw.bc.LumpedElement(le)
+
+        The impedance function and geometry is automatically passed on with the lumped element added.
+
+        Args:
+            impedance_function (Callable): A function that computes the component impedance as a function of frequency.
+            size (SizeNames | tuple): The dimensions of the lumped element on PCB.
+
+        Returns:
+            StripPath: The same strip path object
+        """
+        from ...auxilliary.touchstone import TouchstoneData
+
+        if size in _SMD_SIZE_DICT:
+            length, width = _SMD_SIZE_DICT[size]
+            length = length * 0.001 / self.pcb.unit * 2.54
+            width = width * 0.001 / self.pcb.unit * 2.54
+        elif isinstance(size, str):
+            length, width = _str_to_size(size)
+            length = length * 0.001 / self.pcb.unit * 2.54
+            width = width * 0.001 / self.pcb.unit * 2.54
+        else:
+            length, width = size
+        
+        if z_gnd is None:
+            z_gnd = self.pcb.z(0)
+
+        td = TouchstoneData(filename, )
+        dx, dy = self.end.direction
+        x, y = self.end.x, self.end.y
+        rx, ry = self.end.dirright
+        wh = width / 2
+        xs = (
+            np.array(
+                [
+                    x + rx * wh,
+                    x + rx * wh + length * dx,
+                    x - rx * wh + length * dx,
+                    x - rx * wh,
+                ]
+            )
+            * self.pcb.unit
+        )
+        ys = (
+            np.array(
+                [
+                    y + ry * wh,
+                    y + ry * wh + length * dy,
+                    y - ry * wh + length * dy,
+                    y - ry * wh,
+                ]
+            )
+            * self.pcb.unit
+        )
+        poly = XYPolygon(xs, ys)
+
+        if td.n_ports == 1:
+            
+            self.pcb._lumped_element(poly, td.z_series(), width, length)
+            return self.pcb.new(
+                x + dx * length, y + dy * length, self.end.width, self.end.direction, self.z
+            )
+        elif td.n_ports == 2 and td.is_singular():
+            self.pcb._lumped_element(poly, td.z_series(), width, length)
+            return self.pcb.new(
+                x + dx * length, y + dy * length, self.end.width, self.end.direction, self.z
+            )
+        else:
+            Rx = rx*wh*self.pcb.unit
+            Ry = ry*wh*self.pcb.unit
+            x0l = x*self.pcb.unit - Rx
+            y0l = y*self.pcb.unit - Ry
+            dlx = length*dx*self.pcb.unit
+            dly = length*dy*self.pcb.unit
+            dz = np.abs(self.z-z_gnd)*self.pcb.unit
+            poly_shunt1 = Plate((x0l, y0l, self.z), (Rx*2,Ry*2,0),(0,0,-(self.z-z_gnd)*self.pcb.unit))
+            poly_shunt2 = Plate((x0l+dlx, y0l+dly, self.z), (Rx*2,Ry*2,0),(0,0,-(self.z-z_gnd)*self.pcb.unit))
+
+            self.pcb._lumped_element(poly, td.z_series_pi(), width, length)
+            self.pcb._lumped_element(poly_shunt1, td.z_shunt_pi_1(), width, dz)
+            self.pcb._lumped_element(poly_shunt2, td.z_shunt_pi_2(), width, dz)
+            return self.pcb.new(
+                x + dx * length, y + dy * length, self.end.width, self.end.direction, self.z
+            )
+    
     def cut(self) -> StripPath:
         """Split the current path in N new paths given by a new departure direction
 
@@ -1407,6 +1519,7 @@ class PCBNew:
         self.ys: list[float] = []
         self.zs: list[float] = []
         self._poly_out: list[PCBPoly] = []
+        self._embedded_points: list[tuple[float, float, float]] = []
 
         self.stored_coords: dict[str, tuple[float, float]] = dict()
         self.stored_striplines: dict[str, RouteElement] = dict()
@@ -1451,16 +1564,23 @@ class PCBNew:
 
     def _lumped_element(
         self,
-        poly: XYPolygon,
+        poly: XYPolygon | GeoSurface,
         function: Callable,
         width: float,
         length: float,
         name: str | None = "LumpedElement",
     ) -> None:
-        geopoly = poly._finalize(self.cs, name=name)
+        if isinstance(poly, XYPolygon):
+            geopoly = poly._finalize(self.cs, name=name)
+        else:
+            geopoly = change_coordinate_system(poly, self.cs)
+        area = width*length
+        Npts = 50
+        ds = (area/Npts)**0.5
         geopoly._aux_data["func"] = function
         geopoly._aux_data["width"] = width
         geopoly._aux_data["height"] = length
+        geopoly.max_meshsize = ds
         self.lumped_elements.append(geopoly)
 
     def _get_z(self, element: RouteElement) -> float:
@@ -1523,41 +1643,27 @@ class PCBNew:
                 x * self.unit, y * self.unit, z * self.unit
             )
             ptags.append(gmsh.model.occ.addPoint(px, py, pz))
-
+        
+            self._embedded_points.append((px,py,pz))
         ltags = []
         for t1, t2 in zip(ptags[:-1], ptags[1:]):
             ltags.append(gmsh.model.occ.addLine(t1, t2))
         ltags.append(gmsh.model.occ.addLine(ptags[-1], ptags[0]))
 
         tag_wire = gmsh.model.occ.addWire(ltags)
-        planetag = gmsh.model.occ.addPlaneSurface(
-            [
-                tag_wire,
-            ]
-        )
+        planetag = gmsh.model.occ.addPlaneSurface([tag_wire,])
+
         if self._thick_traces:
             if self.trace_thickness is None:
                 raise ValueError(
                     "Trace thickness not defined, cannot generate polygons. Make sure to define a trace thickness in the PCB() constructor."
                 )
             dx, dy, dz = self.cs.zax.np * self.trace_thickness
-            dimtags = gmsh.model.occ.extrude(
-                [
-                    (2, planetag),
-                ],
-                dx,
-                dy,
-                dz,
-            )
+            dimtags = gmsh.model.occ.extrude([(2, planetag),],dx,dy,dz)
             voltags = [dt[1] for dt in dimtags if dt[0] == 3]
             poly = GeoVolume(voltags, name=name).prio_set(self.conductor_priority)
         else:
-            poly = GeoPolygon(
-                [
-                    planetag,
-                ],
-                name=name,
-            ).set_material(self.trace_material)
+            poly = GeoPolygon([planetag,],name=name,).set_material(self.trace_material)
             poly._store("thickness", self.trace_thickness)
         return poly
 
@@ -2214,7 +2320,9 @@ class PCBNew:
     ) -> list[GeoSurface] | list[GeoVolume]: ...
 
     def compile_paths(
-        self, merge: bool = False
+        self, 
+        merge: bool = False, 
+        fragment: bool = True
     ) -> list[GeoPolygon] | GeoSurface | GeoVolume:
         """Compiles the striplines and returns a list of polygons or asingle one.
 
@@ -2223,13 +2331,17 @@ class PCBNew:
 
         Args:
             merge (bool, optional): Whether to merge the Polygons into a single. Defaults to False.
-
+            fragment (bool, optional): Adds line segment points to improve mesh quality in combination with set_trace_refinement().
         Returns:
             list[Polygon] | GeoSurface: The output stripline polygons possibly merged if merge = True.
         """
         polys: list[GeoSurface] = []
         allx = []
         ally = []
+
+        from .pcb_tools.poly_parcelator import PolygonSet
+
+        polyset = PolygonSet()
 
         for path in self.paths:
             z = path.z
@@ -2268,35 +2380,54 @@ class PCBNew:
                     allx.append(x)
                     ally.append(y)
 
-            poly = self._gen_poly(xys2, z)
-            poly.material = self.trace_material
-            polys.append(poly)
+            polyset.add_poly(xys2, z, self.trace_material)
+            #poly = self._gen_poly(xys2, z)
+            #poly.material = self.trace_material
+            #polys.append(poly)
 
         for pcbpoly in self.polies:
             self.zs.append(pcbpoly.z)
-            poly = self._gen_poly(pcbpoly.xys, pcbpoly.z, name=pcbpoly.name)
-            poly.material = pcbpoly.material
-            polys.append(poly)
+            polyset.add_poly(pcbpoly.xys, pcbpoly.z, pcbpoly.material)
+            #poly = self._gen_poly(pcbpoly.xys, pcbpoly.z, name=pcbpoly.name)
+            #poly.material = pcbpoly.material
+            #polys.append(poly)
             xs, ys = zip(*pcbpoly.xys)
             allx.extend(xs)
             ally.extend(ys)
 
+        logger.info('Fragmenting polygons.')
+        polyset.generate_cutlines()
+        
+        if fragment:
+            polyset.fragment()
+        for poly in polyset.polies:
+            new_poly = self._gen_poly(poly.xys, poly.z)
+            new_poly.material = poly.material
+            polys.append(new_poly)
+        
         holes = []
         for holepoly in self.hole_polies + self.via_holes:
             self.zs.append(holepoly.z)
             poly = self._gen_poly(holepoly.xys, holepoly.z, name=holepoly.name)
             holes.append(poly)
 
+
         self.xs = allx
         self.ys = ally
 
         self.traces = polys
+
+        # For some reason this breaks GMSH. Something to ask Christophe
+        # if fragment:
+        #     for x,y,z in self._embedded_points:
+        #         ptobj = Point(x,y,z)
 
         if merge:
             polys = unite(*polys)
             if holes:
                 holes_union = unite(*holes)
                 polys = remove(polys, holes_union)
+            
         else:
             if holes:
                 holes_union = unite(*holes)

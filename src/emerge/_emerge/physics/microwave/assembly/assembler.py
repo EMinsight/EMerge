@@ -467,7 +467,7 @@ class Assembler:
             ):
                 conductor_tets.append(itet)
         conductor_tets = np.array(conductor_tets)
-
+        logger.debug(f' - Total of {len(conductor_tets)} PEC Tetrahedrons')
         # Only used cahced matrices if they are there, it is asked and there are no frequency dependent material properties.
         if (
             cache_matrices

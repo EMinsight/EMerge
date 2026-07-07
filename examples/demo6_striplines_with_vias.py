@@ -39,7 +39,7 @@ pcb.new(0, 0, w0, (1, 0), -th / 2)["p1"].straight(10).turn(90).straight(10).turn
 
 # As usual we compile the traces as a merger of polygons
 trace = pcb.compile_paths(True)
-
+model.view(use_gmsh=True)
 # Now that we have via's defined, we can do the same with vias. I set Merge to True so that I get back
 # One GeoObject.
 vias = pcb.generate_vias(True)
@@ -66,7 +66,7 @@ model.commit_geometry()
 model.view()
 
 model.mw.set_frequency_range(1e9, 6e9, 21)
-model.mesher.set_boundary_size(trace, 1 * mm)
+model.mesher.set_trace_refinement(trace, edge_size=1*mm)
 
 model.generate_mesh()
 

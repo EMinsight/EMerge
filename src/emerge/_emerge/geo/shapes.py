@@ -17,7 +17,7 @@
 
 # Last Cleanup: 2025-01-01
 import gmsh
-from ..geometry import GeoObject, GeoSurface, GeoVolume
+from ..geometry import GeoObject, GeoSurface, GeoVolume, GeoPoint
 from ..cs import CoordinateSystem, GCS, Axis, _parse_vector, Anchor, _parse_axis
 import numpy as np
 from enum import Enum
@@ -41,6 +41,13 @@ class Alignment(Enum):
     CENTER = 1
     CORNER = 2
 
+class Point(GeoPoint):
+
+    _default_name: str = 'Point'
+    def __init__(self, x: float, y: float, z: float):
+        tag = gmsh.model.occ.add_point(x,y,z)
+        super().__init__(tag)
+        
 
 class Box(GeoVolume):
     """Creates a box volume object.

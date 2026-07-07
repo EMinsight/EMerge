@@ -96,6 +96,11 @@ class _GeometryManager:
             model = self.active
         return [geo for geo in self.geometry_list[model].values() if geo._exists]
 
+    def all_plottable_geometries(self, model: str | None = None) -> list[GeoObject]:
+        if model is None:
+            model = self.active
+        return [geo for geo in self.geometry_list[model].values() if geo._exists and geo.dim in (2,3)]
+    
     def set_geometries(self, geos: list[GeoObject], model: str | None = None):
         if model is None:
             model = self.active

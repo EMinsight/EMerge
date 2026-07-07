@@ -582,13 +582,13 @@ class Microwave3D:
         # Assign PEC to all unassigned external boundaries.
         external_tags = [tag for tag in external_tags if tag not in self.bc.assigned(2)]
 
-        self.bc.PEC(FaceSelection(external_tags))
+        self.bc.no_overwrite().PEC(FaceSelection(external_tags))
 
         logger.info(f"Adding PEC boundary condition with tags {external_tags}.")
         if self.mesher.periodic_cell is not None:
             self.mesher.periodic_cell.generate_bcs()
             for bc in self.mesher.periodic_cell.bcs:
-                self.bc.assign(bc)
+                self.bc.no_overwrite().assign(bc)
 
         # Assign SurfaceImpedance to all conducting volume_boundaries
         material_map = defaultdict(set)
@@ -596,7 +596,7 @@ class Microwave3D:
             # Thin Condutor from PCB Traces
             if geometry.material.name == "PEC":
                 logger.debug(f"Assigning PEC BC to {geometry}")
-                self.bc.PEC(geometry.selection)
+                self.bc.no_overwrite().PEC(geometry.selection)
                 continue
 
             thickness = geometry._load("thickness")
@@ -608,27 +608,27 @@ class Microwave3D:
                 logger.debug(f"Assigning ThinConductor BC to {geometry}")
                 tags_ext = [tag for tag in geometry.tags if tag in external_tags]
                 if len(tags_ext) > 0:
-                    self.bc.SurfaceImpedance(
+                    self.bc.no_overwrite().SurfaceImpedance(
                         FaceSelection(tags_ext), geometry.material, thickness
                     )
                 tags_int = [tag for tag in geometry.tags if tag not in external_tags]
                 if len(tags_int) > 0:
-                    self.bc.ThinConductor(
+                    self.bc.no_overwrite().ThinConductor(
                         FaceSelection(tags_int), geometry.material, thickness
                     )
         for geometry in self._state.all3d:
             material = geometry.material
-            if material.cond.value > self.assembler.settings.mw_3d_surfimplim:
+            if material.cond.value > self.assembler.settings.mw_3d_surfimplim and material.name != 'PEC':
                 material_map[material].update(set(geometry.boundary().tags))
 
         for material, assignment in material_map.items():
             logger.debug(f"Assigning SurfaceImpedance BC to {assignment}")
-            self.bc.SurfaceImpedance(FaceSelection(list(assignment)), material=material)
+            self.bc.no_overwrite().SurfaceImpedance(FaceSelection(list(assignment)), material=material)
 
     def _initialize_bc_data(self):
         """Initializes auxilliary required boundary condition information before running simulations."""
         logger.debug("Initializing boundary conditions")
-
+        self._initialize_bcs(self._state.manager.get_surfaces())
         # Removes non-assigned boundary conditions.
         # This happens for example if the initial boundary PEC gets overwritten.
         self.bc.cleanup()
@@ -2135,10 +2135,7 @@ class Microwave3D:
         """
 
         self._simstart = time.time()
-        if self.bc._initialized_with_defaults is False:
-            raise SimulationError(
-                "Cannot run a modal analysis because no boundary conditions have been assigned."
-            )
+        
 
         self._check_meshed()
         self._initialize_field()

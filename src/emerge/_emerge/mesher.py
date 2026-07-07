@@ -415,6 +415,11 @@ class Mesher:
 
         size_mapping = dict()
 
+        for obj in self.objects:
+            if obj.dim != 2 and obj.max_meshsize < 1e9:
+                continue
+            self._set_size_on_face(obj.tags, obj.max_meshsize)
+
         for obj in sorted(self.objects, key=lambda x: x._priority):
             if obj.dim != 3:
                 continue
@@ -428,6 +433,7 @@ class Mesher:
                 size_mapping[dimtag] = size
 
         for (dim, tag), size in size_mapping.items():
+            size = min(size, obj.max_meshsize)
             if dim == 2:
                 logger.debug(
                     f"Somehow setting mesh size:{1000 * size:.3f}mm on boundary: {tag}"
@@ -626,6 +632,7 @@ class Mesher:
         growth_rate: float = 3.0,
         min_size: float = 1e-5,
         max_size: float | None = None,
+        edge_size: float | None = None,
         min_overlap: float = 0.75,
     ):
         """Performs an intelligent size constraint refinement for stripline edge gaps based on the distance between them.
@@ -683,7 +690,7 @@ class Mesher:
             for t2, (p21, p22, e2) in edge_nodes.items():
                 if t1 == t2:
                     continue
-                if np.abs(np.dot(e1, e2)) < 0.99:
+                if np.abs(np.dot(e1, e2)) < 0.7:
                     continue
                 # Lines are parallel
                 a = e1
@@ -698,14 +705,17 @@ class Mesher:
                 dl = np.linalg.norm(c2 - c1)
                 l1 = np.linalg.norm(p12 - p11)
                 l2 = np.linalg.norm(p22 - p21)
-                if dl < l1 * (1 - min_overlap):
+                if dl < 2 * l1 * (1 - min_overlap):
                     sizes[t1] = min(
                         sizes[t1], max(min_size, line_dist / qualtity_factor)
                     )
-                if dl < l2 * (1 - min_overlap):
+                if dl < 2 * l2 * (1 - min_overlap):
                     sizes[t2] = min(
                         sizes[t2], max(min_size, line_dist / qualtity_factor)
                     )
+        
+        if isinstance(edge_size, (float,int)):
+            self.set_boundary_size(obj, edge_size, growth_rate=growth_rate)
 
         for edge_tag, size in sizes.items():
             if size == 1e9:

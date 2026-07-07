@@ -499,6 +499,8 @@ class MWField(Saveable):
         self.sig: np.ndarray = None
         self._rel: bool = False
 
+        self._Texcite: np.ndarray = 1.0
+
     def add_port_properties(
         self,
         port_number: int,
@@ -536,20 +538,26 @@ class MWField(Saveable):
     def _field(self) -> np.ndarray:
         if self._mode_field is not None:
             return self._mode_field
-
+        
+        if not isinstance(self._Texcite, np.ndarray):
+            self._Texcite = np.eye(len(self.port_modes), dtype=np.complex128)
         if len(self.port_modes) > 0:
+            avec = np.array([self.excitation[i.smat_index] for i in self.port_modes])
+            avec = self._Texcite @ avec
             return sum(
                 [
-                    self.excitation[mode.smat_index] * self._fields[mode.smat_index]
-                    for mode in self.port_modes
+                    avec[i] * self._fields[mode.smat_index]
+                    for i, mode in enumerate(self.port_modes)
                 ]
             )  # type: ignore
 
         elif len(self.background_fields) > 0:
+            avec = np.array([self.excitation[i] for i in self.port_modes])
+            avec = self._Texcite @ avec
             return sum(
                 [
-                    self.excitation[mode] * self._fields[mode]
-                    for mode in self.background_fields
+                    avec[i] * self._fields[mode]
+                    for i,mode in enumerate(self.background_fields)
                 ]
             )
 
@@ -1219,6 +1227,39 @@ class MWField(Saveable):
 
         return EHFieldFF(E, H, T, P, Ptot, freq=self.freq)
 
+    def embed_external_component(self, touchstone_file: str, port_indices: list[int], Smat: np.ndarray) -> MWScalarNdim:
+        # 1. Load the external component
+        from ....read import TouchstoneData
+
+        td = TouchstoneData(touchstone_file)
+        fem_s_matrix = Smat
+        S_ext = td.interp_S(self.freq)  # (n_freq, M, M)
+        port_indices = [ind-1 for ind in port_indices]
+        all_ports = np.arange(fem_s_matrix.shape[1])
+        n_ports = np.setdiff1d(all_ports, port_indices)
+        
+        # 2. Partition the block matrix
+        # S_nn, S_nm, S_mn, S_mm
+        S_nn = fem_s_matrix[n_ports][:, n_ports]
+        S_nm = fem_s_matrix[n_ports][:, port_indices]
+        S_mn = fem_s_matrix[port_indices][:, n_ports]
+        S_mm = fem_s_matrix[port_indices][:, port_indices]
+        
+        # 3. Compute the reduction: S_red = S_nn + S_nm @ S_ext @ inv(I - S_mm @ S_ext) @ S_mn
+        # Use np.linalg.solve for stability instead of direct inv
+        N = len(n_ports)
+        M = len(port_indices)
+        I_n = np.eye(N)
+        I_m = np.eye(M)
+        # Pre-compute the coupling term: S_ext * (I - S_mm * S_ext)^-1 * S_mn
+        coupling = S_ext @ np.linalg.inv(I_m - S_mm @ S_ext) @ S_mn
+        zero_nm = np.zeros((N, M))
+        zero_mn = np.zeros((M, N))
+        self._Texcite = np.block([
+            [I_n,      zero_nm],
+            [coupling, zero_mn]
+        ]).squeeze()
+    
     def farfield(
         self,
         theta: np.ndarray,
@@ -1540,6 +1581,46 @@ class MWScalarNdim(Saveable):
 
         return self
 
+    def embed_external_component(self, touchstone_file: str, port_indices: list[int]) -> MWScalarNdim:
+        # 1. Load the external component
+        from ....read import TouchstoneData
+
+        td = TouchstoneData(touchstone_file)
+        fem_s_matrix = self.Smat
+        S_ext = td.interp_S(self.freq)  # (n_freq, M, M)
+        port_indices = [ind-1 for ind in port_indices]
+        n_freq = fem_s_matrix.shape[0]
+        all_ports = np.arange(fem_s_matrix.shape[1])
+        n_ports = np.setdiff1d(all_ports, port_indices)
+        
+        # 2. Partition the block matrix
+        # S_nn, S_nm, S_mn, S_mm
+        S_nn = fem_s_matrix[:, n_ports][:, :, n_ports]
+        S_nm = fem_s_matrix[:, n_ports][:, :, port_indices]
+        S_mn = fem_s_matrix[:, port_indices][:, :, n_ports]
+        S_mm = fem_s_matrix[:, port_indices][:, :, port_indices]
+        
+        # 3. Compute the reduction: S_red = S_nn + S_nm @ S_ext @ inv(I - S_mm @ S_ext) @ S_mn
+        # Use np.linalg.solve for stability instead of direct inv
+        I = np.eye(len(port_indices))
+        
+        S_red = np.zeros_like(S_nn)
+        for i in range(n_freq):
+            # Term = (I - S_mm * S_ext)^-1
+            term = np.linalg.inv(I - S_mm[i] @ S_ext[i])
+            S_red[i] = S_nn[i] + S_nm[i] @ S_ext[i] @ term @ S_mn[i]
+
+        new_ndim = MWScalarNdim()
+        new_ndim.freq = self.freq
+        new_ndim.k0 = self.k0
+        new_ndim.Sp  = S_red
+        new_ndim.Q = None
+        new_ndim.beta = self.beta[:,n_ports]
+        new_ndim.Z0 = self.Z0[:,n_ports]
+        new_ndim._portmap = self._portmap
+        new_ndim._portnumbers = self._portnumbers
+        return new_ndim
+        
     @property
     def Smat(self) -> np.ndarray:
         """Returns the full S-matrix

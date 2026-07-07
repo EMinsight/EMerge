@@ -359,7 +359,7 @@ class PVDisplay(EMergeDisplay):
     ):
 
         if isinstance(obj, GeoObject):
-            if obj._hidden:
+            if obj._hidden or obj.dim in (0,1):
                 return
 
         mesh_obj = self.mesh(obj)

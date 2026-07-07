@@ -7,6 +7,11 @@
 #
 # Run `./emergetools help` for a list of commands.
 #
+# CLAUDE CODE GENERATED CLI
+# ./emergetools clean numba-cache --dry-run   # preview
+# ./emergetools clean numba-cache             # actually delete .nbi/.nbc
+# ./emergetools clean pycache                 # nukes __pycache__ entirely (also clears numba cache, since they share dirs)
+# ./emergetools help
 set -euo pipefail
 
 # Resolve repo root as the directory this script lives in, so it behaves

@@ -920,8 +920,6 @@ class Simulation:
                 logger.trace(" (1) Installing periodic boundaries in mesher.")
                 self.mesher.set_periodic_cell(self._cell)
 
-            self.mw._initialize_bcs(self.state.manager.get_surfaces())
-
             # Check if frequencies are defined: TODO: Replace with a more generic check
             if self.mw.frequencies is None:
                 raise ValueError(

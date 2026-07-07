@@ -24,6 +24,7 @@ from typing import Callable
 import re
 from loguru import logger
 from scipy.interpolate import interp1d
+from emsutil import Saveable
 
 _FUNIT = {
     'hz': 1,
@@ -87,6 +88,23 @@ _DATAMAP = {
     'ri': _ri_ri
 }
 
+
+############################################################
+#                    EQUIVALENT CIRCUIT                   #
+############################################################
+
+
+class Zfmodel(Saveable):
+    def __init__(self, fs: np.ndarray, zmat: np.ndarray):
+        self.fs: np.ndarray = fs
+        self.zmat: np.ndarray = zmat.flatten()
+
+    def __call__(self, f):
+        from scipy.interpolate import interp1d
+
+        return interp1d(self.fs, self.zmat, kind='cubic')(f)
+    
+    
 
 ############################################################
 #                        MAIN CLASS                       #
@@ -251,7 +269,179 @@ class TouchstoneData:
             self.Sdata[iif,:,:] = iA @ (S - R) @ np.linalg.pinv(E - R @ S) @ A
         self.refimp = new_impedance
         return self
+    
+    def is_reciprocal(self, tolerance: float = 1e-6) -> bool:
+        """Returns True if the S-parameters are that of a reciprocal component up to a tolerance precision.
+
+        Args:
+            tolerance (float, optional): _description_. Defaults to 1e-6.
+
+        Returns:
+            bool: _description_
+        """
+        if self.n_ports == 1:
+            return True
+        for i in range(1, self.n_ports + 1):
+            for j in range(i+1, self.n_ports + 1):
+                if np.any(np.abs(self.S(i,j)-self.S(j,i)) > tolerance):
+                    return False
+        return True
+
+    def is_passive(self) -> bool:
+        """Returns True if the S-parameters of are that of a passive component (All S-parameters smaller than 1.0 in magnitude)
+
+        Returns:
+            bool: _description_
+        """
+        return np.all(np.abs(self.Sdata.flatten()) <= 1.0)
+    
+    def is_singular(self):
+        """
+        Checks for singularity and branches between Z-conversion 
+        and ABCD-parameter extraction for series components.
+        """
+        S = self.Sdata
         
+        # Check for singularity using the condition number
+        # A high condition number (e.g., > 1e12) indicates near-singularity
+        I = np.eye(2)[np.newaxis, :, :]
+        I_minus_S = I - S
+        cond_nums = np.linalg.cond(I_minus_S)
+        
+        # Threshold for deciding if we should use the Z-conversion or the series model
+        # If the matrix is singular, we treat it as a series element
+        return np.any(cond_nums > 1e12)
+    
+
+    def z_shunt_t(self) -> Zfmodel:
+        """Returns the shunt impedance for a 2-port equivalent T-network
+
+        Returns:
+            Zfmodel: A class that can be called as LumpedElement function
+        """
+        zmat = self.generate_Z_param()
+        return Zfmodel(self.Fdata, zmat[:,0,1])
+
+    def z_series_t_1(self) -> Zfmodel:
+        """Returns the series impedance for a 2-port equivalent T-network on port 1.
+
+        Returns:
+            Zfmodel: A class that can be called as LumpedElement function
+        """
+        zmat = self.generate_Z_param()
+        z11 = zmat[:,0,0]
+        z12 = zmat[:,1,0]
+        z22 = zmat[:,1,1]
+        return Zfmodel(self.Fdata, z11-z12)
+    
+    def z_series_t_2(self) -> Zfmodel:
+        """Returns the series impedance for a 2-port equivalent T-network on port 2.
+
+        Returns:
+            Zfmodel: A class that can be called as LumpedElement function
+        """
+        zmat = self.generate_Z_param()
+        z11 = zmat[:,0,0]
+        z12 = zmat[:,1,0]
+        z22 = zmat[:,1,1]
+        return Zfmodel(self.Fdata, z22-z12)
+    
+    def z_shunt_pi_1(self) -> Zfmodel:
+        """Returns the shunt impedance for a 2-port equivalent 𝜋-network on port 1.
+
+        Returns:
+            Zfmodel: A class that can be called as LumpedElement function
+        """
+        zmat = self.generate_Z_param()
+        z11 = zmat[:,0,0]
+        z12 = zmat[:,1,0]
+        z22 = zmat[:,1,1]
+        detz = z11*z22-z12*z12
+        y11 = z22/detz
+        y12 = -z12/detz
+        y22 = z11/detz
+        return Zfmodel(self.Fdata, 1/(y11+y12))
+
+    def z_shunt_pi_2(self) -> Zfmodel:
+        """Returns the series impedance for a 2-port equivalent 𝜋-network on port 2.
+
+        Returns:
+            Zfmodel: A class that can be called as LumpedElement function
+        """
+        zmat = self.generate_Z_param()
+        z11 = zmat[:,0,0]
+        z12 = zmat[:,1,0]
+        z22 = zmat[:,1,1]
+        detz = z11*z22-z12*z12
+        y11 = z22/detz
+        y12 = -z12/detz
+        y22 = z11/detz
+        return Zfmodel(self.Fdata, 1/(y22+y12))
+    
+    def z_series_pi(self) -> Zfmodel:
+        """Returns the series impedance for a 2-port equivalent 𝜋-network.
+
+        Returns:
+            Zfmodel: A class that can be called as LumpedElement function
+        """
+        zmat = self.generate_Z_param()
+        z11 = zmat[:,0,0]
+        z12 = zmat[:,1,0]
+        z22 = zmat[:,1,1]
+        detz = z11*z22-z12*z12
+        y11 = z22/detz
+        y12 = -z12/detz
+        y22 = z11/detz
+        return Zfmodel(self.Fdata, 1/(-y12))
+
+    def z_series(self) -> Zfmodel:
+        """Returns the single component series Z-parameter.
+
+        If its a 1-port S-parameter file it will simply be Z12
+        If its a 2-port S-parameter file it will assume its a singular matrix where
+         - S12 = S21
+         - S11 = S22
+        In which case it will return the equivalent series impedance
+
+        Returns:
+            Zfmodel: _description_
+        """
+        if self.n_ports == 1:
+            Z = self.generate_Z_param()
+            return Zfmodel(self.Fdata, Z)
+        elif self.n_ports == 2:
+            logger.debug(' - Singular S-parameter file. Treating it as a single series impedance.')
+            S = self.Sdata
+            z0 = self.refimp
+
+            s11 = S[:, 0, 0]
+            s12 = S[:, 0, 1]
+            s21 = S[:, 1, 0]
+            s22 = S[:, 1, 1]
+            
+            B = z0 * ((1 + s11) * (1 + s22) - s12 * s21) / (2 * s21)
+            
+            return Zfmodel(B, Z)
+    def generate_Z_param(self) -> np.ndarray:
+        """Returns the (n_freq,n,n) Z-parameters of this S-parameter component
+
+        Returns:
+            np.ndarray: The Z-parameters
+        """
+        S = self.Sdata  # Shape (n_freq, n, n)
+        Z0 = np.diag(self.refimp *np.ones(self.n_ports))
+        
+        n_freq, n, _ = S.shape
+        
+        # Create identity matrices for broadcasting: shape (1, n, n)
+        I = np.eye(n)[np.newaxis, :, :]
+        
+        # Calculate Z = Z0 * (I + S) * inv(I - S)
+        # Using np.linalg.inv for matrix inversion
+        Z = Z0 @ (I + S) @ np.linalg.inv(I - S)
+        
+        return Z
+
     def S(self, i: int, j: int) -> np.ndarray:
         """Return the S-parameter array corresponding to the given port number
 
@@ -264,6 +454,22 @@ class TouchstoneData:
         """
         return self.Sdata[:, i-1, j-1].squeeze()
     
+    def interp_S(self, f: np.ndarray) -> np.ndarray:
+        """Compute the interpolate S-parameter matrix
+
+        Returns:
+            np.ndarray: _description_
+        """
+        f = np.atleast_1d(f)
+        n = f.shape[0]
+        nps = self.n_ports
+        Sout = np.zeros((n,nps,nps), dtype=np.complex128)
+        for i in range(nps):
+            for j in range(nps):
+                Sout[:,i,j] = interp1d(self.Fdata, self.Sdata[:,i,j])(f)
+        return Sout
+    
+
     def RemoveSP(self, touchstoneClass: 'TouchstoneData', port: int) -> 'TouchstoneData':
         """De-embed a 2-port fixture network from this touchstone measurement.
 

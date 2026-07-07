@@ -87,6 +87,7 @@ model.commit_geometry()
 # --- Mesh refinement -----------------------------------------------------
 # High growth rates are generally not adviced but used here to save some memory.
 model.mesher.set_boundary_size(stripline, 2 * mm, growth_rate=10)
+
 model.mesher.set_face_size(p1, 1 * mm)
 model.mesher.set_face_size(p2, 1 * mm)
 
