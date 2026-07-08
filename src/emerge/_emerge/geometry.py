@@ -34,7 +34,7 @@ import numpy as np
 from .cs import Anchor
 from .file import Saveable
 from typing import TypeVar
-
+from .mdi import MetaDataInstructions
 FaceNames = Literal["back", "front", "left", "right", "top", "bottom"]
 
 ############################################################
@@ -568,7 +568,7 @@ class GeoObject(Saveable):
     dim: int = -1
     _default_name: str = "GeoObject"
     skip_fields = [
-        "_aux_data",
+        "_mdi",
     ]
 
     def __init__(
@@ -592,7 +592,7 @@ class GeoObject(Saveable):
         self._tools: dict[int, dict[str, _FacePointer]] = dict()
         self._hidden: bool = False
         self._key = _GENERATOR.new()
-        self._aux_data: dict[str, Any] = dict()
+        self._mdi: MetaDataInstructions = MetaDataInstructions()
         self._base_priority: int = 10.0
         self._sub_priority: int = 0
         self._self_destruct: bool = False
@@ -642,7 +642,7 @@ class GeoObject(Saveable):
             name (str): Name field
             data (Any): Data to store
         """
-        self._aux_data[name] = data
+        self._mdi.store(name, data)
 
     def _load(self, name: str) -> Any | None:
         """Load data with a given name. If it doesn't exist, it returns None
@@ -653,7 +653,7 @@ class GeoObject(Saveable):
         Returns:
             Any | None: The property
         """
-        return self._aux_data.get(name, None)
+        return self._mdi.get(name)
 
     def _get_boundary(self) -> list[tuple[float, float]]:
         if not self._cached:
@@ -761,9 +761,6 @@ class GeoObject(Saveable):
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.name},{self.dim},{self.tags})"
 
-    def _data(self, *labels) -> tuple[Any | None, ...]:
-        return tuple([self._aux_data[lab] for lab in labels])
-
     def _replace_pointer(self, name: str, face_pointer: _FacePointer) -> None:
         """Will be used to replace face pointers so only one unique one exists.
 
@@ -821,7 +818,7 @@ class GeoObject(Saveable):
         }
         new_obj.anch = self.anch.copy()
 
-        new_obj._aux_data = self._aux_data.copy()
+        new_obj._mdi = self._mdi.copy()
         new_obj._base_priority = self._base_priority
         new_obj._exists = self._exists
         new_obj._self_destruct = self._self_destruct

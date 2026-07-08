@@ -1437,11 +1437,13 @@ class LumpedPort(PortBC, Saveable):
                 raise ValueError(
                     f"The width, height and direction must be defined. Information cannot be extracted from {face}"
                 )
-            width, height, direction = face._data("width", "height", "vdir")
-            if width is None or height is None or direction is None:
-                raise ValueError(
-                    f"The width, height and direction could not be extracted from {face}"
-                )
+            for lpd in face._mdi.iter('lumpedport'):
+                width, height, direction = lpd['width'], lpd['height'], lpd['vdir']
+        
+        if width is None or height is None or direction is None:
+            raise ValueError(
+                f"The width, height and direction could not be extracted from {face}"
+            )
 
         logger.debug(
             f"Lumped port: width={1000 * width:.1f}mm, height={1000 * height:.1f}mm, direction={direction}"

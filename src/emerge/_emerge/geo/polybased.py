@@ -566,6 +566,67 @@ class XYPolygon:
         self.extend(xs, ys)
         return self
     
+    def corrugated_line(self, 
+                        direction: tuple[float, float, float] | Axis,
+                        depth: float,
+                        total_length: float,
+                        period: float,
+                        corr_axis: tuple[float, float] | Axis | None = None,
+                        side: Literal['left','right'] | None = None,
+                        duty_cycle: float = 0.5,
+                        offset: float = 0.0,) -> XYPolygon:
+        """Add a corrugating line to the polygon path
+
+        Args:
+            direction (tuple[float, float, float] | Axis): The direction of the line
+            depth (float): The depth of the corrugations
+            total_length (float): The total length of the line segment [meters]
+            period (float): The corrugation period in meters.
+            corr_axis (tuple[float, float] | Axis | None, optional): The corrugation axis direction of displacement (unit length). Defaults to None.
+            side (Literal[left, right] | None, optional): Alternative definition of the corrugation direction (left or right). Defaults to None.
+            duty_cycle (float, optional): The duty cycle percentage (defaults to 50% or 0.5). Defaults to 0.5.
+            offset (float, optional): The offset of the first corrugation in percentage of a single period. Defaults to 0.0.
+
+        Returns:
+            XYPolygon: _description_
+        """
+        ds = _parse_vector(direction)
+        if corr_axis is not None:
+            dcorr = _parse_vector(corr_axis)
+        else:
+            if side=='left':
+                dcorr = np.array([-ds[1], ds[0]])
+            else:
+                dcorr = np.array([ds[1], -ds[0]])
+        ds = ds/np.linalg.norm(ds)
+        dcorr = dcorr/np.linalg.norm(dcorr)
+        p0x = self.x[-1]
+        p0y = self.y[-1]
+        p0cx = depth*dcorr[0]
+        p0cy = depth*dcorr[1]
+        xs = []
+        ys = []
+        N = int(np.floor(total_length/period))
+        offx = 0.0
+        offy = 0.0
+        dsx = ds[0]*period
+        dsy = ds[1]*period
+        
+        dx0 = offset*dsx
+        dy0 = offset*dsy
+        tmplx = [dx0, dx0 + p0cx, dx0 + p0cx + duty_cycle*dsx, dx0 + duty_cycle*dsx]
+        tmply = [dy0, dy0 + p0cy, dy0 + p0cy + duty_cycle*dsy, dy0 + duty_cycle*dsy]
+        for n in range(N):
+            for x0, y0 in zip(tmplx, tmply):
+                xs.append(x0+p0x+offx)
+                ys.append(y0+p0y+offy)
+            offx += dsx
+            offy += dsy
+        xs.append(p0x + ds[0]*total_length)
+        ys.append(p0y + ds[1]*total_length)
+        self.extend(xs, ys)
+        return self
+        
     def connect(self, other: XYPolygon, name: str = 'Connection') -> GeoVolume:
         """Connect two XYPolygons with a defined coordinate system
 

@@ -1577,9 +1577,7 @@ class PCBNew:
         area = width*length
         Npts = 50
         ds = (area/Npts)**0.5
-        geopoly._aux_data["func"] = function
-        geopoly._aux_data["width"] = width
-        geopoly._aux_data["height"] = length
+        geopoly._mdi.add('lumpedelement', func=function, width=width, height=length)
         geopoly.max_meshsize = ds
         self.lumped_elements.append(geopoly)
 
@@ -2111,9 +2109,7 @@ class PCBNew:
             ],
             name="name",
         )
-        poly._aux_data["width"] = abs(stripline.width * self.unit)
-        poly._aux_data["height"] = abs(height * self.unit)
-        poly._aux_data["vdir"] = self.cs.zax
+        poly._mdi.add('lumpedport', width=abs(stripline.width * self.unit), height=abs(height * self.unit), vdir=self.cs.zax)
 
         return poly
 
@@ -2180,9 +2176,7 @@ class PCBNew:
             ],
             name="name",
         )
-        poly._aux_data["width"] = abs(width)
-        poly._aux_data["height"] = abs(height * self.unit)
-        poly._aux_data["vdir"] = self.cs.zax
+        poly._mdi.add('lumpedport', width=abs(width), height=abs(height * self.unit), vdir = self.cs.zax)
 
         return poly
 
