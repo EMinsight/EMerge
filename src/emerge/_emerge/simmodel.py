@@ -270,7 +270,7 @@ class Simulation:
         if gmsh.isInitialized() == 0:
             logger.debug("Initializing GMSH")
 
-            gmsh.initialize(argv=sys.argv + ["-norc", "-nopopup"])
+            gmsh.initialize(argv=sys.argv, readConfigFiles=False)
             # Set an exit handler for Ctrl+C cases
             self._install_signal_handlers()
 
@@ -280,7 +280,7 @@ class Simulation:
             register(self._print_summary)
         else:
             gmsh.finalize()
-            gmsh.initialize(argv=sys.argv + ["-norc", "-nopopup"])
+            gmsh.initialize(argv=sys.argv, readConfigFiles=False)
 
         # Create a new GMSH model or load it
         if not self.load_file:
