@@ -110,7 +110,8 @@ class CompileCommand(Command):
         from ._emerge import mesher
         from ._emerge.mth import csc_cast, csr_cast, integrals, optimized, pairing
         from ._emerge.physics.microwave import adaptive_mesh, sc
-        from ._emerge.physics.microwave.assembly import curlcurl, generalized_eigen, generalized_eigen_hb, periodicbc, robin_abc_order2, robinbc
+        from ._emerge.physics.microwave.assembly import curlcurl, generalized_eigen_hb, periodicbc, robin_abc_order2, robinbc
+        from ._emerge.compiled.ccbf import _eval_curl_f_2d, _eval_curl_f_3d, _eval_div_f_2d, _eval_div_f_3d, _eval_f_2d, _eval_f_3d
         print('Compilation complete!')
 
     def configure(self, parser):

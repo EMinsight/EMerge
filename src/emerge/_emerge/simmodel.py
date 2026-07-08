@@ -18,7 +18,7 @@
 # Last Cleanup: 2025-01-01
 from __future__ import annotations
 
-
+import sys
 from .geometry import GeoObject
 from .geo.modeler import Modeler
 from .physics.microwave.microwave_3d import Microwave3D
@@ -270,7 +270,7 @@ class Simulation:
         if gmsh.isInitialized() == 0:
             logger.debug("Initializing GMSH")
 
-            gmsh.initialize()
+            gmsh.initialize(argv=sys.argv + ["-norc", "-nopopup"])
             # Set an exit handler for Ctrl+C cases
             self._install_signal_handlers()
 
@@ -280,7 +280,7 @@ class Simulation:
             register(self._print_summary)
         else:
             gmsh.finalize()
-            gmsh.initialize()
+            gmsh.initialize(argv=sys.argv + ["-norc", "-nopopup"])
 
         # Create a new GMSH model or load it
         if not self.load_file:

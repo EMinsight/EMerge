@@ -582,9 +582,11 @@ class Microwave3D:
         # Assign PEC to all unassigned external boundaries.
         external_tags = [tag for tag in external_tags if tag not in self.bc.assigned(2)]
 
-        self.bc.no_overwrite().PEC(FaceSelection(external_tags))
+        if len(external_tags) > 0:
+            logger.info(f"Adding PEC boundary condition with tags {external_tags}.")
+            self.bc.no_overwrite().PEC(FaceSelection(external_tags))
 
-        logger.info(f"Adding PEC boundary condition with tags {external_tags}.")
+        
         if self.mesher.periodic_cell is not None:
             self.mesher.periodic_cell.generate_bcs()
             for bc in self.mesher.periodic_cell.bcs:
