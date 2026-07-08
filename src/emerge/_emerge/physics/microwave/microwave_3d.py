@@ -597,12 +597,12 @@ class Microwave3D:
         for geometry in self._state.all2d:
             # Thin Condutor from PCB Traces
             if geometry.material.name == "PEC":
-                logger.debug(f"Assigning PEC BC to {geometry}")
+                logger.info(f"Assigning PEC BC to {geometry}")
                 self.bc.no_overwrite().PEC(geometry.selection)
                 continue
 
             if (geometry.material.cond.value > self.assembler.settings.mw_3d_surfimplim):
-                logger.debug(f"Assigning ThinConductor BC to {geometry}")
+                logger.info(f"Assigning ThinConductor BC to {geometry}")
                 tags_ext = [tag for tag in geometry.tags if tag in external_tags]
                 if len(tags_ext) > 0:
                     self.bc.no_overwrite().SurfaceImpedance(
@@ -619,7 +619,7 @@ class Microwave3D:
                 material_map[material].update(set(geometry.boundary().tags))
 
         for material, assignment in material_map.items():
-            logger.debug(f"Assigning SurfaceImpedance BC to {assignment}")
+            logger.info(f"Assigning SurfaceImpedance BC to {assignment}")
             self.bc.no_overwrite().SurfaceImpedance(FaceSelection(list(assignment)), material=material)
 
     def _initialize_bc_data(self):

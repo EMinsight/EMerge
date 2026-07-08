@@ -57,7 +57,13 @@ _GMSH_ERROR_TEXT = """
 --------------------------
 Known problems/solutions:
 (1) - PLC Error:  A segment and a facet intersect at point
-    This can be caused when approximating thin curved volumes. Try to decrease the mesh size for that region.
+    This can be caused when approximating thin curved volumes. Possible solutions:
+    1. Increase the curved boundary resolution:
+        model.mesher.set_curved_boundary_meshing(20)
+         (!) Pick a higher number than 10 like 20, 30, 40 etc.
+         
+    2. Decrease the mesh size of the object:
+        object.max_meshsize = ...
 --------------------------
 """
 
