@@ -298,7 +298,7 @@ class StripTurn(RouteElement):
         width: float,
         direction: tuple[float, float],
         angle: float,
-        corner_type: str = "round",
+        corner_type: str = "square",
         champher_distance: float | None = None,
         dsratio: float = 1.0,
     ):
@@ -363,7 +363,7 @@ class StripTurn(RouteElement):
 
         out = [(xend, yend)]
 
-        if self.corner_type == "champher":
+        if self.corner_type in ("champher","miter"):
             dist = dist - self.champher_distance
 
         if dist == 0:
@@ -374,7 +374,7 @@ class StripTurn(RouteElement):
 
         if self.corner_type == "square":
             return [(x1, y1), (xend, yend)]
-        if self.corner_type == "champher":
+        if self.corner_type in ("champher","miter"):
             x2 = xend - dist * self.direction[0]
             y2 = yend - dist * self.direction[1]
             if self.rcutprev:
@@ -405,7 +405,7 @@ class StripTurn(RouteElement):
 
         out = [(xend, yend)]
 
-        if self.corner_type == "champher":
+        if self.corner_type in ("champher","miter"):
             dist = dist - self.champher_distance
 
         if dist == 0:
@@ -416,7 +416,7 @@ class StripTurn(RouteElement):
 
         if self.corner_type == "square":
             return [(x1, y1), (xend, yend)]
-        if self.corner_type == "champher":
+        if self.corner_type in ("champher","miter"):
             x2 = xend - dist * self.direction[0]
             y2 = yend - dist * self.direction[1]
             if self.lcutprev:
@@ -720,7 +720,7 @@ class StripPath:
         self,
         angle: float,
         width: float | None = None,
-        corner_type: Literal["champher", "square"] = "square",
+        corner_type: Literal["champher", "square","miter"] = "square",
         dsratio: float = 0.7,
     ) -> StripPath:
         """Adds a turn to the strip path.
@@ -1232,11 +1232,22 @@ class StripPath:
         arrival_dir: tuple[float, float] | None = None,
         arrival_margin: float | None = None,
         angle_step: float = 90,
+        corner_type: Literal['champher','square','miter'] = 'square',
+        dsratio: float = 0.7,
     ) -> StripPath:
-        """
-        Extend the path from current end point to dest (x, y).
+        """Extend the path from current end point to dest (x, y).
         Optionally ensure arrival in arrival_dir after a straight segment of arrival_margin.
         Turns are quantized to multiples of angle_step (divisor of 360, <=90).
+
+        Args:
+            dest (tuple[float, float] | Anchor): The destination xy coordinate
+            arrival_dir (tuple[float, float] | None, optional): The arrival direction as dx/dy tuple. Defaults to None.
+            arrival_margin (float | None, optional): The minimal travel distance in the arrival direction. Defaults to None.
+            angle_step (float, optional): The angle step size to solve for. Defaults to 90.
+            corner_type (["miter","square","champher"], optional): The corner type. Defaults to 'square'.
+            dsratio (float, optional): The cut ratio for champher/miter corners. Defaults to 0.7.
+        Returns:
+            StripPath: _description_
         """
         dest = _parse_vector(dest)[:2]
         # Validate angle_step
@@ -1306,7 +1317,7 @@ class StripPath:
 
         # 1) Perform initial quantized turn
         if abs(desired_q) > atol:  # type: ignore
-            self.turn(-desired_q)  # type: ignore
+            self.turn(-desired_q, corner_type=corner_type, dsratio=dsratio)  # type: ignore
         x0 = self.end.x
         y0 = self.end.y
         # compute new heading vector after turn
@@ -1348,7 +1359,7 @@ class StripPath:
         backoff = math.tan(abs(back_ang) * np.pi / 360) * self.end.width / 2
 
         self.straight(s - backoff)
-        self.turn(-back_ang)
+        self.turn(-back_ang, corner_type=corner_type, dsratio=dsratio)
 
         x0 = self.end.x
         y0 = self.end.y
@@ -1816,6 +1827,7 @@ class PCBNew:
         height: float | None = None,
         origin: tuple[float, float] | Anchor | None = None,
         alignment: Alignment = Alignment.CORNER,
+        material: Material | None = None,
         name: str | None = None,
     ) -> GeoSurface | GeoVolume:
         """Generates a generic rectangular plate in the XY grid.
@@ -1827,7 +1839,7 @@ class PCBNew:
             height (float, optional): The height of the plate. Defaults to None.
             origin (tuple[float, float], optional): The origin of the plate. Defaults to None.
             alignment (['corner','center], optional): The alignment of the plate. Defaults to 'corner'.
-
+            material (Material, optional): The optional plane material. Defaults to the trace material specified.
         Returns:
             GeoSurface: The resultant GeoSurface of the plane
         """
@@ -1846,6 +1858,9 @@ class PCBNew:
             height = self.length
             origin = (self.origin[0] * self.unit, self.origin[1] * self.unit)
 
+        if material is None:
+            material = self.trace_material
+
         origin = tuple(_parse_vector(origin))
         origin: tuple[float, ...] = origin + (z * self.unit,)  # type: ignore
         if alignment is Alignment.CENTER:
@@ -1862,14 +1877,14 @@ class PCBNew:
                 self.trace_thickness,
                 position=origin,
                 name=name,
-            ).set_material(self.trace_material)
+            ).set_material(material)
         else:
             plane = Plate(
                 origin, (width * self.unit, 0, 0), (0, height * self.unit, 0), name=name
             )  # type: ignore
             plane._store("thickness", self.thickness)
             plane = change_coordinate_system(plane, self.cs)  # type: ignore
-            plane.set_material(self.trace_material)
+            plane.set_material(material)
 
         # subtract via holes:
         holes = []
@@ -2230,21 +2245,23 @@ class PCBNew:
         return plate  # type: ignore
 
     @overload
-    def generate_vias(self, merge=Literal[True]) -> GeoVolume: ...
+    def generate_vias(self, merge=Literal[True], material: Material | None = None) -> GeoVolume: ...
 
     @overload
-    def generate_vias(self, merge=Literal[False]) -> list[Cylinder]: ...
+    def generate_vias(self, merge=Literal[False], material: Material | None = None) -> list[Cylinder]: ...
 
-    def generate_vias(self, merge=False) -> list[Cylinder] | GeoVolume:
+    def generate_vias(self, merge=False, material: Material | None = None) -> list[Cylinder] | GeoVolume:
         """Generates the via objects.
 
         Args:
             merge (bool, optional): Whether to merge the result into a final object. Defaults to False.
-
+            material (Material, optional): The optional material for the vias.
         Returns:
             list[Cylinder] | Cylinder: Either al ist of cylllinders or a single one (merge=True)
         """
         vias = []
+        if material is None:
+            material = self.trace_material
         for via in self.vias:
             x0 = via.x * self.unit
             y0 = via.y * self.unit
@@ -2256,7 +2273,7 @@ class PCBNew:
             cyl = Cylinder(
                 via.radius * self.unit, (via.z2 - via.z1) * self.unit, cs, via.segments
             )
-            cyl.material = self.trace_material
+            cyl.material = material
             cyl.prio_set(self.via_priority)
             vias.append(cyl)
         if merge:

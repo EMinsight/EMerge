@@ -398,10 +398,11 @@ class Microwave3D:
         """
         if _reset_bc:
             self.bc = MWBoundaryConditionSet(None)
+            self._bc_initialized = False
         else:
             for bc in self.bc.oftype(ModalPort):
                 bc.reset()
-
+            
         self.basis: FEMBasis = None
         self.solveroutine.reset()
         self.assembler.cached_matrices = None

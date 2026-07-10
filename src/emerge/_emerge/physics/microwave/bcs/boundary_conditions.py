@@ -559,6 +559,7 @@ class SurfaceImpedance(RobinBC, Saveable):
             )
         if self._sr_model == "Hammerstad-Jensen" and self._sr > 0.0:
             R = R * (1 + 2 / np.pi * np.arctan(1.4 * (self._sr / d_skin) ** 2))
+            logger.debug(f' - Surface Roughness resistance scaler: {(1 + 2 / np.pi * np.arctan(1.4 * (self._sr / d_skin) ** 2)):.4f}')
         return 1j * k0 * Z0 / R
 
 
