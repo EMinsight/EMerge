@@ -1856,13 +1856,14 @@ class PCBNew:
                 )
             width = self.width
             height = self.length
-            origin = (self.origin[0] * self.unit, self.origin[1] * self.unit)
+            origin = (self.origin[0], self.origin[1])
 
         if material is None:
             material = self.trace_material
 
         origin = tuple(_parse_vector(origin))
-        origin: tuple[float, ...] = origin + (z * self.unit,)  # type: ignore
+        origin: tuple[float, ...] = origin + (z,)  # type: ignore
+        origin = tuple([param*self.unit for param in origin])
         if alignment is Alignment.CENTER:
             origin = (
                 origin[0] - width * self.unit / 2,

@@ -199,8 +199,8 @@ class DebugCollector:
         self.reports.append(message)
 
     def all_reports(self) -> Generator[tuple[int, str], None, None]:
-
-        for i, message in enumerate(self.reports):
+        reports = set(self.reports)
+        for i, message in enumerate(reports):
             yield i + 1, message
 
 
