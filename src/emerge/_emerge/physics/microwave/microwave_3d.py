@@ -2435,7 +2435,7 @@ class Microwave3D:
             raise SimulationError(
                 "Cannot post-process. Simulation basis function is undefined."
             )
-        logger.info("Computing S-parameters")
+        logger.info("Post processing scattered field solutions")
 
         ertri = np.zeros((3, 3, self.mesh.n_tris), dtype=np.complex128)
         urtri = np.zeros((3, 3, self.mesh.n_tris), dtype=np.complex128)
